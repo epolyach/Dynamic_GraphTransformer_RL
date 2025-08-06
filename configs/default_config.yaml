@@ -1,0 +1,197 @@
+# Default configuration for Dynamic Graph Transformer CVRP
+# This file contains all hyperparameters and settings for training and evaluation
+
+# Model Architecture
+model:
+  # Graph Transformer Encoder
+  encoder:
+    hidden_dim: 128
+    num_heads: 8
+    num_layers: 6
+    dropout: 0.1
+    use_layer_norm: true
+    use_residual: true
+    activation: "relu"
+    
+  # Positional Encodings
+  positional_encoding:
+    use_pe: true
+    pe_type: "sinusoidal"  # Options: "sinusoidal", "learnable", "distance_based"
+    max_distance: 100.0
+    pe_dim: 64
+    
+  # Dynamic Graph Updates
+  dynamic_updates:
+    enabled: true
+    update_frequency: 1  # Update graph every N steps
+    update_node_features: true
+    update_edge_weights: true
+    adaptive_masking: true
+    
+  # Transformer Decoder
+  decoder:
+    hidden_dim: 128
+    num_heads: 8
+    num_layers: 3
+    use_pointer_networks: true
+    attention_type: "scaled_dot_product"
+    temperature: 1.0
+    
+  # Output and Aggregation
+  aggregation:
+    pooling_type: "attention"  # Options: "mean", "max", "attention"
+    output_dim: 128
+
+# Problem Settings
+problem:
+  name: "cvrp"
+  max_nodes: 200  # Maximum number of customer nodes
+  min_nodes: 20   # Minimum number of customer nodes
+  vehicle_capacity: 50
+  depot_location: "center"  # Options: "center", "corner", "random"
+  node_distribution: "uniform"  # Options: "uniform", "clustered", "mixed"
+  demand_range: [1, 9]
+  coordinate_range: [0, 100]
+  
+# Training Configuration
+training:
+  # Basic Training Parameters
+  batch_size: 512
+  num_epochs: 100
+  learning_rate: 1e-4
+  weight_decay: 1e-5
+  gradient_clip_norm: 1.0
+  
+  # Learning Rate Scheduling
+  lr_scheduler:
+    type: "cosine"  # Options: "cosine", "step", "exponential", "plateau"
+    warmup_steps: 1000
+    min_lr: 1e-6
+    
+  # Curriculum Learning
+  curriculum:
+    enabled: true
+    start_size: 20
+    end_size: 200
+    growth_rate: 1.1
+    growth_frequency: 10  # epochs
+    
+  # Reinforcement Learning
+  rl:
+    algorithm: "reinforce"  # Options: "reinforce", "actor_critic", "ppo"
+    baseline: "rollout"     # Options: "critic", "rollout", "exponential"
+    entropy_weight: 0.01
+    value_loss_weight: 0.5
+    gamma: 0.99  # discount factor
+    
+  # Variance Reduction
+  variance_reduction:
+    use_dice: true
+    dice_lambda: 0.95
+    normalize_rewards: true
+    reward_scaling: 1.0
+    
+  # Validation and Checkpointing
+  validation:
+    frequency: 5  # epochs
+    num_instances: 1000
+    early_stopping_patience: 20
+    
+  checkpointing:
+    save_frequency: 10  # epochs
+    save_best_only: true
+    max_checkpoints: 5
+
+# Data Generation
+data:
+  # Training Data
+  train:
+    num_instances: 100000
+    regenerate: false  # Set to true to regenerate data
+    data_dir: "data/train"
+    
+  # Validation Data  
+  validation:
+    num_instances: 10000
+    data_dir: "data/validation"
+    
+  # Test Data
+  test:
+    num_instances: 1000
+    data_dir: "data/test"
+    
+  # Data Loading
+  loading:
+    num_workers: 4
+    pin_memory: true
+    persistent_workers: true
+
+# Optimization and Performance
+optimization:
+  # Mixed Precision Training
+  mixed_precision: true
+  
+  # Gradient Accumulation
+  gradient_accumulation_steps: 1
+  
+  # Memory Optimization
+  checkpoint_segments: 2
+  
+  # Distributed Training
+  distributed: false
+  world_size: 1
+  rank: 0
+
+# Logging and Monitoring
+logging:
+  # Experiment Tracking
+  use_wandb: true
+  use_tensorboard: true
+  
+  # Log Frequencies
+  log_frequency: 100  # steps
+  eval_frequency: 1000  # steps
+  
+  # What to Log
+  log_gradients: false
+  log_parameters: false
+  log_attention_weights: false
+  
+  # Directories
+  log_dir: "logs"
+  checkpoint_dir: "experiments/checkpoints"
+  results_dir: "experiments/results"
+
+# Evaluation
+evaluation:
+  # Metrics
+  metrics:
+    - "solution_cost"
+    - "optimality_gap" 
+    - "computation_time"
+    - "memory_usage"
+    
+  # Baselines for Comparison
+  baselines:
+    - "nearest_neighbor"
+    - "clark_wright"
+    - "or_tools"
+    
+  # Test Problem Sizes
+  test_sizes: [50, 100, 200, 500]
+  
+  # Number of runs for statistical significance
+  num_runs: 10
+
+# Hardware and Environment
+hardware:
+  device: "auto"  # Options: "auto", "cpu", "cuda", "mps"
+  gpu_ids: [0]
+  num_threads: 4
+  
+# Random Seeds for Reproducibility
+seed:
+  main: 42
+  data_generation: 123
+  training: 456
+  evaluation: 789
