@@ -3,6 +3,9 @@
 
 # Model Architecture
 model:
+  # Model type: 'basic_transformer', 'dynamic_transformer', 'legacy'
+  type: "dynamic_transformer"
+  
   # Graph Transformer Encoder
   encoder:
     hidden_dim: 128
