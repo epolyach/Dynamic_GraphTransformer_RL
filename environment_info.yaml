@@ -1,0 +1,10 @@
+cuda_available: false
+development_mode: true
+device: mps
+gpu_count: 0
+mps_available: true
+python_version: 3.13.4
+pytorch_geometric_version: 2.6.1
+pytorch_version: !!python/object/new:torch.torch_version.TorchVersion
+- 2.8.0
+target_gpu: RTX A6000 (for server deployment)
