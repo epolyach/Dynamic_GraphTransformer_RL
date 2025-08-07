@@ -1535,12 +1535,9 @@ def validate_naive_baseline_correctness(results, naive_avg_cost, config, logger,
 def save_results(results, training_times, models, config):
     """Save all results and models"""
     
-    # Create pytorch directory if it does not exist
-    os.makedirs("pytorch", exist_ok=True)
-    
     # Save models
     for model_name, model in models.items():
-        filename = f"pytorch/model_{model_name.lower().replace(' ', '_')}.pt"
+        filename = f"model_{model_name.lower().replace(' ', '_')}.pt"
         torch.save({
             'model_state_dict': model.state_dict(),
             'model_name': model_name,
@@ -1554,7 +1551,7 @@ def save_results(results, training_times, models, config):
         'results': results,
         'training_times': training_times,
         'config': config
-    }, 'pytorch/comparative_study_complete.pt')
+    }, 'comparative_study_complete.pt')
 
 if __name__ == "__main__":
     results = run_comparative_study()
