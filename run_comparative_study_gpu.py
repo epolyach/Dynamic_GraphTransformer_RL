@@ -1348,8 +1348,8 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('utils/plots/comparative_study_results_gpu_complete.png', dpi=300, bbox_inches='tight')
-    logger.info("📊 Comparison plots saved to utils/plots/comparative_study_results_gpu_complete.png")
+    plt.savefig('utils/plots/comparative_study_results_gpu.png', dpi=300, bbox_inches='tight')
+    logger.info("📊 Comparison plots saved to utils/plots/comparative_study_results_gpu.png")
     
     # Create detailed performance table
     create_performance_table(results, training_times, param_counts, logger, config)
@@ -1424,8 +1424,8 @@ def create_performance_table(results, training_times, param_counts, logger, conf
     df = pd.DataFrame(data)
     
     # Save to CSV with _gpu suffix
-    df.to_csv('utils/plots/comparative_results_gpu_complete.csv', index=False)
-    logger.info("📋 Detailed results saved to utils/plots/comparative_results_gpu_complete.csv")
+    df.to_csv('utils/plots/comparative_results_gpu.csv', index=False)
+    logger.info("📋 Detailed results saved to utils/plots/comparative_results_gpu.csv")
     
     # Print formatted table
     logger.info("\n📊 DETAILED PERFORMANCE COMPARISON")

@@ -1374,8 +1374,8 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('comparative_study_results.png', dpi=300, bbox_inches='tight')
-    logger.info("📊 Comparison plots saved to comparative_study_results.png")
+    plt.savefig('utils/plots/comparative_study_results.png', dpi=300, bbox_inches='tight')
+    logger.info("📊 Comparison plots saved to utils/plots/comparative_study_results.png")
     
     # Create detailed performance table
     create_performance_table(results, training_times, param_counts, logger)
@@ -1453,8 +1453,8 @@ def create_performance_table(results, training_times, param_counts, logger):
     df = pd.DataFrame(data)
     
     # Save to CSV
-    df.to_csv('comparative_results.csv', index=False)
-    logger.info("📋 Detailed results saved to comparative_results.csv")
+    df.to_csv('utils/plots/comparative_results.csv', index=False)
+    logger.info("📋 Detailed results saved to utils/plots/comparative_results.csv")
     
     # Print formatted table
     logger.info("\n📊 DETAILED PERFORMANCE COMPARISON")
@@ -1558,4 +1558,4 @@ def save_results(results, training_times, models, config):
 
 if __name__ == "__main__":
     results = run_comparative_study()
-    print("\n🎉 Comparative study completed! Check comparative_study_results.png for detailed analysis.")
+    print("\n🎉 Comparative study completed! Check utils/plots/comparative_study_results.png for detailed analysis.")
