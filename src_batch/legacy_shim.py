@@ -2,9 +2,36 @@
 # We insert the legacy repo root into sys.path at runtime when this shim is imported.
 import os
 import sys
-from importlib import import_module
 
-LEGACY_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'GAT_RL'))
+# Resolve the legacy GAT_RL root robustly:
+# 1) Honor explicit environment variable LEGACY_GAT_RL_DIR if set
+# 2) Try common relative locations based on this repository layout
+#    - repo_root/../GAT_RL (preferred; user keeps GAT_RL next to this repo)
+#    - repo_root/GAT_RL
+#    - $HOME/GAT_RL
+CANDIDATES = []
+env_path = os.environ.get('LEGACY_GAT_RL_DIR')
+if env_path:
+    CANDIDATES.append(env_path)
+
+here = os.path.dirname(__file__)
+repo_root = os.path.abspath(os.path.join(here, '..'))  # Dynamic_GraphTransformer_RL
+CANDIDATES.append(os.path.abspath(os.path.join(repo_root, '..', 'GAT_RL')))
+CANDIDATES.append(os.path.abspath(os.path.join(repo_root, 'GAT_RL')))
+CANDIDATES.append(os.path.abspath(os.path.join(os.path.expanduser('~'), 'GAT_RL')))
+
+LEGACY_ROOT = None
+for p in CANDIDATES:
+    if p and os.path.isdir(p) and os.path.exists(os.path.join(p, '__init__.py')) or True:
+        # Accept directory if it exists and contains expected subpackages
+        if os.path.isdir(os.path.join(p, 'model')) or os.path.isdir(os.path.join(p, 'encoder')):
+            LEGACY_ROOT = p
+            break
+
+if not LEGACY_ROOT:
+    # Fallback to original heuristic (may not exist)
+    LEGACY_ROOT = os.path.abspath(os.path.join(here, '..', '..', '..', 'GAT_RL'))
+
 if LEGACY_ROOT not in sys.path:
     sys.path.insert(0, LEGACY_ROOT)
 

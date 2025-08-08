@@ -1269,9 +1269,9 @@ def train_model(model, instances, config, model_name, logger):
             val_normalized = np.mean(val_batch_normalized)
             val_costs.append(val_cost)
             
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust, Val={val_normalized:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train1/cust={np.mean(epoch_costs) / config['num_customers']:.2f}, Val/cust={val_normalized:.3f}")
         else:
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train1/cust={np.mean(epoch_costs) / config['num_customers']:.2f}")
     
     return {
         'train_losses': train_losses,
@@ -1592,7 +1592,7 @@ def run_comparative_study():
             logger.warning(f"Failed to save per-model CSV for {model_name}: {e}")
         
         logger.info(f"   ✅ {model_name} completed in {training_time:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.3f} ({result['final_val_cost'] / config['num_customers']:.3f}/cust)")
+        logger.info(f"   Final validation cost/cust: {result['final_val_cost'] / config['num_customers']:.3f}")
     
     # If we excluded DGT, try to reuse prior DGT results for comparison
     if args.exclude_dgt:
@@ -1646,8 +1646,8 @@ def run_comparative_study():
         logger.info(f"{model_name}:")
         logger.info(f"   Parameters: {params:,}")
         logger.info(f"   Training time: {training_times[model_name]:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.2f}")
-        logger.info(f"   Final training cost: {result['train_costs'][-1]:.2f}")
+        logger.info(f"   Final validation cost/cust: {result['final_val_cost'] / config['num_customers']:.2f}")
+        logger.info(f"   Final training cost/cust: {result['train_costs'][-1] / config['num_customers']:.2f}")
         logger.info("")
     
     # Save results

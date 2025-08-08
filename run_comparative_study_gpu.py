@@ -1097,9 +1097,9 @@ def train_model_gpu(model, instances, config, model_name, logger):
             val_normalized = np.mean(val_batch_normalized)
             val_costs.append(val_cost)
             
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust, Val={val_normalized:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train1/cust={np.mean(epoch_costs) / config['num_customers']:.2f}, Val/cust={val_normalized:.3f}")
         else:
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train1/cust={np.mean(epoch_costs) / config['num_customers']:.2f}")
     
     return {
         'train_losses': train_losses,
@@ -1171,7 +1171,7 @@ def run_comparative_study():
         training_times[model_name] = training_time
         
         logger.info(f"   ✅ {model_name} completed in {training_time:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.3f} ({result['final_val_cost'] / config['num_customers']:.3f}/cust)")
+        logger.info(f"   Final validation cost/cust: {result['final_val_cost'] / config['num_customers']:.3f}")
     
     # Performance summary
     logger.info("\n📊 COMPARATIVE STUDY RESULTS")
@@ -1185,9 +1185,8 @@ def run_comparative_study():
         logger.info(f"{model_name}:")
         logger.info(f"   Parameters: {params:,}")
         logger.info(f"   Training time: {training_times[model_name]:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.3f} ({final_val_normalized:.3f}/cust)")
+        logger.info(f"   Final validation cost/cust: {final_val_normalized:.3f}")
         logger.info(f"   Improvement over naive: {improvement:.1f}%")
-        logger.info("")
     
     # Save results and models
     # Create comparison plots and tables
