@@ -38,16 +38,12 @@ class Model(nn.Module):
         # Compute the graph embedding > mean of all node embeddings per feature dimension
         graph_embedding = x.mean(dim=1)  # Shape: (batch_size, hidden_dim)
         
-        # Flatten node embeddings for decoder compatibility
-        batch_size, num_nodes, hidden_dim = x.shape
-        x_flat = x.view(batch_size * num_nodes, hidden_dim)  # Shape: (batch_size * num_nodes, hidden_dim)
-
-        # Get the demand and capacity - Detach them?
-        batch_size = data.batch.max().item() + 1
+        # Prepare demand and capacity tensors
+        batch_size = data.num_graphs
         demand = data.demand.reshape(batch_size, -1).float().to(data.x.device)
         capacity = data.capacity.reshape(batch_size, -1).float().to(data.x.device)
         
-        # Call the decoder with flattened embeddings
-        actions, log_p = self.decoder(x_flat, graph_embedding, capacity, demand, n_steps, T, greedy)
+        # Call the decoder with [B, N, H] embeddings
+        actions, log_p = self.decoder(x, graph_embedding, capacity, demand, n_steps, T, greedy)
         
         return actions, log_p

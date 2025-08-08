@@ -283,24 +283,21 @@ class PointerNetworkRL(nn.Module):
             pointer_input = torch.cat([node_embeddings, context], dim=-1)
             scores = self.pointer(pointer_input).squeeze(-1)
             
-            # Apply mask: visited nodes + capacity constraints
-            mask = visited.clone()
-            for b in range(batch_size):
-                for n in range(max_nodes):
-                    if demands_batch[b, n] > remaining_capacity[b]:
-                        mask[b, n] = True
-                # Don't allow staying at depot if already at depot
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if currently_at_depot:
-                    mask[b, 0] = True
-                
-                # Safety: if all nodes masked and we're not at depot, allow depot
-                if mask[b].all() and not currently_at_depot:
-                    mask[b, 0] = False
-                # If we're at depot and all customers visited, we should have terminated above
-                elif mask[b].all() and currently_at_depot:
-                    # Mark this batch as done to avoid further processing
-                    batch_done[b] = True
+            # Apply mask: visited nodes + capacity constraints (vectorized)
+            cap_mask = demands_batch > remaining_capacity.unsqueeze(1)
+            mask = visited | cap_mask
+            # Don't allow staying at depot if already at depot
+            currently_at_depot_vec = torch.tensor([len(r) > 0 and r[-1] == 0 for r in routes], device=device)
+            if currently_at_depot_vec.any():
+                mask[currently_at_depot_vec, 0] = True
+            # Safety: ensure depot available when all masked and not at depot
+            all_masked = mask.all(dim=1)
+            need_allow_depot = all_masked & (~currently_at_depot_vec)
+            if need_allow_depot.any():
+                mask[need_allow_depot, 0] = False
+            # If at depot and all masked, mark batch done
+            done_mask = all_masked & currently_at_depot_vec
+            batch_done[done_mask] = True
             
             scores = scores.masked_fill(mask, float('-inf'))
             log_probs = torch.log_softmax(scores / temperature, dim=-1)
@@ -422,20 +419,17 @@ class GraphTransformerGreedy(nn.Module):
             pointer_input = torch.cat([node_embeddings, context], dim=-1)
             scores = self.pointer(pointer_input).squeeze(-1)
             
-            # Apply constraints mask
-            mask = visited.clone()
-            for b in range(batch_size):
-                for n in range(max_nodes):
-                    if demands_batch[b, n] > remaining_capacity[b]:
-                        mask[b, n] = True
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if currently_at_depot:
-                    mask[b, 0] = True
-                
-                if mask[b].all() and not currently_at_depot:
-                    mask[b, 0] = False
-                elif mask[b].all() and currently_at_depot:
-                    batch_done[b] = True
+            cap_mask = demands_batch > remaining_capacity.unsqueeze(1)
+            mask = visited | cap_mask
+            currently_at_depot_vec = torch.tensor([len(r) > 0 and r[-1] == 0 for r in routes], device=device)
+            if currently_at_depot_vec.any():
+                mask[currently_at_depot_vec, 0] = True
+            all_masked = mask.all(dim=1)
+            need_allow_depot = all_masked & (~currently_at_depot_vec)
+            if need_allow_depot.any():
+                mask[need_allow_depot, 0] = False
+            done_mask = all_masked & currently_at_depot_vec
+            batch_done[done_mask] = True
             
             scores = scores.masked_fill(mask, float('-inf'))
             log_probs = torch.log_softmax(scores / temperature, dim=-1)
@@ -566,24 +560,17 @@ class GraphTransformerNetwork(nn.Module):
             pointer_input = torch.cat([node_embeddings, context], dim=-1)
             scores = self.pointer(pointer_input).squeeze(-1)
             
-            # Apply mask: visited nodes + capacity constraints
-            mask = visited.clone()
-            for b in range(batch_size):
-                for n in range(max_nodes):
-                    if demands_batch[b, n] > remaining_capacity[b]:
-                        mask[b, n] = True
-                # Don't allow staying at depot if already at depot
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if currently_at_depot:
-                    mask[b, 0] = True
-                
-                # Safety: if all nodes masked and we're not at depot, allow depot
-                if mask[b].all() and not currently_at_depot:
-                    mask[b, 0] = False
-                # If we're at depot and all customers visited, we should have terminated above
-                elif mask[b].all() and currently_at_depot:
-                    # Mark this batch as done to avoid further processing
-                    batch_done[b] = True
+            cap_mask = demands_batch > remaining_capacity.unsqueeze(1)
+            mask = visited | cap_mask
+            currently_at_depot_vec = torch.tensor([len(r) > 0 and r[-1] == 0 for r in routes], device=device)
+            if currently_at_depot_vec.any():
+                mask[currently_at_depot_vec, 0] = True
+            all_masked = mask.all(dim=1)
+            need_allow_depot = all_masked & (~currently_at_depot_vec)
+            if need_allow_depot.any():
+                mask[need_allow_depot, 0] = False
+            done_mask = all_masked & currently_at_depot_vec
+            batch_done[done_mask] = True
             
             scores = scores.masked_fill(mask, float('-inf'))
             log_probs = torch.log_softmax(scores / temperature, dim=-1)
@@ -952,20 +939,17 @@ class GraphAttentionTransformer(nn.Module):
             pointer_input = torch.cat([node_embeddings, context], dim=-1)
             scores = self.pointer(pointer_input).squeeze(-1)
             
-            # Apply mask
-            mask = visited.clone()
-            for b in range(batch_size):
-                for n in range(max_nodes):
-                    if demands_batch[b, n] > remaining_capacity[b]:
-                        mask[b, n] = True
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if currently_at_depot:
-                    mask[b, 0] = True
-                
-                if mask[b].all() and not currently_at_depot:
-                    mask[b, 0] = False
-                elif mask[b].all() and currently_at_depot:
-                    batch_done[b] = True
+            cap_mask = demands_batch > remaining_capacity.unsqueeze(1)
+            mask = visited | cap_mask
+            currently_at_depot_vec = torch.tensor([len(r) > 0 and r[-1] == 0 for r in routes], device=device)
+            if currently_at_depot_vec.any():
+                mask[currently_at_depot_vec, 0] = True
+            all_masked = mask.all(dim=1)
+            need_allow_depot = all_masked & (~currently_at_depot_vec)
+            if need_allow_depot.any():
+                mask[need_allow_depot, 0] = False
+            done_mask = all_masked & currently_at_depot_vec
+            batch_done[done_mask] = True
             
             scores = scores.masked_fill(mask, float('-inf'))
             log_probs = torch.log_softmax(scores / temperature, dim=-1)

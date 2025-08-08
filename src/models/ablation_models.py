@@ -234,15 +234,12 @@ class StaticRLGraphTransformer(nn.Module):
         # Compute graph embedding
         graph_embedding = x.mean(dim=1)  # [batch_size, hidden_dim]
         
-        # Flatten for decoder compatibility
-        x_flat = x.view(batch_size * num_nodes, self.hidden_dim)
-        
         # Prepare data for decoder
         demand = data.demand.reshape(batch_size, -1).float().to(device)
         capacity = data.capacity.reshape(batch_size, -1).float().to(device)
         
         # RL decoder (static - no dynamic updates)
-        actions, log_p = self.decoder(x_flat, graph_embedding, capacity, demand, n_steps, T, greedy)
+        actions, log_p = self.decoder(x, graph_embedding, capacity, demand, n_steps, T, greedy)
         
         return actions, log_p
 
@@ -368,14 +365,11 @@ class DynamicRLGraphTransformer(nn.Module):
             # Compute graph embedding
             graph_embedding = x.mean(dim=1)
             
-            # Single step prediction
-            x_flat = x.view(batch_size * num_nodes, self.hidden_dim)
-            
             # Get feasible nodes
             feasible_mask = state_tracker.get_feasible_nodes(demands)
             
             # Single step decode (would need decoder modification for proper masking)
-            actions, log_p = self.decoder(x_flat, graph_embedding, capacity, demand_formatted, 1, T, greedy)
+            actions, log_p = self.decoder(x, graph_embedding, capacity, demand_formatted, 1, T, greedy)
             
             # Apply feasibility constraints post-hoc (temporary solution)
             actions = self._apply_feasibility_constraints(actions, feasible_mask)

@@ -99,16 +99,13 @@ class DynamicGraphTransformerModel(nn.Module):
         # Compute graph embedding (mean of all node embeddings)
         graph_embedding = x.mean(dim=1)  # Shape: (batch_size, hidden_dim)
         
-        # Prepare data for decoder (original format expected by GAT_Decoder)
-        x_flat = x.view(batch_size * num_nodes, self.hidden_dim)  # Flatten for decoder
-        
         # Get demand and capacity
         demand = data.demand.reshape(batch_size, -1).float().to(device)
         capacity = data.capacity.reshape(batch_size, -1).float().to(device)
         
         if not self.use_dynamic_updates:
             # Standard forward pass without dynamic updates
-            actions, log_p = self.decoder(x_flat, graph_embedding, capacity, demand, n_steps, T, greedy)
+            actions, log_p = self.decoder(x, graph_embedding, capacity, demand, n_steps, T, greedy)
             return actions, log_p
         
         # Dynamic routing with graph updates
@@ -140,6 +137,11 @@ class DynamicGraphTransformerModel(nn.Module):
         # Initial edge weights from encoder (if available)
         edge_weights = self._compute_initial_edge_weights(data, batch_size, num_nodes)
         
+        # Precompute cached pairwise distances for the batch
+        coord_i = coordinates.unsqueeze(2).expand(-1, -1, num_nodes, -1)
+        coord_j = coordinates.unsqueeze(1).expand(-1, num_nodes, -1, -1)
+        cached_distances = torch.norm(coord_i - coord_j, dim=-1)
+        
         # Route construction loop
         for step in range(n_steps):
             # Update graph dynamically (every update_frequency steps)
@@ -149,23 +151,19 @@ class DynamicGraphTransformerModel(nn.Module):
                     node_embeddings=x,
                     edge_weights=edge_weights,
                     routing_state=routing_state,
-                    step=step
+                    step=step,
+                    cached_distances=cached_distances
                 )
                 
                 # Update graph embedding
                 graph_embedding = x.mean(dim=1)
             
-            # Prepare current node embeddings for decoder
-            x_flat = x.view(batch_size * num_nodes, self.hidden_dim)
-            
             # Get feasible nodes mask
             feasible_mask = state_tracker.get_feasible_nodes(demands_2d)
             
-            # Single step prediction using decoder
-            # Note: We need to modify the decoder to accept feasible mask
-            # For now, using the original decoder interface
+            # Single step prediction using decoder with feasibility mask
             actions, log_p = self._single_step_decode(
-                x_flat, graph_embedding, capacity, demand, feasible_mask, T, greedy
+                x, graph_embedding, capacity, demand, feasible_mask, T, greedy
             )
             
             # Store results
@@ -210,17 +208,11 @@ class DynamicGraphTransformerModel(nn.Module):
         
         return edge_weights
     
-    def _single_step_decode(self, x_flat, graph_embedding, capacity, demand, feasible_mask, T, greedy):
+    def _single_step_decode(self, node_embeddings, graph_embedding, capacity, demand, feasible_mask, T, greedy):
         """
         Single step decoding with feasibility constraints
-        This is a simplified version - the full decoder integration would require more work
         """
-        # For now, use the original decoder for a single step
-        # This would need to be modified to properly handle the feasibility mask
-        
-        # Temporary: use original decoder (this won't use feasible_mask properly)
-        actions, log_p = self.decoder(x_flat, graph_embedding, capacity, demand, 1, T, greedy)
-        
+        actions, log_p = self.decoder(node_embeddings, graph_embedding, capacity, demand, 1, T, greedy, feasible_mask=feasible_mask)
         return actions, log_p
 
 
