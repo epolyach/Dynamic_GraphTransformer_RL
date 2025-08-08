@@ -24,9 +24,8 @@ import seaborn as sns
 import pandas as pd
 import math
 
-# Force CPU for reliable comparison
-# Auto-detect best available device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Force CPU for reliable comparison (do not branch on CUDA here)
+device = torch.device("cpu")
 print(f"🖥️  Using device: {device}")
 
 
@@ -43,21 +42,37 @@ def set_seeds(seed=42):
 
 
 def configure_cpu_threads(max_threads: int = None):
-    """Configure CPU threading to improve parallel performance."""
+    """Configure CPU threading to improve parallel performance.
+    - Sets PyTorch intra/inter-op threads
+    - Sets common BLAS/OpenMP env vars if not already set
+    """
     import os
     try:
         if max_threads is None:
             # Leave one core free for system tasks
             max_threads = max(1, (os.cpu_count() or 4) - 1)
+        # PyTorch thread config
         torch.set_num_threads(max_threads)
         torch.set_num_interop_threads(max(1, max_threads // 2))
-        # Optional: respect existing OMP/MKL settings if present
+        # BLAS / OpenMP env vars (do not override if user set them)
+        env_targets = [
+            "OMP_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+            "PYTORCH_NUM_THREADS",
+        ]
+        for key in env_targets:
+            if not os.environ.get(key):
+                os.environ[key] = str(max_threads)
+        # Optional pinning hint for Intel MKL/OpenMP; harmless if unsupported
+        if not os.environ.get("KMP_AFFINITY"):
+            os.environ["KMP_AFFINITY"] = "granularity=fine,compact,1,0"
     except Exception:
         pass
 
-# Configure CPU threads for better multithreading performance
-if device.type == 'cpu':
-    configure_cpu_threads()
+# Configure CPU threads for better multithreading performance (always apply in this script)
+configure_cpu_threads()
 
 def generate_cvrp_instance(num_customers=20, capacity=3, coord_range=20, demand_range=(1, 10), seed=None):
     """Generate CVRP instance exactly matching GAT-RL configuration"""
