@@ -27,6 +27,7 @@ from src.models import (
     DynamicGraphTransformerModel,
 )
 from src.utils.RL.euclidean_cost import euclidean_cost
+from .validate_routes import validate_training_route
 
 import matplotlib
 matplotlib.use('Agg')
@@ -51,7 +52,7 @@ def make_instance(num_nodes: int, capacity: float, device: torch.device, seed: i
     g = torch.Generator(device=device)
     g.manual_seed(seed)
     coords = (torch.randint(1, 101, (num_nodes, 2), generator=g, device=device, dtype=torch.int64).float() / 100.0)
-    demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float() / 10.0)
+    demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float())
     demands[0] = 0.0
 
     edge_idx = []
@@ -207,6 +208,8 @@ def train_pipeline(
                 with autocast():
                     actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
                     costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
+                    # STRICT VALIDATION: Check training routes
+                    validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, bi, f"Training epoch {epoch+1} batch {bi+1} (AMP)")
                     baseline = costs.mean().detach()
                     advantages = (costs - baseline).detach()  # [B]
                     # Aggregate log-probs across steps to [B]
@@ -220,6 +223,8 @@ def train_pipeline(
                 actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
                 costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
                 baseline = costs.mean().detach()
+                # STRICT VALIDATION: Check training routes
+                validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, bi, f"Training epoch {epoch+1} batch {bi+1}")
                 advantages = (costs - baseline).detach()  # [B]
                 logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
                 loss = (advantages * logp_sum).mean()

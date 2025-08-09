@@ -275,3 +275,88 @@ For questions or issues, please open a GitHub issue or contact [your-email].
 ---
 
 **Note**: This project represents a comprehensive study of neural approaches to vehicle routing problems, with careful attention to proper implementation of reinforcement learning and sequential decision-making for combinatorial optimization.
+
+## Unified CPU Orchestrator (training + evaluation + plots)
+
+The CPU comparative study is now driven by a single orchestrator that trains requested models (only when needed), reuses cached runs, evaluates baselines on a deterministic validation set, and produces a consolidated table and plot (similar to Ver1).
+
+- Entry point: src/experiments/run_comparative_study_cpu.py
+- CSV output: results/comparative_study_cpu.csv
+- Plot output: utils/plots/comparative_study_results.png
+
+Supported models
+- dynamic_gt_rl: trainable RL with dynamic graph updates during decoding (expected best)
+- static_rl: trainable RL with static encoder and masking
+- pointer_rl: trainable legacy RL (kept for compatibility)
+- greedy_baseline: non-learning heuristic; greedy next-customer selection, no training
+- naive_baseline: roundtrip heuristic baseline (worst), no training
+- gat_rl: trainable internal GAT+RL (optional; add when enabled)
+- gat_rl_legacy: legacy ../GAT_RL implementation via subprocess (optional)
+
+Key behavior
+- Trainable models (dynamic_gt_rl, static_rl, pointer_rl, gat_rl) are trained via the unified trainer and cached per configuration.
+- Baselines (greedy_baseline, naive_baseline) are always evaluated on the same deterministic validation set derived from --seed and --instances.
+- gat_rl_legacy can be integrated via subprocess to ../GAT_RL and cached similarly.
+
+Caching
+- Each trained run is stored under: results_train/cpu_{model}_C{customers}_I{instances}_E{epochs}_B{batch}
+- A summary.json is written into the run directory with metrics and hyperparameters (including lr and seed).
+- Changing customers, instances, epochs, batch, lr, or seed produces a new cached run.
+
+Force retraining
+- Use --recalculate_rl_weights to force retraining of all requested trainable models in this run (ignores existing summary.json caches).
+
+Deterministic validation set
+- The unified trainer uses a fixed validation subset per run: val_count = max(32, min(128, instances/5)), seeds = [seed .. seed+val_count-1].
+- The orchestrator evaluates greedy_baseline and naive_baseline on this exact set for fair comparison.
+
+Examples
+- Default comparison (dynamic_gt_rl, static_rl, greedy_baseline, naive_baseline):
+  python src/experiments/run_comparative_study_cpu.py
+
+- Specific models:
+  python src/experiments/run_comparative_study_cpu.py --models dynamic_gt_rl static_rl greedy_baseline naive_baseline
+
+- Train if missing, else reuse cache:
+  python src/experiments/run_comparative_study_cpu.py --models dynamic_gt_rl static_rl --customers 20 --instances 800 --epochs 20 --batch 32 --lr 1e-4 --seed 12345
+
+- Force retraining (ignore cache) for requested trainable models:
+  python src/experiments/run_comparative_study_cpu.py --models dynamic_gt_rl static_rl --recalculate_rl_weights
+
+- Include legacy pointer and GAT when enabled:
+  python src/experiments/run_comparative_study_cpu.py --models pointer_rl gat_rl gat_rl_legacy
+
+Outputs
+- results/comparative_study_cpu.csv: aggregated table with columns [Model, Val/Cust, CPU Time (s), OutDir]
+- utils/plots/comparative_study_results.png: bar chart of Val/Cust for selected models
+- results_train/...: per-model training directories with train_history.csv, best_route.png/json, summary.json
+
+Notes
+
+- greedy_baseline (heuristic) vs learned greedy:
+  - greedy_baseline is a zero-training heuristic that greedily selects the next customer using fixed scoring; it does not update parameters and serves as a quick reference.
+  - learned greedy means you train a model (e.g., static_rl, dynamic_gt_rl, or GAT+RL) with RL so its attention/policy parameters are learned; then at evaluation you decode greedily (argmax). This typically performs much better than a heuristic with random weights.
+  - Recommended: report dynamic_gt_rl and static_rl using greedy decoding at evaluation (learned greedy). Keep greedy_baseline as the non-learning baseline for context.
+- gat_rl_legacy is integrated via subprocess to ../GAT_RL and can be cached to avoid retraining every run.
+
+### Example: CPU orchestrator with cached training
+Run the top models and baselines with specific hyperparameters. Missing RL weights will be trained once and cached; subsequent runs reuse cache unless forced.
+
+```bash
+python src/experiments/run_comparative_study_cpu.py \
+  --models dynamic_gt_rl static_rl greedy_baseline naive_baseline \
+  --customers 20 --instances 200 --epochs 15 --batch 8 --lr 1e-4 --seed 12345
+```
+
+Force retraining of RL weights (ignore cache):
+```bash
+python src/experiments/run_comparative_study_cpu.py \
+  --models dynamic_gt_rl static_rl \
+  --customers 20 --instances 200 --epochs 15 --batch 8 --lr 1e-4 --seed 12345 \
+  --recalculate_rl_weights
+```
+
+Outputs:
+- results/comparative_study_cpu.csv
+- utils/plots/comparative_study_results.png
+- results_train/cpu_{model}_C{C}_I{I}_E{E}_B{B}/summary.json, train_history.csv, best_route.png/json

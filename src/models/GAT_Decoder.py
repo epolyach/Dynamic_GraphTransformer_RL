@@ -5,9 +5,10 @@ from torch.distributions import Categorical
 from .PointerAttention import PointerAttention
 from .mask_capacity import update_state, update_mask
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+# Do NOT configure the root logger here; it causes verbose third-party DEBUG logs.
+# If needed, configure a module-specific logger instead:
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 class GAT_Decoder(nn.Module):
     def __init__(self, input_dim, hidden_dim):

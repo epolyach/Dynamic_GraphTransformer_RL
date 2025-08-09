@@ -43,7 +43,7 @@ class DynamicGraphTransformerModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.use_dynamic_updates = use_dynamic_updates
         self.update_frequency = update_frequency
-        self.vehicle_capacity = vehicle_capacity
+        self.vehicle_capacity = vehicle_capacity  # Will be set dynamically from data
         
         # Graph Transformer Encoder
         self.encoder = GraphTransformerEncoder(
@@ -119,11 +119,15 @@ class DynamicGraphTransformerModel(nn.Module):
         device = data.x.device
         batch_size, num_nodes, _ = x.shape
         
-        # Initialize routing state tracker
+        # Get actual capacity from data
+        actual_capacity = float(capacity[0].item()) if capacity.numel() > 0 else 30.0
+        
+        # Initialize routing state tracker with actual capacity from data
+        actual_capacity = float(capacity[0].item()) if capacity.numel() > 0 else 30.0
         state_tracker = RoutingStateTracker(
             batch_size=batch_size,
             num_nodes=num_nodes,
-            vehicle_capacity=self.vehicle_capacity,
+            vehicle_capacity=actual_capacity,  # Use actual capacity from data
             device=device
         )
         
