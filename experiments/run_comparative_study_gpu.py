@@ -147,9 +147,18 @@ def evaluate_model(model_name: str, data: Data, n_steps: int, device: torch.devi
 
     model.eval()
     with torch.no_grad():
-        if use_amp and device.type == 'cuda':
+        # Use AMP only for heavy models; force AMP disabled for greedy_baseline
+        if use_amp and device.type == 'cuda' and model_name != 'greedy_baseline':
             from torch.cuda.amp import autocast
             with autocast():
+                actions, logp = model(data, n_steps=n_steps, greedy=True)
+        elif model_name == 'greedy_baseline' and device.type == 'cuda':
+            # Explicitly disable autocast even if a higher context is active
+            try:
+                from torch.amp import autocast as amp_autocast
+                with amp_autocast('cuda', enabled=False):
+                    actions, logp = model(data, n_steps=n_steps, greedy=True)
+            except Exception:
                 actions, logp = model(data, n_steps=n_steps, greedy=True)
         else:
             actions, logp = model(data, n_steps=n_steps, greedy=True)
@@ -158,10 +167,14 @@ def evaluate_model(model_name: str, data: Data, n_steps: int, device: torch.devi
         torch.cuda.synchronize()
     t1 = time.perf_counter()
 
-    # Compute cost per batch instance and average
-    cost = euclidean_cost(data.x, actions, data)
-    avg_cost = float(cost.mean().item())
-    return {"avg_cost": avg_cost, "time": t1 - t0}
+    # Compute cost per batch instance and average per customer
+    cost = euclidean_cost(data.x, actions, data)  # shape: [batch]
+    # Derive customers per instance (nodes minus depot)
+    num_nodes = int(data.x.size(0) // data.num_graphs)
+    customers = max(num_nodes - 1, 1)
+    cost_per_customer = cost / customers
+    avg_cost_per_customer = float(cost_per_customer.mean().item())
+    return {"avg_cost_per_customer": avg_cost_per_customer, "time": t1 - t0}
 
 
 def run_experiment(device: torch.device, problem_sizes: List[int], instances: int, runs: int, seed: int, capacity: float = 50.0, use_amp: bool = False):
@@ -187,14 +200,16 @@ def run_experiment(device: torch.device, problem_sizes: List[int], instances: in
             # Evaluate each model on the batch
             for m in models:
                 out = evaluate_model(m, batch_data, n_steps, device, use_amp=use_amp)
-                model_aggregates[m]["costs"].append(out["avg_cost"])
+                model_aggregates[m]["costs"].append(out["avg_cost_per_customer"])
                 model_aggregates[m]["times"].append(out["time"])
 
             # Naive baseline cost computed per instance (CPU numpy) for top-right plot
             for d in inst_list:
                 coords = d.x.detach().cpu().numpy()
                 demands = d.demand.detach().cpu().numpy().flatten()
-                naive_costs.append(nearest_neighbor_naive_cost(coords, demands, capacity))
+                total_cost = nearest_neighbor_naive_cost(coords, demands, capacity)
+                customers = max(coords.shape[0] - 1, 1)
+                naive_costs.append(total_cost / customers)
 
             generated += b
 
@@ -205,14 +220,14 @@ def run_experiment(device: torch.device, problem_sizes: List[int], instances: in
             results_rows.append({
                 "variant": m,
                 "problem_size": n_nodes,
-                "avg_solution_cost": avg_cost,
+                "avg_solution_cost_per_customer": avg_cost,
                 "avg_computation_time": avg_time,
             })
         # Add naive baseline as separate variant for plotting
         results_rows.append({
             "variant": "naive_baseline",
             "problem_size": n_nodes,
-            "avg_solution_cost": float(np.mean(naive_costs)) if naive_costs else np.nan,
+            "avg_solution_cost_per_customer": float(np.mean(naive_costs)) if naive_costs else np.nan,
             "avg_computation_time": np.nan,
         })
 
@@ -228,7 +243,7 @@ def generate_plots(df: pd.DataFrame, out_dir: Path, problem_sizes: List[int]):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     fig.suptitle('GPU Comparative Study (4 Models)')
 
-    # Top-left: Average solution cost vs problem size (4 models only)
+    # Top-left: Average solution cost per customer vs problem size (4 models only)
     ax = axes[0, 0]
     plot_df = df[df['variant'].isin(['greedy_baseline', 'pointer_rl', 'static_rl', 'dynamic_gt_rl'])]
     for v, label in [
@@ -238,13 +253,13 @@ def generate_plots(df: pd.DataFrame, out_dir: Path, problem_sizes: List[int]):
         ('dynamic_gt_rl', 'DynamicGT+RL')
     ]:
         vd = plot_df[plot_df['variant'] == v]
-        ax.plot(vd['problem_size'], vd['avg_solution_cost'], marker='o', label=label)
-    ax.set_title('Avg Solution Cost vs Problem Size')
+        ax.plot(vd['problem_size'], vd['avg_solution_cost_per_customer'], marker='o', label=label)
+    ax.set_title('Avg Solution Cost per Customer vs Problem Size')
     ax.set_xlabel('Problem Size (nodes)')
-    ax.set_ylabel('Avg Solution Cost')
+    ax.set_ylabel('Avg Solution Cost per Customer')
     ax.legend()
 
-    # Top-right: Include naive baseline for reference
+    # Top-right: Include naive baseline for reference (per customer)
     ax = axes[0, 1]
     plot_df2 = df[df['variant'].isin(['greedy_baseline', 'pointer_rl', 'static_rl', 'dynamic_gt_rl', 'naive_baseline'])]
     for v, label in [
@@ -255,10 +270,10 @@ def generate_plots(df: pd.DataFrame, out_dir: Path, problem_sizes: List[int]):
         ('dynamic_gt_rl', 'DynamicGT+RL')
     ]:
         vd = plot_df2[plot_df2['variant'] == v]
-        ax.plot(vd['problem_size'], vd['avg_solution_cost'], marker='o', label=label)
-    ax.set_title('Avg Cost with Naive Baseline (Top-Right)')
+        ax.plot(vd['problem_size'], vd['avg_solution_cost_per_customer'], marker='o', label=label)
+    ax.set_title('Avg Cost per Customer with Naive Baseline (Top-Right)')
     ax.set_xlabel('Problem Size (nodes)')
-    ax.set_ylabel('Avg Solution Cost')
+    ax.set_ylabel('Avg Solution Cost per Customer')
     ax.legend()
 
     # Bottom-left: Computation time vs problem size (models only)
@@ -276,13 +291,13 @@ def generate_plots(df: pd.DataFrame, out_dir: Path, problem_sizes: List[int]):
     ax.set_ylabel('Avg Time (s)')
     ax.legend()
 
-    # Bottom-right: Bar chart of cost at largest problem size with naive baseline
+    # Bottom-right: Bar chart of cost per customer at largest problem size with naive baseline
     ax = axes[1, 1]
     max_size = max(problem_sizes)
     br = df[df['problem_size'] == max_size]
     br = br[br['variant'].isin(['naive_baseline', 'greedy_baseline', 'pointer_rl', 'static_rl', 'dynamic_gt_rl'])]
-    ax.bar(br['variant'], br['avg_solution_cost'])
-    ax.set_title(f'Cost at {max_size} Nodes (incl. Naive)')
+    ax.bar(br['variant'], br['avg_solution_cost_per_customer'])
+    ax.set_title(f'Cost per Customer at {max_size} Nodes (incl. Naive)')
     ax.set_xticklabels(br['variant'], rotation=45, ha='right')
 
     plt.tight_layout()
