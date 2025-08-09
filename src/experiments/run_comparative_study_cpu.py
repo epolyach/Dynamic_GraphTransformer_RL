@@ -213,21 +213,29 @@ def ensure_trained_and_load_summary(model: str, customers: int, instances: int, 
 
 def generate_plots(df: pd.DataFrame, out_plot: Path):
     out_plot.parent.mkdir(parents=True, exist_ok=True)
-    plt.style.use('seaborn-v0_8')
+    
+    # Check if DataFrame is empty or missing required columns
+    if df.empty or "Model" not in df.columns:
+        print("[orchestrator] No data available for plotting, skipping plot generation")
+        return
+        
+    plt.style.use("seaborn-v0_8")
 
     # Bar plot of Val/Cust for all models present
-    order = ['dynamic_gt_rl', 'static_rl', 'pointer_rl', 'greedy_baseline', 'naive_baseline', 'gat_rl', 'gat_rl_legacy']
+    order = ["dynamic_gt_rl", "static_rl", "pointer_rl", "greedy_baseline", "naive_baseline", "gat_rl", "gat_rl_legacy"]
     df_plot = df.copy()
-    df_plot['Model'] = pd.Categorical(df_plot['Model'], categories=order, ordered=True)
-    df_plot = df_plot.sort_values('Model')
+    df_plot["Model"] = pd.Categorical(df_plot["Model"], categories=order, ordered=True)
+    df_plot = df_plot.sort_values("Model")
 
     plt.figure(figsize=(10, 6))
-    plt.bar(df_plot['Model'], df_plot['Val/Cust'])
-    plt.ylabel('Average Cost per Customer')
-    plt.title('CPU Comparative Study')
-    plt.xticks(rotation=30, ha='right')
+    plt.bar(df_plot["Model"], df_plot["Val/Cust"])
+    plt.ylabel("Average Cost per Customer")
+    plt.title("CPU Comparative Study")
+    plt.xticks(rotation=30, ha="right")
     plt.tight_layout()
-    plt.savefig(out_plot, dpi=300)
+    plt.savefig(out_plot, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved plot to {out_plot}")
     plt.close()
     print(f"Saved plot to {out_plot}")
 
@@ -352,6 +360,9 @@ def main():
     parser.add_argument('--out_plot', type=str, default='utils/plots/comparative_study_results.png')
     parser.add_argument('--test_seed', type=int, default=20250809, help='Seed for single test instance application step')
     args = parser.parse_args()
+    
+    # Clean up model names (strip whitespace and commas)
+    args.models = [m.strip().strip(",") for m in args.models if m.strip().strip(",")]
 
     device = torch.device('cpu')
     print("[orchestrator] Starting comparative study")

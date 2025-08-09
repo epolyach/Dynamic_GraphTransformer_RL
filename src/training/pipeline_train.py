@@ -209,7 +209,7 @@ def train_pipeline(
                     actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
                     costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
                     # STRICT VALIDATION: Check training routes
-                    validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, bi, f"Training epoch {epoch+1} batch {bi+1} (AMP)")
+                    validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, i, f"Training epoch {epoch+1} batch {i+1} (AMP)")
                     baseline = costs.mean().detach()
                     advantages = (costs - baseline).detach()  # [B]
                     # Aggregate log-probs across steps to [B]
@@ -224,7 +224,7 @@ def train_pipeline(
                 costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
                 baseline = costs.mean().detach()
                 # STRICT VALIDATION: Check training routes
-                validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, bi, f"Training epoch {epoch+1} batch {bi+1}")
+                validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, i, f"Training epoch {epoch+1} batch {i+1}")
                 advantages = (costs - baseline).detach()  # [B]
                 logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
                 loss = (advantages * logp_sum).mean()
