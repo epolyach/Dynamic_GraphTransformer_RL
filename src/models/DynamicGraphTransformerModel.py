@@ -101,7 +101,8 @@ class DynamicGraphTransformerModel(nn.Module):
         
         # Get demand and capacity
         demand = data.demand.reshape(batch_size, -1).float().to(device)
-        capacity = data.capacity.reshape(batch_size, -1).float().to(device)
+        capacity_full = data.capacity.reshape(batch_size, -1).float().to(device)
+        capacity = capacity_full[:, :1]
         
         if not self.use_dynamic_updates:
             # Standard forward pass without dynamic updates

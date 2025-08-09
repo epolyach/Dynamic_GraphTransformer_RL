@@ -10,6 +10,7 @@ import yaml
 
 from .Model import Model
 from .DynamicGraphTransformerModel import DynamicGraphTransformerModel
+from .pointer_rl import PointerRLModel
 
 
 class ModelFactory:
@@ -47,6 +48,8 @@ class ModelFactory:
             return ModelFactory._create_basic_transformer(model_config)
         elif model_type == 'dynamic_transformer':
             return ModelFactory._create_dynamic_transformer(model_config)
+        elif model_type == 'pointer_rl':
+            return ModelFactory._create_pointer_rl(model_config)
         elif model_type == 'legacy':
             return ModelFactory._create_legacy_model(model_config)
         else:
@@ -65,6 +68,24 @@ class ModelFactory:
             layers=encoder_config.get('num_layers', 6),
             negative_slope=0.2,  # Not used in transformer, for compatibility
             dropout=encoder_config.get('dropout', 0.1)
+        )
+
+    @staticmethod
+    def _create_pointer_rl(config: Dict[str, Any]) -> PointerRLModel:
+        """Create Pointer + RL model (Graph Transformer encoder + Pointer decoder)."""
+        encoder_config = config.get('encoder', {})
+        pe_config = config.get('positional_encoding', {})
+        
+        return PointerRLModel(
+            node_input_dim=encoder_config.get('node_input_dim', 3),
+            edge_input_dim=encoder_config.get('edge_input_dim', 1),
+            hidden_dim=encoder_config.get('hidden_dim', 128),
+            num_heads=encoder_config.get('num_heads', 8),
+            num_layers=encoder_config.get('num_layers', 6),
+            dropout=encoder_config.get('dropout', 0.1),
+            pe_type=pe_config.get('pe_type', 'sinusoidal'),
+            pe_dim=pe_config.get('pe_dim', 64),
+            max_distance=pe_config.get('max_distance', 100.0),
         )
     
     @staticmethod

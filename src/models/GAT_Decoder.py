@@ -89,11 +89,11 @@ class GAT_Decoder(nn.Module):
                 mask, mask1 = update_mask(demands, dynamic_capacity, index.unsqueeze(-1), mask1, i)
 
             # Combine internal mask with external feasibility constraints (hard-mask infeasible)
-            combined_mask = mask
+            combined_mask = mask.bool()
             if feasible_mask is not None:
                 ext_infeasible = (~feasible_mask.bool()).clone()
                 ext_infeasible[:, 0] = False  # Always allow depot
-                combined_mask = mask | ext_infeasible
+                combined_mask = combined_mask | ext_infeasible
 
             # Compute the probability distribution with combined masking
             p = self.pointer(decoder_input, encoder_inputs, combined_mask, T)

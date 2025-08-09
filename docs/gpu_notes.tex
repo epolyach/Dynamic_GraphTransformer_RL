@@ -1,0 +1,90 @@
+% GPU Acceleration Notes for Dynamic_GraphTransformer_RL
+% Author: Evgeny Polyachenko (project), Agent Mode (assistance)
+% Date: \today
+
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\usepackage{enumitem}
+
+\title{GPU Acceleration Plan and Improvements over CPU Version}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Scope}
+This document records technologies, design choices, and performance improvements introduced in the GPU version of the project. The GPU version focuses on four models (excluding legacy GAT+RL):
+\begin{itemize}[noitemsep]
+  \item Pointer+RL
+  \item Transformer+RL (Graph Transformer encoder)
+  \item Dynamic Graph Transformer variants (as defined in the repo)
+  \item Ablation variants (subset used in comparative plots)
+\end{itemize}
+
+\section{System Assumptions}
+\begin{itemize}[noitemsep]
+  \item PyTorch with CUDA (compute capability per gpu2 node)
+  \item PyTorch Geometric for graph data handling
+  \item Mixed precision (AMP) optional via \texttt{torch.cuda.amp}
+  \item Deterministic seeds used where helpful; full determinism is not guaranteed
+\end{itemize}
+
+\section{Pointer+RL Pipeline Blocks}
+We decompose the Pointer+RL workflow into blocks and identify GPU-amenable components.
+\begin{enumerate}[label=B\arabic*:, leftmargin=*]
+  \item Encoder (Graph Transformer): dense tensor ops (linear, attention, FFN). Highly GPU-friendly.
+  \item Decoder state projection: small dense layers combining current input and pooled embedding. GPU-friendly; low arithmetic intensity but benefits from batching.
+  \item Pointer attention: multi-head attention over nodes + masked softmax. GPU-friendly; ensure masks are on device and avoid Python-side conditionals per node.
+  \item Masking and capacity updates: currently uses scatter/gather and boolean masks. GPU-friendly if tensors remain on device and vectorized.
+  \item Sampling/log-probs: \texttt{Categorical} over logits; works on GPU. Greedy argmax and sampling are GPU-supported.
+  \item Reward (euclidean cost): heavy gather + pairwise diffs + norms; fully vectorizable on GPU.
+  \item Baseline rollout: model inference over validation set; ensure dataset and model are on device and avoid host-device thrashing.
+\end{enumerate}
+
+\section{Technologies and Techniques}
+\begin{itemize}[noitemsep]
+  \item End-to-end CUDA tensors and device propagation with minimal CPU-GPU sync.
+  \item Mixed-precision training/inference (AMP) where numerically stable, notably in encoder and pointer attention.
+  \item Mask fusion: combine internal and external feasibility masks on GPU, avoid intermediate host copies.
+  \item Efficient gather/scatter for decoder inputs and state evolution; avoid Python loops beyond the inherent sequential decision steps.
+  \item Batched cost computation with tensorized operations and optional chunking for very large N to avoid OOM.
+  \item Rollout baseline computed with \texttt{torch.no_grad()} on GPU; avoid per-batch deepcopies on CPU.
+\end{itemize}
+
+\section{Microbenchmarks}
+For each block we design timing tests (CPU vs GPU) with synthetic batches:
+\begin{itemize}[noitemsep]
+  \item B1: Encoder forward time per batch.
+  \item B2: Decoder step time per decision (single step) and per episode (N steps).
+  \item B3: Pointer attention forward time on masked logits.
+  \item B4: Euclidean cost computation time for generated tours.
+  \item B5: Rollout baseline epoch time on validation set.
+\end{itemize}
+Each benchmark will report median/mean over multiple warm runs, with CUDA synchronization to ensure accurate timings.
+
+\section{Numerical Considerations}
+\begin{itemize}[noitemsep]
+  \item Keep masking as \texttt{-inf} fills on CUDA; clamp/scale logits to reduce overflow prior to softmax.
+  \item Preserve gradients for REINFORCE loss; only detach where appropriate (e.g., cost/advantage).
+  \item AMP autocast for attention and FFN; keep mask logic in fp32 to avoid precision issues.
+\end{itemize}
+
+\section{Planned Improvements over CPU}
+\begin{itemize}[noitemsep]
+  \item End-to-end training throughput increase via GPU acceleration of encoder, pointer attention, and reward.
+  \item Lower wall-clock for rollout baseline updates; larger validation sets feasible.
+  \item Optional AMP for further speedup and lower memory footprint.
+  \item Vectorized euclidean cost vs looped numpy-like CPU code.
+\end{itemize}
+
+\section{Experimental Reporting}
+Comparative plots will include only four models in the GPU study, and the top-right plot will include the naive baseline. Benchmarks will be reported as speedup factors (\si{\times}) relative to CPU for each block and overall.
+
+\end{document}
+
