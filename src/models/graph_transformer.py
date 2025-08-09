@@ -263,11 +263,26 @@ class GraphTransformerEncoder(nn.Module):
             return None
             
         device = edge_attr.device
-        edge_weights = torch.zeros(batch_size, num_nodes, num_nodes, device=device)
         
-        # Embed edge attributes
-        edge_features = self.edge_embedding(edge_attr)  # [num_edges, hidden_dim]
-        edge_scores = edge_features.mean(dim=-1)  # [num_edges] - simple aggregation
+        # Determine a stable dtype for edge weights under AMP/autocast.
+        # Prefer float32 when autocast is enabled to avoid half/float mismatches in index_put.
+        if torch.is_autocast_enabled():
+            ew_dtype = torch.float32
+        else:
+            # Fall back to edge_attr's dtype if floating, else float32
+            ew_dtype = edge_attr.dtype if edge_attr.is_floating_point() else torch.float32
+        
+        # Embed edge attributes and aggregate to scalar scores per edge
+        edge_features = self.edge_embedding(edge_attr)
+        # Ensure features and scores are in the chosen dtype
+        if edge_features.dtype != ew_dtype:
+            edge_features = edge_features.to(dtype=ew_dtype)
+        edge_scores = edge_features.mean(dim=-1)
+        if edge_scores.dtype != ew_dtype:
+            edge_scores = edge_scores.to(dtype=ew_dtype)
+        
+        # Allocate dense matrix with the same dtype as edge_scores
+        edge_weights = torch.zeros(batch_size, num_nodes, num_nodes, device=device, dtype=ew_dtype)
         
         # Fill dense matrix
         num_edges_per_graph = edge_index.size(1) // batch_size
@@ -278,7 +293,8 @@ class GraphTransformerEncoder(nn.Module):
             
             batch_edge_index = edge_index[:, start_idx:end_idx] - b * num_nodes
             batch_edge_scores = edge_scores[start_idx:end_idx]
-            
+            if batch_edge_scores.dtype != edge_weights.dtype:
+                batch_edge_scores = batch_edge_scores.to(dtype=edge_weights.dtype)
             edge_weights[b, batch_edge_index[0], batch_edge_index[1]] = batch_edge_scores
         
         return edge_weights
@@ -321,6 +337,9 @@ class GraphTransformerEncoder(nn.Module):
         
         # Compute edge weights for attention bias
         edge_weights = self._compute_edge_weights(edge_attr, edge_index, batch_size, num_nodes)
+        # Match dtype with activations under AMP to avoid dtype mismatches
+        if edge_weights is not None and edge_weights.dtype != x.dtype:
+            edge_weights = edge_weights.to(dtype=x.dtype)
         
         # Apply transformer layers
         for layer in self.layers:
