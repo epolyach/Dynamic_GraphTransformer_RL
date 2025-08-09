@@ -86,5 +86,53 @@ Each benchmark will report median/mean over multiple warm runs, with CUDA synchr
 \section{Experimental Reporting}
 Comparative plots will include only four models in the GPU study, and the top-right plot will include the naive baseline. Benchmarks will be reported as speedup factors (\si{\times}) relative to CPU for each block and overall.
 
+\section{CPU vs GPU vs AMP Protocol}
+We run three settings with identical parameters:
+\begin{itemize}[noitemsep]
+  \item CPU baseline
+  \item GPU (fp32)
+  \item GPU + AMP (autocast)
+\end{itemize}
+
+Small sanity run (\textasciitilde10--20 s on CPU):
+\begin{verbatim}
+python experiments/run_comparative_study_gpu.py --device cpu  --problem_sizes 20 --instances 10 --out_dir results_cpu_small
+python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 20 --instances 10 --out_dir results_gpu_small
+python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 20 --instances 10 --amp --out_dir results_gpu_small_amp
+\end{verbatim}
+
+Long run (\textasciitilde10--20 min on CPU; tune instances/problem sizes):
+\begin{verbatim}
+python experiments/run_comparative_study_gpu.py --device cpu  --problem_sizes 50 --instances 400 --out_dir results_cpu_long
+python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 50 --instances 400 --out_dir results_gpu_long
+python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 50 --instances 400 --amp --out_dir results_gpu_long_amp
+\end{verbatim}
+
+The script prints total wall-clock time for the entire experiment, and saves CSV/plots for post-analysis.
+
+\section{Refactoring Summary}
+We modularized models for clarity and detachability:
+\begin{itemize}[noitemsep]
+  \item \texttt{PointerRLModel} (\texttt{src/models/pointer\_rl.py})
+  \item \texttt{StaticRLGraphTransformer} (\texttt{src/models/transformer\_rl.py})
+  \item \texttt{GreedyGraphTransformerBaseline} (\texttt{src/models/greedy\_baseline.py})
+  \item \texttt{DynamicGraphTransformerModel} kept and stabilized masks/capacity
+\end{itemize}
+
+Key fixes:
+\begin{itemize}[noitemsep]
+  \item Capacity shape normalized to [B,1] in decoders
+  \item Boolean mask logic consolidated (avoid dtype mismatches)
+  \item Resolved method/flag name collision in dynamic updater (\texttt{enable\_*} flags)
+  \item Added AMP option (autocast) to comparative runner
+\end{itemize}
+
+Artifacts added:
+\begin{itemize}[noitemsep]
+  \item Microbenchmark: \texttt{experiments/bench\_pointer\_gpu.py}
+  \item Smoke test: \texttt{experiments/smoke\_models.py}
+  \item Comparative GPU runner with naive baseline: \texttt{experiments/run\_comparative\_study\_gpu.py}
+\end{itemize}
+
 \end{document}
 

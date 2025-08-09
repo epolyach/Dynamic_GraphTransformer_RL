@@ -33,6 +33,28 @@ python run_comparative_study.py
 python run_comparative_study_gpu.py --customers 15 --epochs 10 --instances 800 --batch 8
 ```
 
+## ⚖️ CPU vs GPU vs AMP Comparative Runs
+
+Below are example commands to reproduce CPU vs GPU comparisons with identical parameters, and a GPU+AMP run.
+
+Small sanity runs (~10–20 seconds on CPU):
+- CPU:
+  - python experiments/run_comparative_study_gpu.py --device cpu --problem_sizes 20 --instances 10 --out_dir results_cpu_small
+- GPU (same params):
+  - python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 20 --instances 10 --out_dir results_gpu_small
+- GPU + AMP (same params):
+  - python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 20 --instances 10 --amp --out_dir results_gpu_small_amp
+
+Long runs (~10–20 minutes on CPU; tune instances/problem_sizes to hit target on your machine):
+- CPU long:
+  - python experiments/run_comparative_study_gpu.py --device cpu --problem_sizes 50 --instances 400 --out_dir results_cpu_long
+- GPU long (same params):
+  - python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 50 --instances 400 --out_dir results_gpu_long
+- GPU long + AMP (same params):
+  - python experiments/run_comparative_study_gpu.py --device cuda --problem_sizes 50 --instances 400 --amp --out_dir results_gpu_long_amp
+
+Each run prints the total experiment time and writes CSV results and plots into the specified out_dir.
+
 ## 📋 Project Structure
 
 ```
