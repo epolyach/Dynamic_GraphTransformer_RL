@@ -40,8 +40,10 @@ def set_seed(seed: int):
 
 
 def make_instance(num_nodes: int, capacity: float, device: torch.device) -> Data:
-    coords = (torch.rand(num_nodes, 2, device=device) * 100).float()
-    demands = (torch.rand(num_nodes, 1, device=device) * 10).float()
+    # Coordinates in unit square [0, 1] for correct scale of distances
+    coords = torch.rand(num_nodes, 2, device=device).float()
+    # Integer demands in {1,2,3} for customers; depot demand = 0
+    demands = torch.randint(1, 4, (num_nodes, 1), device=device, dtype=torch.int64).float()
     demands[0] = 0.0  # depot demand = 0
 
     # fully connected directed edges
@@ -99,37 +101,15 @@ def make_batch(instances: List[Data]) -> Data:
     return data
 
 
-def nearest_neighbor_naive_cost(coords_np: np.ndarray, demands_np: np.ndarray, capacity: float) -> float:
-    # Simple NN heuristic with capacity constraints; returns total distance
-    n = len(coords_np)
-    depot = 0
-    unvisited = set(range(1, n))
-    total = 0.0
-    curr = depot
-    load = 0.0
-    while unvisited:
-        best = None
-        best_dist = float('inf')
-        for j in unvisited:
-            if load + demands_np[j] <= capacity:
-                d = np.linalg.norm(coords_np[curr] - coords_np[j])
-                if d < best_dist:
-                    best_dist = d
-                    best = j
-        if best is None:
-            # return to depot
-            total += np.linalg.norm(coords_np[curr] - coords_np[depot])
-            curr = depot
-            load = 0.0
-            continue
-        # go to best
-        total += best_dist
-        load += demands_np[best]
-        curr = best
-        unvisited.remove(best)
-    # return to depot
-    total += np.linalg.norm(coords_np[curr] - coords_np[depot])
-    return total
+def naive_roundtrip_cost(coords_np: np.ndarray) -> float:
+    """Naive baseline: serve each customer individually.
+    Route: depot -> customer i -> depot, for all i >= 1.
+    Returns total distance across the full route set.
+    """
+    depot = coords_np[0]
+    # Sum of 2 * distance(depot, customer) for each customer
+    dists = np.linalg.norm(coords_np[1:] - depot, axis=1)
+    return float(2.0 * dists.sum())
 
 
 def evaluate_model(model_name: str, data: Data, n_steps: int, device: torch.device, use_amp: bool = False) -> Dict[str, float]:
@@ -206,8 +186,7 @@ def run_experiment(device: torch.device, problem_sizes: List[int], instances: in
             # Naive baseline cost computed per instance (CPU numpy) for top-right plot
             for d in inst_list:
                 coords = d.x.detach().cpu().numpy()
-                demands = d.demand.detach().cpu().numpy().flatten()
-                total_cost = nearest_neighbor_naive_cost(coords, demands, capacity)
+                total_cost = naive_roundtrip_cost(coords)
                 customers = max(coords.shape[0] - 1, 1)
                 naive_costs.append(total_cost / customers)
 
@@ -314,7 +293,7 @@ def main():
     parser.add_argument('--instances', type=int, default=50, help='Number of instances per problem size')
     parser.add_argument('--runs', type=int, default=1, help='Runs per instance (kept 1 for speed)')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--capacity', type=float, default=50.0)
+    parser.add_argument('--capacity', type=float, default=3.0)
     parser.add_argument('--out_dir', type=str, default='results_gpu')
     parser.add_argument('--amp', action='store_true', help='Enable AMP (autocast) for GPU inference')
     args = parser.parse_args()
