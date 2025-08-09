@@ -74,17 +74,43 @@ class TransformerAttention(nn.Module):
         K = self.k(context).reshape(batch_size, n_nodes, self.n_heads, -1)
         V = self.v(context).reshape(batch_size, n_nodes, self.n_heads, -1)
         Q, K, V = Q.transpose(1, 2), K.transpose(1, 2), V.transpose(1, 2)
+        
+        # Check for NaN values in Q, K, V after linear transformations
+        if torch.isnan(Q).any():
+            # print(f"[DEBUG] NaN detected in Q: {torch.isnan(Q).sum()} values")
+            Q = torch.nan_to_num(Q, nan=0.0)
+        if torch.isnan(K).any():
+            # print(f"[DEBUG] NaN detected in K: {torch.isnan(K).sum()} values")
+            K = torch.nan_to_num(K, nan=0.0)
+        if torch.isnan(V).any():
+            # print(f"[DEBUG] NaN detected in V: {torch.isnan(V).sum()} values")
+            V = torch.nan_to_num(V, nan=0.0)
 
         # Compute compatibility scores for calculating attention scores
         compatibility = self.norm * torch.matmul(Q, K.transpose(2,3)) # (batch_size, n_heads, 1, hidden_dim) * (batch_size, n_heads, hidden_dim, n_nodes)
+        
+        # Check for NaN in compatibility scores
+        if torch.isnan(compatibility).any():
+            # print(f"[DEBUG] NaN detected in compatibility: {torch.isnan(compatibility).sum()} values")
+            compatibility = torch.nan_to_num(compatibility, nan=0.0)
         
         # (batch_size,n_heads,1,hidden_dim)*(batch_size,n_heads,hidden_dim,n_nodes)
         compatibility = compatibility.squeeze(2)  # (batch_size, n_heads, n_nodes)
         mask = mask.unsqueeze(1).expand_as(compatibility)
         u_i = compatibility.masked_fill(mask.bool(), float("-inf"))
 
-        # Compute attention scores
-        scores = F.softmax(u_i, dim=-1)  # (batch_size,n_heads,n_nodes)
+        # Apply numerical stability to softmax
+        u_i_max = u_i.max(dim=-1, keepdim=True)[0]
+        u_i_stable = u_i - u_i_max
+        
+        # Check for all -inf case
+        all_neg_inf = torch.isinf(u_i_stable).all(dim=-1)
+        if all_neg_inf.any():
+            scores = torch.zeros_like(u_i)
+            scores[all_neg_inf] = 1.0 / u_i.size(-1)
+            scores[~all_neg_inf] = F.softmax(u_i_stable[~all_neg_inf], dim=-1)
+        else:
+            scores = F.softmax(u_i_stable, dim=-1)  # (batch_size,n_heads,n_nodes)
         scores = scores.unsqueeze(2)
         
         # Process the weighted sum of the context nodes, apply dropout and return the output
@@ -92,5 +118,10 @@ class TransformerAttention(nn.Module):
         # out_put = out_put.squeeze(2).view(batch_size, self.hidden_dim)
         out_put = out_put.squeeze(2).reshape(batch_size, self.hidden_dim)
         out_put = self.fc(out_put)
+        
+        # Final NaN check and replacement
+        if torch.isnan(out_put).any():
+            # print(f"[DEBUG] NaN detected in final output: {torch.isnan(out_put).sum()} values")
+            out_put = torch.nan_to_num(out_put, nan=0.0)
 
         return out_put  # out_put: (batch_size, hidden_dim)

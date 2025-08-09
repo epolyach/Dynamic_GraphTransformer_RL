@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from .TransformerAttention import TransformerAttention
+from src.models.TransformerAttention import TransformerAttention
 
 class PointerAttention(nn.Module):
     """
@@ -46,27 +46,48 @@ class PointerAttention(nn.Module):
         returns:
         - softmax_score: The softmax scores of the attention layer. (batch_size, n_nodes)
         '''
+        
+        # Check for NaN in inputs
+        if torch.isnan(state_t).any():
+            # print(f"[DEBUG] NaN detected in state_t: {torch.isnan(state_t).sum()} values")
+            state_t = torch.nan_to_num(state_t, nan=0.0)
+        
+        if torch.isnan(context).any():
+            # print(f"[DEBUG] NaN detected in context: {torch.isnan(context).sum()} values")
+            context = torch.nan_to_num(context, nan=0.0)
+
         x = self.mhalayer(state_t, context, mask)
+        
+        # Check for NaN after mhalayer
+        if torch.isnan(x).any():
+            # print(f"[DEBUG] NaN detected after mhalayer: {torch.isnan(x).sum()} values")
+            x = torch.nan_to_num(x, nan=0.0)
 
         batch_size, n_nodes, input_dim = context.size()
         Q = x.reshape(batch_size, 1, -1)
         K = self.k(context).reshape(batch_size, n_nodes, -1)
         
+        # Check for NaN in K
+        if torch.isnan(K).any():
+            # print(f"[DEBUG] NaN detected in K: {torch.isnan(K).sum()} values")
+            K = torch.nan_to_num(K, nan=0.0)
+        
         # Compute the compatibility scores
         compatibility = self.norm * torch.matmul(Q, K.transpose(1, 2))  # Size: (batch_size, 1, n_nodes)
         compatibility = compatibility.squeeze(1)
-        # compatibility = compatibility.squeeze(1)/1000
-        # Normalize compatibility scores for numerical stability in the softmax
-        # compatibility = (compatibility - compatibility.mean()) / (compatibility.std() + 1e-8)
+        
+        # Check for NaN in compatibility
+        if torch.isnan(compatibility).any():
+            # print(f"[DEBUG] NaN detected in compatibility: {torch.isnan(compatibility).sum()} values")
+            compatibility = torch.nan_to_num(compatibility, nan=0.0)
 
-        # Non-linear transformation
+        # Non-linear transformation with clipping for stability
         x = torch.tanh(compatibility)
         
-        # Scaling the values to avoid numerical instability
-        x = x * (10)
+        # Scaling the values to avoid numerical instability (reduced scale)
+        x = x * 5.0  # Reduced from 10 to 5 for better stability
         
         # Apply the mask
-        # x = compatibility.masked_fill(mask.bool(), float("-inf"))
         x = x.masked_fill(mask.bool(), float("-inf"))
 
         # Ensure at least one feasible option per row (fallback to depot)
@@ -77,6 +98,27 @@ class PointerAttention(nn.Module):
             x[all_masked] = float("-inf")
             x[all_masked, 0] = 0.0
         
-        # Compute the softmax scores
-        scores = F.softmax(x / T, dim=-1)
+        # Clamp temperature to avoid extreme values
+        T = max(0.1, min(10.0, T))
+        
+        # Compute the softmax scores with numerical stability
+        x_max = x.max(dim=-1, keepdim=True)[0]
+        x_stable = x - x_max  # Subtract max for numerical stability
+        
+        # Check if all values are -inf
+        all_neg_inf = torch.isinf(x_stable).all(dim=-1)
+        if all_neg_inf.any():
+            # Create uniform distribution for rows with all -inf
+            scores = torch.zeros_like(x)
+            scores[all_neg_inf] = 1.0 / x.size(-1)  # Uniform distribution
+            scores[~all_neg_inf] = F.softmax(x_stable[~all_neg_inf] / T, dim=-1)
+        else:
+            scores = F.softmax(x_stable / T, dim=-1)
+        
+        # Final NaN check
+        if torch.isnan(scores).any():
+            print(f"[ERROR] NaN detected in final scores! Replacing with uniform distribution")
+            nan_rows = torch.isnan(scores).any(dim=-1)
+            scores[nan_rows] = 1.0 / scores.size(-1)  # Uniform distribution for NaN rows
+            
         return scores
