@@ -2,39 +2,39 @@ import torch
 
 def update_mask(demand, capacity, selected, mask, i):
     """
-    Update mask for CVRP with proper customer completion enforcement
+    Simple CVRP masking: visit all customers, use depot to reset capacity when needed
     """
-    go_depot = selected.squeeze(-1).eq(0)
+    # Mark selected node as visited
     mask1 = mask.scatter(1, selected.expand(mask.size(0), -1), 1)
 
-    # If not going to depot, prevent depot visit temporarily
-    if (~go_depot).any():
-        mask1[(~go_depot).nonzero(),0] = 0
-
-    # CRITICAL FIX: Only allow termination if ALL customers are visited
-    # Count customers visited (exclude depot at index 0)
+    # Apply capacity constraints - mask customers that exceed remaining capacity  
+    remaining_capacity = capacity.squeeze(-1).unsqueeze(1)  # [batch_size, 1]
+    customer_demands = demand[:, 1:]  # [batch_size, n_customers]
+    capacity_exceeded = (customer_demands > remaining_capacity).float()
+    
+    # Mask customers that exceed capacity
+    mask1[:, 1:] = torch.clamp(mask1[:, 1:] + capacity_exceeded, 0, 1)
+    
+    # Count customers visited and remaining
     customers_visited = mask1[:, 1:].sum(dim=1)  # [batch_size]
     total_customers = demand.size(1) - 1  # Exclude depot
     all_customers_visited = (customers_visited >= total_customers)
     
-    # If not all customers visited, force depot to be masked (prevent early termination)
-    depot_mask = (~all_customers_visited).float()
-    mask1[:, 0] = mask1[:, 0] + depot_mask
+    # Check if any unvisited customers can be served with current capacity
+    unvisited_mask = (1 - mask1[:, 1:])  # 1 for unvisited customers
+    servable_mask = (1 - capacity_exceeded)  # 1 for customers within capacity
+    unvisited_and_servable = (unvisited_mask * servable_mask).sum(dim=1) > 0
     
-    # Apply capacity constraints: mask customers that exceed remaining capacity
-    # But NEVER mask ALL remaining customers - always keep at least depot available
-    remaining_capacity = capacity.squeeze(-1).unsqueeze(1)  # [batch_size, 1]
-    customer_demands = demand[:, 1:]  # [batch_size, n_customers]
+    # Depot masking rule:
+    # - Allow depot if: all customers visited OR no more customers can be served
+    # - Block depot if: customers remain and some can be served
+    should_block_depot = ~all_customers_visited & unvisited_and_servable
     
-    # Capacity mask for customers only
-    capacity_exceeded = (customer_demands > remaining_capacity).float()
+    # Apply depot blocking (but never block depot on first step)
+    if i > 0:
+        mask1[:, 0] = mask1[:, 0] + should_block_depot.float()
     
-    # Apply capacity mask to customers (indices 1:)
-    mask1[:, 1:] = torch.clamp(mask1[:, 1:] + capacity_exceeded, 0, 1)
-    
-    # Final mask
-    mask = mask1.clone()
-    
+    mask = mask1.clone()  
     return mask.detach(), mask1.detach()
 
 def update_state(demand, dynamic_capacity, selected, base_capacity):
