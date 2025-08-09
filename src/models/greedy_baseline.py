@@ -75,7 +75,8 @@ class GreedyGraphTransformerBaseline(nn.Module):
             # Apply masks
             visited_mask = visited.clone(); visited_mask[:, 0] = False
             scores.masked_fill_(visited_mask, -float('inf'))
-            capacity_mask = demands e remaining_capacity.unsqueeze(1); capacity_mask[:, 0] = False
+            capacity_mask = demands > remaining_capacity.unsqueeze(1)
+            capacity_mask[:, 0] = False
             scores.masked_fill_(capacity_mask, -float('inf'))
             
             # Select next node
