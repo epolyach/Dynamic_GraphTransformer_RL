@@ -27,10 +27,10 @@ pip install -r requirements.txt
 ### Run Comparative Study
 ```bash
 # CPU version (auto-detects CUDA if available)
-python run_comparative_study.py
+python src/experiments/run_comparative_study_cpu.py
 
 # GPU version (explicit GPU optimization)
-python run_comparative_study_gpu.py --customers 15 --epochs 10 --instances 800 --batch 8
+python src/experiments/run_comparative_study_gpu.py --customers 15 --epochs 10 --instances 800 --batch 8
 ```
 
 ## ⚖️ CPU vs GPU vs AMP Comparative Runs
@@ -197,16 +197,16 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 # If CUDA issues on GPU
 export CUDA_VISIBLE_DEVICES=0
-python run_comparative_study_gpu.py --device cuda
+python src/experiments/run_comparative_study_gpu.py --device cuda
 ```
 
 ### Memory Issues
 ```bash
 # Reduce batch size for large problems
-python run_comparative_study_gpu.py --batch 4 --customers 10
+python src/experiments/run_comparative_study_gpu.py --batch 4 --customers 10
 
 # Use CPU version for very large instances
-python run_comparative_study.py
+python src/experiments/run_comparative_study_cpu.py
 ```
 
 ### Performance Issues

@@ -119,3 +119,10 @@ docs/build/
 # Configuration overrides
 configs/local/
 configs/private/
+# Artifacts
+results/
+# Plots
+utils/plots/*.png
+# Python cache
+*.pyc
+.ipynb_checkpoints/
