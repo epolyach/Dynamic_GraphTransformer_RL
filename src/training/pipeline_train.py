@@ -242,8 +242,13 @@ def train_pipeline(
                 val_costs.append(costs.detach().cpu())
                 # Track best route in this batch
                 # Reconstruct route with depot at start and end
-                depot = torch.zeros(actions.size(0), 1, dtype=torch.long, device=actions.device)
-                with_depot = torch.cat([depot, actions, depot], dim=1)
+                # Ensure actions has shape [B, T] of long indices
+                act = actions
+                if act.dim() == 3 and act.size(-1) == 1:
+                    act = act.squeeze(-1)
+                act = act.long()
+                depot = torch.zeros(act.size(0), 1, dtype=torch.long, device=act.device)
+                with_depot = torch.cat([depot, act, depot], dim=1)
                 for b in range(with_depot.size(0)):
                     route = with_depot[b].tolist()
                     cost_val = float(costs[b].item())
