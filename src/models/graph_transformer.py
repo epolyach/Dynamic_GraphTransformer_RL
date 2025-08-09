@@ -119,31 +119,44 @@ class MultiHeadGraphAttention(nn.Module):
         K = self.w_k(x).view(batch_size, num_nodes, self.num_heads, self.d_k).transpose(1, 2)
         V = self.w_v(x).view(batch_size, num_nodes, self.num_heads, self.d_k).transpose(1, 2)
         
-        # Scaled dot-product attention
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
+        # Prefer optimized SDPA when available (enables FlashAttention on supported GPUs)
+        use_sdpa = hasattr(F, 'scaled_dot_product_attention')
+        if use_sdpa:
+            attn_mask = None
+            if mask is not None:
+                # Current convention: mask==1 means allowed, 0 means disallowed
+                # SDPA expects a boolean mask where True entries are masked
+                attn_mask = (mask == 0).unsqueeze(1).expand(-1, self.num_heads, -1, -1)
+            # Add edge bias by folding into scores via attn_mask is not supported directly; fall back to additive bias
+            if edge_weights is not None:
+                # SDPA supports additive mask via float mask in newer torch; as a portable approach, pre-add bias by shifting K via bias trick is complex.
+                # Instead, fall back to manual path when edge bias is requested.
+                use_sdpa = False
         
-        # Add edge weight bias if provided
+        if use_sdpa:
+            out = F.scaled_dot_product_attention(
+                Q, K, V,
+                attn_mask=attn_mask,
+                dropout_p=self.dropout.p if self.training else 0.0,
+                is_causal=False
+            )  # [B, H, N, d_k]
+            out = out.transpose(1, 2).contiguous().view(batch_size, num_nodes, self.d_model)
+            out = self.w_o(out)
+            return out
+        
+        # Manual scaled dot-product attention (with optional edge bias)
+        scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale
         if edge_weights is not None:
-            # Expand edge weights to match attention heads
             edge_bias = edge_weights.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
             scores = scores + edge_bias
-        
-        # Apply mask if provided
         if mask is not None:
             mask = mask.unsqueeze(1).expand(-1, self.num_heads, -1, -1)
             scores = scores.masked_fill(mask == 0, -1e9)
-        
-        # Softmax and dropout
         attn_weights = F.softmax(scores, dim=-1)
         attn_weights = self.dropout(attn_weights)
-        
-        # Apply attention to values
         out = torch.matmul(attn_weights, V)
-        
-        # Concatenate heads and apply output projection
         out = out.transpose(1, 2).contiguous().view(batch_size, num_nodes, self.d_model)
         out = self.w_o(out)
-        
         return out
 
 

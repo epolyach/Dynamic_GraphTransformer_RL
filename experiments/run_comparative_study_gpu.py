@@ -40,10 +40,10 @@ def set_seed(seed: int):
 
 
 def make_instance(num_nodes: int, capacity: float, device: torch.device) -> Data:
-    # Coordinates in unit square [0, 1] for correct scale of distances
-    coords = torch.rand(num_nodes, 2, device=device).float()
-    # Integer demands in {1,2,3} for customers; depot demand = 0
-    demands = torch.randint(1, 4, (num_nodes, 1), device=device, dtype=torch.int64).float()
+    # Coordinates in unit square on a discrete 1..100 grid, divided by 100
+    coords = (torch.randint(1, 101, (num_nodes, 2), device=device, dtype=torch.int64).float() / 100.0)
+    # Customer demands sampled from {0.1, 0.2, ..., 1.0}; depot demand = 0
+    demands = (torch.randint(1, 11, (num_nodes, 1), device=device, dtype=torch.int64).float() / 10.0)
     demands[0] = 0.0  # depot demand = 0
 
     # fully connected directed edges
@@ -288,7 +288,7 @@ def generate_plots(df: pd.DataFrame, out_dir: Path, problem_sizes: List[int]):
 
 def main():
     parser = argparse.ArgumentParser(description='GPU Comparative Study for 4 Models (CVRP)')
-    parser.add_argument('--device', type=str, default='auto', help='cuda/mps/cpu/auto')
+    # Enforce CUDA-only execution; no device flag is accepted here
     parser.add_argument('--problem_sizes', type=int, nargs='+', default=[20, 50], help='List of node counts to test')
     parser.add_argument('--instances', type=int, default=50, help='Number of instances per problem size')
     parser.add_argument('--runs', type=int, default=1, help='Runs per instance (kept 1 for speed)')
@@ -298,22 +298,15 @@ def main():
     parser.add_argument('--amp', action='store_true', help='Enable AMP (autocast) for GPU inference')
     args = parser.parse_args()
 
-    # Device selection
-    if args.device == 'auto':
-        if torch.cuda.is_available():
-            device = torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            device = torch.device('mps')
-        else:
-            device = torch.device('cpu')
-    else:
-        device = torch.device(args.device)
+    # Enforce CUDA GPU; no fallbacks
+    if not torch.cuda.is_available():
+        raise RuntimeError('CUDA GPU is required for experiments/run_comparative_study_gpu.py; no CPU/MPS fallback.')
+    device = torch.device('cuda')
 
     print(f"Device: {device}")
     exp_t0 = time.perf_counter()
     df = run_experiment(device, args.problem_sizes, args.instances, args.runs, args.seed, args.capacity, use_amp=args.amp)
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+    torch.cuda.synchronize()
     exp_t1 = time.perf_counter()
     print(f"Total experiment time: {exp_t1 - exp_t0:.2f}s")
 

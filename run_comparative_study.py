@@ -1808,82 +1808,84 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
     logger.info(f"📊 Comparison plots saved to {out_path}")
     
-    # Create detailed performance table
-    create_performance_table(results, training_times, param_counts, logger)
+    # Create detailed performance table (per-customer)
+    create_performance_table(results, training_times, param_counts, logger, config['num_customers'])
 
-def create_formatted_results_table(results_dict, training_times, param_counts, naive_cost_per_customer):
-    """
-    Create a nicely formatted comparison table with proper alignment and 3-digit precision.
-    
-    Args:
-        results_dict: Dictionary with model names as keys and metrics as values
-        training_times: Dictionary with model training times
-        param_counts: List of parameter counts for each model
-        naive_cost_per_customer: Naive baseline cost per customer for improvement calculation
-    
-    Returns:
-        str: Formatted table string
-    """
+def create_formatted_results_table(results_dict, training_times, param_counts, num_customers):
+    """Create a nicely aligned table with per-customer costs."""
     if not results_dict:
         return "No results to display"
     
     model_names = list(results_dict.keys())
     
-    # Calculate column widths dynamically
-    model_width = max(len("Model"), max(len(model) for model in model_names))
+    # Precompute per-customer values
+    def per_cust(x):
+        return float(x) / max(1, num_customers)
+    
+    train_pc = {m: per_cust(results_dict[m]['train_costs'][-1]) for m in model_names}
+    val_pc = {m: per_cust(results_dict[m]['final_val_cost']) for m in model_names}
+    best_val_pc = {}
+    std_val_pc = {}
+    for m in model_names:
+        vals = results_dict[m].get('val_costs', [])
+        if vals:
+            best_val_pc[m] = per_cust(min(vals))
+            std_val_pc[m] = per_cust(np.std(vals))
+        else:
+            best_val_pc[m] = float('nan')
+            std_val_pc[m] = float('nan')
+    
+    # Column widths
+    model_width = max(len("Model"), max(len(m) for m in model_names))
     params_width = max(len("Parameters"), max(len(f"{param_counts[i]:,}") for i in range(len(model_names))))
-    time_width = max(len("Time (s)") - 1, max(len(f"{training_times[model]:.1f}s") for model in model_names))  # Remove 1 space
-    train_cost_width = max(len("Train Cost"), max(len(f"{results_dict[model]['train_costs'][-1]:.3f}") for model in model_names))
-    val_cost_width = max(len("Val Cost"), max(len(f"{results_dict[model]['final_val_cost']:.3f}") for model in model_names))
-    val_per_cust_width = max(len("Val/Cust"), max(len(f"{results_dict[model]['final_val_cost']/20:.3f}") for model in model_names))
-    improvement_width = max(len("Improv %") - 1, max(len(f"{(1 - (results_dict[model]['final_val_cost']/20)/naive_cost_per_customer)*100:.2f}%") for model in model_names))  # Remove 1 space
+    time_width = max(len("Time (s)"), max(len(f"{training_times[m]:.1f}") for m in model_names))
+    train_width = max(len("Train/Cust"), max(len(f"{train_pc[m]:.3f}") for m in model_names))
+    val_width = max(len("Val/Cust"), max(len(f"{val_pc[m]:.3f}") for m in model_names))
+    best_width = max(len("Best Val/Cust"), max(len(f"{best_val_pc[m]:.3f}") for m in model_names))
+    std_width = max(len("Std (Val/Cust)"), max(len(f"{std_val_pc[m]:.3f}") for m in model_names))
     
-    # Create table components - add 1 dash to time and improvement columns for proper alignment
-    header = f"| {'Model':<{model_width}} | {'Parameters':>{params_width}} | {'Time (s)':>{time_width}} | {'Train Cost':>{train_cost_width}} | {'Val Cost':>{val_cost_width}} | {'Val/Cust':>{val_per_cust_width}} | {'Improv %':>{improvement_width}} |"
-    separator = f"|{'-'*(model_width+2)}|{'-'*(params_width+2)}|{'-'*(time_width+3)}|{'-'*(train_cost_width+2)}|{'-'*(val_cost_width+2)}|{'-'*(val_per_cust_width+2)}|{'-'*(improvement_width+3)}|"
+    header = f"| {'Model':<{model_width}} | {'Parameters':>{params_width}} | {'Time (s)':>{time_width}} | {'Train/Cust':>{train_width}} | {'Val/Cust':>{val_width}} | {'Best Val/Cust':>{best_width}} | {'Std (Val/Cust)':>{std_width}} |"
+    separator = f"|{'-'*(model_width+2)}|{'-'*(params_width+2)}|{'-'*(time_width+2)}|{'-'*(train_width+2)}|{'-'*(val_width+2)}|{'-'*(best_width+2)}|{'-'*(std_width+2)}|"
     
-    # Build table rows
-    table_lines = [header, separator]
-    
-    for i, model_name in enumerate(model_names):
-        metrics = results_dict[model_name]
-        val_per_customer = metrics['final_val_cost'] / 20
-        improvement = (1 - val_per_customer / naive_cost_per_customer) * 100
-        
-        row = f"| {model_name:<{model_width}} | {param_counts[i]:>{params_width},} | {training_times[model_name]:>{time_width}.1f}s | {metrics['train_costs'][-1]:>{train_cost_width}.3f} | {metrics['final_val_cost']:>{val_cost_width}.3f} | {val_per_customer:>{val_per_cust_width}.3f} | {improvement:>{improvement_width}.2f}% |"
-        table_lines.append(row)
-    
-    return "\n".join(table_lines)
+    lines = [header, separator]
+    for i, m in enumerate(model_names):
+        line = (
+            f"| {m:<{model_width}} | {param_counts[i]:>{params_width},} | {training_times[m]:>{time_width}.1f} | "
+            f"{train_pc[m]:>{train_width}.3f} | {val_pc[m]:>{val_width}.3f} | {best_val_pc[m]:>{best_width}.3f} | {std_val_pc[m]:>{std_width}.3f} |"
+        )
+        lines.append(line)
+    return "\n".join(lines)
 
-def create_performance_table(results, training_times, param_counts, logger):
-    """Create detailed performance comparison table"""
-    
-    # Calculate naive baseline cost per customer from config
-    config_num_customers = 20  # From the global config
-    
-    # Use validation set naive baseline from the validation function
-    # For now, estimate from the validation results (we know it's around 0.2225)
-    naive_cost_per_customer = 0.2225  # This should match the validation baseline
+def create_performance_table(results, training_times, param_counts, logger, num_customers):
+    """Create detailed performance comparison table with per-customer costs"""
     
     data = []
     model_names = list(results.keys())
     
     for i, model_name in enumerate(model_names):
         result = results[model_name]
+        # Compute normalized (per-customer) costs
+        final_train_per_customer = float(result['train_costs'][-1]) / max(1, num_customers)
+        final_val_per_customer = float(result['final_val_cost']) / max(1, num_customers)
+        best_val_cost = float(min(result['val_costs'])) if result.get('val_costs') else float('nan')
+        best_val_per_customer = best_val_cost / max(1, num_customers)
+        val_std = float(np.std(result['val_costs'])) if result.get('val_costs') else float('nan')
+        val_std_per_customer = val_std / max(1, num_customers)
+        
         data.append({
             'Model': model_name,
             'Parameters': f"{param_counts[i]:,}",
             'Training Time (s)': f"{training_times[model_name]:.1f}",
-            'Final Train Cost': f"{result['train_costs'][-1]:.3f}",
-            'Final Val Cost': f"{result['final_val_cost']:.3f}",
-            'Best Val Cost': f"{min(result['val_costs']):.3f}",
-            'Cost Std': f"{np.std(result['val_costs']):.3f}",
+            'Train/Cust': f"{final_train_per_customer:.3f}",
+            'Val/Cust': f"{final_val_per_customer:.3f}",
+            'Best Val/Cust': f"{best_val_per_customer:.3f}",
+            'Std (Val/Cust)': f"{val_std_per_customer:.3f}",
             'Convergence': f"{len(result['train_costs'])}/25"
         })
     
     df = pd.DataFrame(data)
     
-    # Save to CSV
+    # Save to CSV (per-customer values only)
     args = parse_args()
     suffix = f"_{args.plot_suffix}" if args.plot_suffix else ""
     csv_path = f'utils/plots/comparative_results{suffix}.csv'
@@ -1896,7 +1898,7 @@ def create_performance_table(results, training_times, param_counts, logger):
     logger.info("\n")
     
     # Create and print the nicely formatted table
-    formatted_table = create_formatted_results_table(results, training_times, param_counts, naive_cost_per_customer)
+    formatted_table = create_formatted_results_table(results, training_times, param_counts, num_customers)
     print(formatted_table)
     logger.info("\n")
 
