@@ -174,7 +174,7 @@ def train_pipeline(
 
     model = get_model(model_name, device)
     optimizer = Adam(model.parameters(), lr=lr)
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == 'cuda')
+    scaler = torch.amp.GradScaler('cuda', enabled=use_amp and device.type == 'cuda')
 
     # Prepare deterministic per-instance seeds list
     inst_seeds = [data_seed + i for i in range(instances)]
