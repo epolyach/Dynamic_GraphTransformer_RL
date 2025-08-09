@@ -206,18 +206,23 @@ def train_pipeline(
                 from torch.cuda.amp import autocast
                 with autocast():
                     actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
-                    costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)
+                    costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
                     baseline = costs.mean().detach()
-                    loss = ((costs - baseline).detach() * logp).mean()
+                    advantages = (costs - baseline).detach()  # [B]
+                    # Aggregate log-probs across steps to [B]
+                    logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
+                    loss = (advantages * logp_sum).mean()
                 scaler.scale(loss).backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
-                costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)
+                costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
                 baseline = costs.mean().detach()
-                loss = ((costs - baseline).detach() * logp).mean()
+                advantages = (costs - baseline).detach()  # [B]
+                logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
+                loss = (advantages * logp_sum).mean()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
