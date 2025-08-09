@@ -68,6 +68,14 @@ class PointerAttention(nn.Module):
         # Apply the mask
         # x = compatibility.masked_fill(mask.bool(), float("-inf"))
         x = x.masked_fill(mask.bool(), float("-inf"))
+
+        # Ensure at least one feasible option per row (fallback to depot)
+        all_masked = torch.isinf(x).all(dim=-1)
+        if all_masked.any():
+            # Set all to -inf then depot (index 0) to 0 for those rows
+            x = x.clone()
+            x[all_masked] = float("-inf")
+            x[all_masked, 0] = 0.0
         
         # Compute the softmax scores
         scores = F.softmax(x / T, dim=-1)
