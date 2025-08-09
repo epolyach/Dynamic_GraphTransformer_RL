@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import Linear, BatchNorm1d as BatchNorm
-from src_batch.encoder.EdgeGATConv import EdgeGATConv
+from .EdgeGATConv import EdgeGATConv
 
 
 # Encoder that includes batch normalization and a residual connection around the custom GAT layer.
