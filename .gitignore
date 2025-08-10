@@ -126,3 +126,4 @@ utils/plots/*.png
 # Python cache
 *.pyc
 .ipynb_checkpoints/
+results_train/
