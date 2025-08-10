@@ -63,10 +63,10 @@ def make_instance(num_nodes: int, capacity: float, device: torch.device, seed: i
         g = torch.Generator(device=device)
         g.manual_seed(seed)
         coords = (torch.randint(1, 101, (num_nodes, 2), generator=g, device=device, dtype=torch.int64).float() / 100.0)
-        demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float() / 10.0)
+        demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float())
     else:
         coords = (torch.randint(1, 101, (num_nodes, 2), device=device, dtype=torch.int64).float() / 100.0)
-        demands = (torch.randint(1, 11, (num_nodes, 1), device=device, dtype=torch.int64).float() / 10.0)
+        demands = torch.randint(1, 11, (num_nodes, 1), device=device, dtype=torch.int64).float()
     # Customer demands sampled from {0.1, 0.2, ..., 1.0}; depot demand = 0
     demands[0] = 0.0
 
@@ -156,55 +156,8 @@ def eval_greedy_baseline_on_val(customers: int, capacity: float, seed: int, inst
             t0 = time.perf_counter()
             actions, _ = model(batch_data, n_steps=n_steps, greedy=True)
             t1 = time.perf_counter()
-            # Compute cost from feasible routes per instance
-            B = batch_data.num_graphs
-            N = (batch_data.x.size(0) // B)
-            act = actions
-            if act.dim() == 3 and act.size(-1) == 1:
-                act = act.squeeze(-1)
-            act = act.long()
-            lengths = []
-            x_np = batch_data.x.detach().cpu().numpy().reshape(B, N, 2)
-            d_np = batch_data.demand.detach().cpu().numpy().reshape(B, N)
-            import numpy as _np
-            for bi in range(B):
-                coords = x_np[bi]
-                dem = d_np[bi]
-                served = set(); rem = float(capacity)
-                route = [0]
-                for idx in act[bi].tolist():
-                    if idx == 0:
-                        if route[-1] != 0:
-                            route.append(0); rem = float(capacity)
-                        continue
-                    if idx <= 0 or idx >= N or idx in served:
-                        continue
-                    dd = float(dem[idx])
-                    if dd <= rem:
-                        route.append(idx); served.add(idx); rem -= dd
-                    else:
-                        if route[-1] != 0:
-                            route.append(0)
-                        rem = float(capacity)
-                        if dd <= rem:
-                            route.append(idx); served.add(idx); rem -= dd
-                for j in range(1, N):
-                    if j in served: continue
-                    if route[-1] != 0: route.append(0)
-                    rem = float(capacity)
-                    if float(dem[j]) <= rem:
-                        route.append(j); served.add(j); rem -= float(dem[j])
-                if route[-1] != 0:
-                    route.append(0)
-                L = 0.0
-                for k in range(len(route)-1):
-                    a,b = route[k], route[k+1]
-                    dx = coords[a,0]-coords[b,0]; dy = coords[a,1]-coords[b,1]
-                    L += float((_np.sqrt(dx*dx+dy*dy)))
-                lengths.append(L)
-            import torch as _t
-            c = _t.tensor(lengths, dtype=_t.float32)
-            costs.append(c)
+            c = euclidean_cost(batch_data.x, actions, batch_data)
+            costs.append(c.detach().cpu())
             times.append(t1 - t0)
     cost_tensor = torch.cat(costs) if costs else torch.tensor([], dtype=torch.float32)
     avg_cost_per_customer = float(cost_tensor.mean().item()) / max(1, customers)
@@ -279,8 +232,107 @@ def generate_plots(df: pd.DataFrame, out_plot: Path):
     print(f"Saved plot to {out_plot}")
 
 
-from src.experiments.comprehensive_plots import load_comprehensive_data_for_plots, create_comprehensive_training_plots
+def parse_routes_into_tours(route: List[int], demands: np.ndarray) -> List[Dict]:
+    """Parse a route into individual tours, identifying roundtrips vs multi-customer tours."""
+    tours = []
+    current_tour = []
+    tour_demand = 0.0
+    
+    for i, node in enumerate(route):
+        if node == 0:  # depot
+            if current_tour:  # end of a tour
+                # Check if this was a roundtrip (only one customer)
+                is_roundtrip = len(current_tour) == 1
+                tours.append({
+                    'nodes': [0] + current_tour + [0],
+                    'demand': tour_demand,
+                    'is_roundtrip': is_roundtrip
+                })
+                current_tour = []
+                tour_demand = 0.0
+        else:  # customer
+            if node not in current_tour:  # avoid duplicates
+                current_tour.append(node)
+                tour_demand += demands[node]
+    
+    # Handle case where route doesn't end at depot
+    if current_tour:
+        is_roundtrip = len(current_tour) == 1
+        tours.append({
+            'nodes': [0] + current_tour + [0],
+            'demand': tour_demand,
+            'is_roundtrip': is_roundtrip
+        })
+    
+    return tours
 
+
+
+def validate_cvrp_route(route: List[int], demands: np.ndarray, capacity: float, n_customers: int) -> Dict:
+    """Comprehensive CVRP route validation function."""
+    result = {'valid': True, 'errors': [], 'warnings': [], 'stats': {}}
+    
+    if not route or route[0] != 0 or route[-1] != 0:
+        result['valid'] = False
+        result['errors'].append("Route must start and end at depot")
+        return result
+    
+    # Check all customers served exactly once
+    customers_in_route = [node for node in route if node != 0]
+    unique_customers = set(customers_in_route)
+    expected_customers = set(range(1, n_customers + 1))
+    
+    if len(customers_in_route) != len(unique_customers):
+        result['valid'] = False
+        result['errors'].append("Duplicate customers served")
+    
+    if unique_customers != expected_customers:
+        missing = expected_customers - unique_customers
+        extra = unique_customers - expected_customers
+        if missing:
+            result['valid'] = False
+            result['errors'].append(f"Missing customers: {missing}")
+        if extra:
+            result['valid'] = False
+            result['errors'].append(f"Invalid customers: {extra}")
+    
+    # Capacity validation - split route into tours
+    tours = []
+    current_tour = []
+    
+    for node in route:
+        if node == 0 and current_tour:
+            tours.append(current_tour)
+            current_tour = []
+        elif node != 0:
+            current_tour.append(node)
+    
+    if current_tour:
+        tours.append(current_tour)
+    
+    capacity_violations = []
+    for tour_idx, tour in enumerate(tours):
+        tour_demand = int(sum(demands[customer] for customer in tour))  # Integer sum
+        if tour_demand > int(capacity):  # Exact integer comparison
+            capacity_violations.append({
+                'tour': tour_idx + 1,
+                'nodes': tour,
+                'demand': tour_demand,
+                'violation': tour_demand - capacity
+            })
+    
+    if capacity_violations:
+        result['valid'] = False
+        result['errors'].append(f"Capacity violations in {len(capacity_violations)} tours")
+        result['capacity_violations'] = capacity_violations
+    
+    result['stats'] = {
+        'num_tours': len(tours),
+        'depot_visits': route.count(0),
+        'tour_demands': [sum(demands[c] for c in tour) for tour in tours]
+    }
+    
+    return result
 
 
 def main():
@@ -291,7 +343,7 @@ def main():
     parser.add_argument('--instances', type=int, default=800, help='Instances for training (unified pipeline)')
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--batch', type=int, default=32)
-    parser.add_argument('--capacity', type=float, default=3.0)
+    parser.add_argument('--capacity', type=float, default=30.0)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--seed', type=int, default=12345, help='Base seed for deterministic instances')
     parser.add_argument('--recalculate_rl_weights', action='store_true', help='Force retrain RL models (ignore cache)')
@@ -373,215 +425,19 @@ def main():
     df.to_csv(out_csv, index=False)
     print(f"Saved results table to {out_csv}")
 
-    # Create comprehensive training plots similar to Ver1
-    training_results = load_comprehensive_data_for_plots(df, base_out)
-    if training_results:
-        comprehensive_plot_path = project_root / "utils/plots/comparative_study_results.png"
-        create_comprehensive_training_plots(training_results, comprehensive_plot_path, args.customers)
-    else:
-        print("[orchestrator] No training results found for comprehensive plotting")
-
-    out_plot = project_root / "utils/plots/simple_comparison.png"
+    out_plot = project_root / args.out_plot
     generate_plots(df, out_plot)
 
-    # Apply all requested models (except naive_baseline) to a single deterministic test instance and save separate route plots
-
-    # Helpers: turn raw actions into a feasible CVRP route and validate
-    def actions_to_indices(actions):
-            act = actions.squeeze()
-            if act.dim() > 1:
-                act = act[:, 0]
-            return [int(i) for i in act.tolist()]
-
-    def build_feasible_route(idx_seq, demands_tensor, capacity_val):
-            d = demands_tensor.view(-1).detach().cpu().numpy()
-            n = d.shape[0]
-            served = set()
-            route = [0]
-            rem = float(capacity_val)
-            for idx in idx_seq:
-                if idx == 0:
-                    if route[-1] != 0:
-                        route.append(0)
-                        rem = float(capacity_val)
-                    continue
-                if idx <= 0 or idx >= n:
-                    continue
-                if idx in served:
-                    # skip duplicates
-                    continue
-                dem = float(d[idx])
-                if dem <= rem:
-                    route.append(idx)
-                    served.add(idx)
-                    rem -= dem
-                else:
-                    # return to depot, then serve if fits
-                    if route[-1] != 0:
-                        route.append(0)
-                    rem = float(capacity_val)
-                    if dem <= rem:
-                        route.append(idx)
-                        served.add(idx)
-                        rem -= dem
-            # Serve any remaining customers by greedy fill with depot resets
-            remaining = [i for i in range(1, n) if i not in served]
-            for idx in remaining:
-                dem = float(d[idx])
-                if route[-1] != 0:
-                    route.append(0)
-                rem = float(capacity_val)
-                if dem <= rem:
-                    route.append(idx)
-                    served.add(idx)
-                    rem -= dem
-            if route[-1] != 0:
-                route.append(0)
-            # compress consecutive depots
-            comp = [route[0]]
-            for x in route[1:]:
-                if not (x == 0 and comp[-1] == 0):
-                    comp.append(x)
-            return comp
-
-    def validate_route(route, n_customers, demands_tensor=None, capacity_val=None):
-            # Ensure all 1..n served exactly once
-            seen = [i for i in route if i != 0]
-            ok_once = len(seen) == len(set(seen)) == n_customers
-            no_dd = all(not (route[i] == 0 and route[i+1] == 0) for i in range(len(route)-1))
-            if not (ok_once and no_dd):
-                return False
-            # Capacity per tour if demands provided
-            if demands_tensor is not None and capacity_val is not None:
-                d = demands_tensor.view(-1).detach().cpu().numpy()
-                cur = []
-                for v in route:
-                    if v == 0:
-                        if cur:
-                            dm = float(sum(d[i] for i in cur))
-                            if dm > float(capacity_val) + 1e-9:
-                                return False
-                            cur = []
-                    else:
-                        cur.append(v)
-                if cur:
-                    dm = float(sum(d[i] for i in cur))
-                    if dm > float(capacity_val) + 1e-9:
-                        return False
-            return True
-    
+    # Apply models to test instance and generate final annotated plots
     try:
-        from src.models import StaticRLGraphTransformer, DynamicGraphTransformerModel, PointerRLModel
-        from src.utils.RL.euclidean_cost import euclidean_cost
-        from torch_geometric.data import Data
-
-        print("[orchestrator] Applying trained models to a test instance and saving route plots")
-        # Build deterministic test instance
-        customers = args.customers
-        n = customers + 1
-        device = torch.device('cpu')
-        g = torch.Generator(device=device); g.manual_seed(args.test_seed)
-        coords = (torch.randint(1, 101, (n, 2), generator=g, device=device, dtype=torch.int64).float() / 100.0)
-        demands = (torch.randint(1, 11, (n, 1), generator=g, device=device, dtype=torch.int64).float() / 10.0)
-        demands[0] = 0.0
-        edge_idx = []; edge_attr = []
-        for i in range(n):
-            for j in range(n):
-                if i == j: continue
-                edge_idx.append([i, j])
-                edge_attr.append(torch.norm(coords[i] - coords[j]).unsqueeze(0))
-        edge_index = torch.tensor(edge_idx, device=device).t().long()
-        edge_attr = torch.stack(edge_attr)
-        inst = Data(x=coords, edge_index=edge_index, edge_attr=edge_attr,
-                    demand=demands, capacity=torch.full((n,), args.capacity, device=device),
-                    batch=torch.zeros(n, dtype=torch.long, device=device))
-        inst.num_graphs = 1
-
-        def eval_model(m):
-            m.eval()
-            with torch.no_grad():
-                actions, _ = m(inst, n_steps=customers + 6, greedy=True)
-            cost = euclidean_cost(inst.x, actions, inst)[0].item() / customers
-            return actions, float(cost)
-
-        # Prepare output dir
-        plots_dir = project_root / 'utils' / 'plots'
-        plots_dir.mkdir(parents=True, exist_ok=True)
-
-        # Map model name -> constructor and checkpoint path
-        model_specs = {
-            'dynamic_gt_rl': (DynamicGraphTransformerModel, project_root / args.train_out_dir / f"cpu_dynamic_gt_rl_C{args.customers}_I{args.instances}_E{args.epochs}_B{args.batch}" / 'checkpoint.pt'),
-            'static_rl': (StaticRLGraphTransformer, project_root / args.train_out_dir / f"cpu_static_rl_C{args.customers}_I{args.instances}_E{args.epochs}_B{args.batch}" / 'checkpoint.pt'),
-            'pointer_rl': (PointerRLModel, project_root / args.train_out_dir / f"cpu_pointer_rl_C{args.customers}_I{args.instances}_E{args.epochs}_B{args.batch}" / 'checkpoint.pt'),
-            'greedy_baseline': (GreedyGraphTransformerBaseline, None),
-        }
-
-        for name in args.models:
-            if name == 'naive_baseline':
-                continue
-            if name not in model_specs:
-                continue
-            ctor, ckpt_path = model_specs[name]
-            model = ctor()
-            # Load checkpoint if available
-            if ckpt_path is not None and ckpt_path.exists():
-                try:
-                    state = torch.load(ckpt_path, map_location='cpu')
-                    state = state.get('model_state_dict', state)
-                    model.load_state_dict(state, strict=False)
-                    print(f"[apply] Loaded checkpoint for {name}: {ckpt_path}")
-                except Exception as e:
-                    print(f"[apply] WARNING: failed to load checkpoint for {name}: {e}")
-
-            actions, val_cust = eval_model(model)
-            # Construct feasible route and plot
-            idx_seq = actions_to_indices(actions)
-            route = build_feasible_route(idx_seq, demands, args.capacity)
-            ok = validate_route(route, customers, demands, args.capacity)
-            if not ok:
-                print(f'[apply] WARNING: route validation failed for {name}; repaired route used')
-            c = coords.detach().cpu().numpy()
-            fig, ax = plt.subplots(figsize=(5, 5))
-            ax.scatter(c[1:, 0], c[1:, 1], c='blue', s=20, label='Customers')
-            ax.scatter(c[0:1, 0], c[0:1, 1], c='red', s=50, label='Depot')
-            for i in range(len(route) - 1):
-                a, b = route[i], route[i + 1]
-                ax.plot([c[a, 0], c[b, 0]], [c[a, 1], c[b, 1]], 'g-', alpha=0.8)
-            
-            # compute per-customer cost from the plotted feasible route
-            import numpy as _np
-            _len = 0.0
-            for _i in range(len(route)-1):
-                _a, _b = route[_i], route[_i+1]
-                _dx = c[_a,0]-c[_b,0]; _dy = c[_a,1]-c[_b,1]
-                _len += float((_np.sqrt(_dx*_dx+_dy*_dy)))
-            ax.set_title(f'{name}  (cost/customer={_len/customers:.3f})')
-    
-            # legend removed
-            fig.tight_layout()
-            out_png = plots_dir / f'test_instance_route_{name}.png'
-            fig.savefig(out_png, dpi=200)
-            plt.close(fig)
-            print(f"[apply] Saved {out_png}")
-            # Save route-only JSON
-            out_json = plots_dir / f'test_instance_route_{name}.json'
-            with out_json.open('w') as f:
-                import json as _json
-                _json.dump(route, f)
-            print(f"[apply] Saved {out_json}")
-    except Exception as e:
-        print(f"[apply] WARNING: failed to apply models to test instance: {e}")
-
-    # Refresh final plots with annotated styling (lightblue+rims, (i,d) labels, size by demand)
-    try:
-        print("[apply] Refreshing final plots with annotated styling")
+        print("[orchestrator] Applying trained models to test instance and generating annotated plots")
         # Deterministic test instance
         customers = args.customers
         n = customers + 1
         device = torch.device('cpu')
         g = torch.Generator(device=device); g.manual_seed(args.test_seed)
         coords = (torch.randint(1, 101, (n, 2), generator=g, device=device, dtype=torch.int64).float() / 100.0)
-        demands = (torch.randint(1, 11, (n, 1), generator=g, device=device, dtype=torch.int64).float() / 10.0)
+        demands = (torch.randint(1, 11, (n, 1), generator=g, device=device, dtype=torch.int64).float())
         demands[0] = 0.0
         edge_idx = []; edge_attr = []
         for i in range(n):
@@ -608,6 +464,8 @@ def main():
             served = set()
             route = [0]
             rem = float(capacity_val)
+            
+            # Process the sequence more carefully
             for idx in idx_seq:
                 if idx == 0:
                     if route[-1] != 0:
@@ -617,31 +475,39 @@ def main():
                 if idx <= 0 or idx >= N or idx in served:
                     continue
                 dem = float(d[idx])
-                if dem <= rem:
+                # Exact integer capacity check
+                if int(dem) <= int(rem):
                     route.append(idx)
                     served.add(idx)
                     rem -= dem
                 else:
+                    # Must return to depot first
                     if route[-1] != 0:
                         route.append(0)
                     rem = float(capacity_val)
-                    if dem <= rem:
+                    # Check again with fresh capacity
+                    if int(dem) <= int(rem):
                         route.append(idx)
                         served.add(idx)
                         rem -= dem
-            for idx in range(1, N):
-                if idx in served:
-                    continue
+            
+            # Serve any remaining customers with strict capacity checking
+            remaining = [i for i in range(1, N) if i not in served]
+            for idx in remaining:
                 dem = float(d[idx])
+                # Always return to depot for remaining customers to ensure capacity
                 if route[-1] != 0:
                     route.append(0)
                 rem = float(capacity_val)
-                if dem <= rem:
+                if int(dem) <= int(rem):
                     route.append(idx)
                     served.add(idx)
                     rem -= dem
+            
             if route[-1] != 0:
                 route.append(0)
+            
+            # Remove consecutive depots
             comp = [route[0]]
             for x in route[1:]:
                 if not (x == 0 and comp[-1] == 0):
@@ -649,18 +515,23 @@ def main():
             return comp
 
         plots_dir = project_root / 'utils' / 'plots'
+        plots_dir.mkdir(parents=True, exist_ok=True)
         c = coords.detach().cpu().numpy()
         dvals = demands.detach().cpu().numpy().reshape(-1)
-        base, scale = 40.0, 300.0
+        base, scale = 20.0, 30.0
         sizes = base + scale * dvals
 
-        # Build models again to ensure consistency (no retrain)
+        # Import models and build solutions
         from src.models import StaticRLGraphTransformer, DynamicGraphTransformerModel
         spec = {
             'dynamic_gt_rl': DynamicGraphTransformerModel,
             'static_rl': StaticRLGraphTransformer,
             'greedy_baseline': GreedyGraphTransformerBaseline,
         }
+        
+        # Color palette for different tours
+        tour_colors = ['green', 'blue', 'red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+        
         for name in args.models:
             if name == 'naive_baseline' or name not in spec:
                 continue
@@ -672,45 +543,91 @@ def main():
                     state = torch.load(ckpt_path, map_location='cpu')
                     state = state.get('model_state_dict', state)
                     model.load_state_dict(state, strict=False)
-                except Exception:
-                    pass
+                    print(f"[apply] Loaded checkpoint for {name}: {ckpt_path}")
+                except Exception as e:
+                    print(f"[apply] WARNING: failed to load checkpoint for {name}: {e}")
             model.eval()
             with torch.no_grad():
                 actions, _ = model(inst, n_steps=customers + 6, greedy=True)
             route = build_feasible_route(to_idx_seq(actions), demands, args.capacity)
-            with torch.no_grad():
-                actions2, _ = model(inst, n_steps=customers + 6, greedy=True)
-                
-            # compute cost from feasible route
-            import numpy as _np
-            _len2 = 0.0
-            for _i in range(len(route)-1):
-                _a, _b = route[_i], route[_i+1]
-                _dx = c[_a,0]-c[_b,0]; _dy = c[_a,1]-c[_b,1]
-                _len2 += float((_np.sqrt(_dx*_dx+_dy*_dy)))
-            cost_pc = _len2 / customers
-              
-            fig, ax = plt.subplots(figsize=(6, 6))
+            
+            # Validate the route
+            validation_result = validate_cvrp_route(route, dvals, args.capacity, customers)
+            if not validation_result['valid']:
+                print(f"[apply] WARNING: {name} produced invalid route: {validation_result['errors']}")
+                if 'capacity_violations' in validation_result:
+                    for violation in validation_result['capacity_violations']:
+                        print(f"  Tour {violation['tour']}: demand {violation['demand']:.2f} > capacity {args.capacity}")
+            else:
+                print(f"[apply] {name} route is valid ({validation_result['stats']['num_tours']} tours)")
+            
+            # Calculate cost directly from the displayed route
+            route_cost = 0.0
             for i in range(len(route) - 1):
                 a, b = route[i], route[i + 1]
-                ax.plot([c[a, 0], c[b, 0]], [c[a, 1], c[b, 1]], '-', color='g', alpha=0.85, linewidth=1.6)
-            ax.scatter(c[0:1, 0], c[0:1, 1], marker='*', s=180, c='red', edgecolors='black', linewidths=1.0, label='Depot')
+                route_cost += float(torch.norm(coords[a] - coords[b]).item())
+            cost_pc = route_cost / customers
+            
+            # Parse route into tours
+            tours = parse_routes_into_tours(route, dvals)
+            
+            # Create annotated plot
+            fig, ax = plt.subplots(figsize=(6, 6))
+            
+            # Plot tours with different colors and annotations
+            for tour_idx, tour in enumerate(tours):
+                tour_nodes = tour['nodes']
+                tour_demand = tour['demand']
+                is_roundtrip = tour['is_roundtrip']
+                
+                # Choose color: grey for roundtrips, cycling colors for multi-customer tours
+                if is_roundtrip:
+                    color = 'grey'
+                    alpha = 0.6
+                    linewidth = 1.2
+                else:
+                    color = tour_colors[tour_idx % len(tour_colors)]
+                    alpha = 0.85
+                    linewidth = 1.6
+                
+                # Plot tour lines
+                for i in range(len(tour_nodes) - 1):
+                    a, b = tour_nodes[i], tour_nodes[i + 1]
+                    ax.plot([c[a, 0], c[b, 0]], [c[a, 1], c[b, 1]], '-', 
+                           color=color, alpha=alpha, linewidth=linewidth)
+                
+                # Annotate multi-customer tours with demand
+                if not is_roundtrip and len(tour_nodes) > 3:  # More than depot-customer-depot
+                    # Find midpoint of tour for annotation
+                    customer_nodes = [node for node in tour_nodes if node != 0]
+                    if customer_nodes:
+                        mid_x = np.mean([c[node, 0] for node in customer_nodes])
+                        mid_y = np.mean([c[node, 1] for node in customer_nodes])
+                        ax.annotate(f'{int(tour_demand)}', (mid_x, mid_y), 
+                                   bbox=dict(boxstyle='round,pad=0.3', facecolor=color, alpha=0.7),
+                                   fontsize=8, ha='center', va='center', color='white', fontweight='bold')
+            
+            # Plot depot
+            ax.scatter(c[0, 0], c[0, 1], marker='*', s=180, c='red', edgecolors='black', linewidths=1.0)
             ax.annotate('(0,0.0)', (c[0, 0], c[0, 1]), textcoords='offset points', xytext=(6, 6), fontsize=9, color='black')
-            ax.scatter(c[1:, 0], c[1:, 1], s=sizes[1:], c='lightblue', edgecolors='black', linewidths=0.9, label='Customers')
+            
+            # Plot customers
+            ax.scatter(c[1:, 0], c[1:, 1], s=sizes[1:], c='lightblue', edgecolors='black', linewidths=0.9)
             for i in range(1, n):
-                ax.annotate(f'({i},{dvals[i]:.1f})', (c[i, 0], c[i, 1]), textcoords='offset points', xytext=(6, 6), fontsize=8, color='black')
+                ax.annotate(f'({i},{int(dvals[i])})', (c[i, 0], c[i, 1]), textcoords='offset points', xytext=(6, 6), fontsize=8, color='black')
+            
             ax.set_title(f'{name}  (cost/customer={cost_pc:.3f})')
             ax.set_aspect('equal', adjustable='box')
-            # legend removed
             fig.tight_layout()
             out_png = plots_dir / f'test_instance_route_{name}.png'
             fig.savefig(out_png, dpi=200)
             plt.close(fig)
+            
             # Save route-only JSON
             (plots_dir / f'test_instance_route_{name}.json').write_text(json.dumps(route))
-            print(f"[apply] Refreshed {out_png}")
+            print(f"[apply] Generated {out_png}")
     except Exception as e:
-        print(f"[apply] WARNING: failed to refresh annotated plots: {e}")
+        print(f"[apply] WARNING: failed to generate annotated plots: {e}")
 
 
 if __name__ == '__main__':

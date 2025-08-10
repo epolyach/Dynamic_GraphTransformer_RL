@@ -156,55 +156,8 @@ def eval_greedy_baseline_on_val(customers: int, capacity: float, seed: int, inst
             t0 = time.perf_counter()
             actions, _ = model(batch_data, n_steps=n_steps, greedy=True)
             t1 = time.perf_counter()
-            # Compute cost from feasible routes per instance
-            B = batch_data.num_graphs
-            N = (batch_data.x.size(0) // B)
-            act = actions
-            if act.dim() == 3 and act.size(-1) == 1:
-                act = act.squeeze(-1)
-            act = act.long()
-            lengths = []
-            x_np = batch_data.x.detach().cpu().numpy().reshape(B, N, 2)
-            d_np = batch_data.demand.detach().cpu().numpy().reshape(B, N)
-            import numpy as _np
-            for bi in range(B):
-                coords = x_np[bi]
-                dem = d_np[bi]
-                served = set(); rem = float(capacity)
-                route = [0]
-                for idx in act[bi].tolist():
-                    if idx == 0:
-                        if route[-1] != 0:
-                            route.append(0); rem = float(capacity)
-                        continue
-                    if idx <= 0 or idx >= N or idx in served:
-                        continue
-                    dd = float(dem[idx])
-                    if dd <= rem:
-                        route.append(idx); served.add(idx); rem -= dd
-                    else:
-                        if route[-1] != 0:
-                            route.append(0)
-                        rem = float(capacity)
-                        if dd <= rem:
-                            route.append(idx); served.add(idx); rem -= dd
-                for j in range(1, N):
-                    if j in served: continue
-                    if route[-1] != 0: route.append(0)
-                    rem = float(capacity)
-                    if float(dem[j]) <= rem:
-                        route.append(j); served.add(j); rem -= float(dem[j])
-                if route[-1] != 0:
-                    route.append(0)
-                L = 0.0
-                for k in range(len(route)-1):
-                    a,b = route[k], route[k+1]
-                    dx = coords[a,0]-coords[b,0]; dy = coords[a,1]-coords[b,1]
-                    L += float((_np.sqrt(dx*dx+dy*dy)))
-                lengths.append(L)
-            import torch as _t
-            c = _t.tensor(lengths, dtype=_t.float32)
-            costs.append(c)
+            c = euclidean_cost(batch_data.x, actions, batch_data)
+            costs.append(c.detach().cpu())
             times.append(t1 - t0)
     cost_tensor = torch.cat(costs) if costs else torch.tensor([], dtype=torch.float32)
     avg_cost_per_customer = float(cost_tensor.mean().item()) / max(1, customers)
@@ -277,10 +230,6 @@ def generate_plots(df: pd.DataFrame, out_plot: Path):
     plt.savefig(out_plot, dpi=300)
     plt.close()
     print(f"Saved plot to {out_plot}")
-
-
-from src.experiments.comprehensive_plots import load_comprehensive_data_for_plots, create_comprehensive_training_plots
-
 
 
 def main():
@@ -373,15 +322,7 @@ def main():
     df.to_csv(out_csv, index=False)
     print(f"Saved results table to {out_csv}")
 
-    # Create comprehensive training plots similar to Ver1
-    training_results = load_comprehensive_data_for_plots(df, base_out)
-    if training_results:
-        comprehensive_plot_path = project_root / "utils/plots/comparative_study_results.png"
-        create_comprehensive_training_plots(training_results, comprehensive_plot_path, args.customers)
-    else:
-        print("[orchestrator] No training results found for comprehensive plotting")
-
-    out_plot = project_root / "utils/plots/simple_comparison.png"
+    out_plot = project_root / args.out_plot
     generate_plots(df, out_plot)
 
     # Apply all requested models (except naive_baseline) to a single deterministic test instance and save separate route plots
@@ -444,31 +385,12 @@ def main():
                     comp.append(x)
             return comp
 
-    def validate_route(route, n_customers, demands_tensor=None, capacity_val=None):
-            # Ensure all 1..n served exactly once
+    def validate_route(route, n_customers):
+            # route includes depots 0 between tours; ensure all 1..n served exactly once
             seen = [i for i in route if i != 0]
             ok_once = len(seen) == len(set(seen)) == n_customers
             no_dd = all(not (route[i] == 0 and route[i+1] == 0) for i in range(len(route)-1))
-            if not (ok_once and no_dd):
-                return False
-            # Capacity per tour if demands provided
-            if demands_tensor is not None and capacity_val is not None:
-                d = demands_tensor.view(-1).detach().cpu().numpy()
-                cur = []
-                for v in route:
-                    if v == 0:
-                        if cur:
-                            dm = float(sum(d[i] for i in cur))
-                            if dm > float(capacity_val) + 1e-9:
-                                return False
-                            cur = []
-                    else:
-                        cur.append(v)
-                if cur:
-                    dm = float(sum(d[i] for i in cur))
-                    if dm > float(capacity_val) + 1e-9:
-                        return False
-            return True
+            return ok_once and no_dd
     
     try:
         from src.models import StaticRLGraphTransformer, DynamicGraphTransformerModel, PointerRLModel
@@ -537,7 +459,7 @@ def main():
             # Construct feasible route and plot
             idx_seq = actions_to_indices(actions)
             route = build_feasible_route(idx_seq, demands, args.capacity)
-            ok = validate_route(route, customers, demands, args.capacity)
+            ok = validate_route(route, customers)
             if not ok:
                 print(f'[apply] WARNING: route validation failed for {name}; repaired route used')
             c = coords.detach().cpu().numpy()
@@ -547,17 +469,8 @@ def main():
             for i in range(len(route) - 1):
                 a, b = route[i], route[i + 1]
                 ax.plot([c[a, 0], c[b, 0]], [c[a, 1], c[b, 1]], 'g-', alpha=0.8)
-            
-            # compute per-customer cost from the plotted feasible route
-            import numpy as _np
-            _len = 0.0
-            for _i in range(len(route)-1):
-                _a, _b = route[_i], route[_i+1]
-                _dx = c[_a,0]-c[_b,0]; _dy = c[_a,1]-c[_b,1]
-                _len += float((_np.sqrt(_dx*_dx+_dy*_dy)))
-            ax.set_title(f'{name}  (cost/customer={_len/customers:.3f})')
-    
-            # legend removed
+            ax.set_title(f'{name}  (cost/customer={val_cust:.3f})')
+            ax.legend()
             fig.tight_layout()
             out_png = plots_dir / f'test_instance_route_{name}.png'
             fig.savefig(out_png, dpi=200)
@@ -680,16 +593,7 @@ def main():
             route = build_feasible_route(to_idx_seq(actions), demands, args.capacity)
             with torch.no_grad():
                 actions2, _ = model(inst, n_steps=customers + 6, greedy=True)
-                
-            # compute cost from feasible route
-            import numpy as _np
-            _len2 = 0.0
-            for _i in range(len(route)-1):
-                _a, _b = route[_i], route[_i+1]
-                _dx = c[_a,0]-c[_b,0]; _dy = c[_a,1]-c[_b,1]
-                _len2 += float((_np.sqrt(_dx*_dx+_dy*_dy)))
-            cost_pc = _len2 / customers
-              
+                cost_pc = float(euclidean_cost(inst.x, actions2, inst)[0].item()) / customers
             fig, ax = plt.subplots(figsize=(6, 6))
             for i in range(len(route) - 1):
                 a, b = route[i], route[i + 1]
@@ -701,7 +605,7 @@ def main():
                 ax.annotate(f'({i},{dvals[i]:.1f})', (c[i, 0], c[i, 1]), textcoords='offset points', xytext=(6, 6), fontsize=8, color='black')
             ax.set_title(f'{name}  (cost/customer={cost_pc:.3f})')
             ax.set_aspect('equal', adjustable='box')
-            # legend removed
+            ax.legend(loc='upper right')
             fig.tight_layout()
             out_png = plots_dir / f'test_instance_route_{name}.png'
             fig.savefig(out_png, dpi=200)

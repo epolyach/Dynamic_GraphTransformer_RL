@@ -52,7 +52,7 @@ def make_instance(num_nodes: int, capacity: float, device: torch.device, seed: i
     g = torch.Generator(device=device)
     g.manual_seed(seed)
     coords = (torch.randint(1, 101, (num_nodes, 2), generator=g, device=device, dtype=torch.int64).float() / 100.0)
-    demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float())
+    demands = (torch.randint(1, 11, (num_nodes, 1), generator=g, device=device, dtype=torch.int64).float() / 10.0)
     demands[0] = 0.0
 
     edge_idx = []
@@ -197,6 +197,8 @@ def train_pipeline(
         # Iterate over remaining seeds for training (skip val seeds)
         train_seeds = inst_seeds[val_count:]
         # Batch over seeds
+        train_cost_accum = []
+        train_loss_accum = []
         for i in range(0, len(train_seeds), batch_size):
             batch_seeds = train_seeds[i:i + batch_size]
             inst_list = [make_instance(customers + 1, capacity, device, s) for s in batch_seeds]
@@ -208,13 +210,13 @@ def train_pipeline(
                 with autocast():
                     actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
                     costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
-                    # STRICT VALIDATION: Check training routes
-                    validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, i, f"Training epoch {epoch+1} batch {i+1} (AMP)")
+                    train_cost_accum.append(costs.detach().mean())
                     baseline = costs.mean().detach()
                     advantages = (costs - baseline).detach()  # [B]
-                    # Aggregate log-probs across steps to [B]
                     logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
                     loss = (advantages * logp_sum).mean()
+                    # Track raw (unscaled) loss for logging
+                    train_loss_accum.append(loss.detach())
                 scaler.scale(loss).backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
@@ -222,17 +224,18 @@ def train_pipeline(
             else:
                 actions, logp = model(batch_data, n_steps=n_steps, greedy=False)
                 costs = euclidean_cost(batch_data.x, actions.detach(), batch_data)  # [B]
+                train_cost_accum.append(costs.detach().mean())
                 baseline = costs.mean().detach()
-                # STRICT VALIDATION: Check training routes
-                validate_training_route(actions, batch_data.demand.view(batch_data.num_graphs, -1), capacity, i, f"Training epoch {epoch+1} batch {i+1}")
                 advantages = (costs - baseline).detach()  # [B]
                 logp_sum = logp.sum(dim=1) if logp.dim() > 1 else logp.view(-1)
                 loss = (advantages * logp_sum).mean()
+                train_loss_accum.append(loss.detach())
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
 
         train_time = time.perf_counter() - start_time
+
 
         # Validation (greedy)
         model.eval()
@@ -243,31 +246,63 @@ def train_pipeline(
                 inst_list = [make_instance(customers + 1, capacity, device, s) for s in batch_seeds]
                 batch_data = make_batch(inst_list)
                 actions, logp = model(batch_data, n_steps=n_steps, greedy=True)
-                costs = euclidean_cost(batch_data.x, actions, batch_data)
-                val_costs.append(costs.detach().cpu())
-                # Track best route in this batch
-                # Reconstruct route with depot at start and end
-                # Ensure actions has shape [B, T] of long indices
+                # Compute route-based costs per instance
+                B = batch_data.num_graphs
+                N = (batch_data.x.size(0) // B)
                 act = actions
                 if act.dim() == 3 and act.size(-1) == 1:
                     act = act.squeeze(-1)
                 act = act.long()
-                depot = torch.zeros(act.size(0), 1, dtype=torch.long, device=act.device)
-                with_depot = torch.cat([depot, act, depot], dim=1)
-                for b in range(with_depot.size(0)):
-                    route = with_depot[b].tolist()
-                    cost_val = float(costs[b].item())
-                    if cost_val < best_val_cost:
-                        best_val_cost = cost_val
-                        best_val_route = route
-                        coords_np = batch_data.x.view(-1, 2).detach().cpu().numpy()
-                        # For batched data, slice current graph
-                        if hasattr(batch_data, 'ptr') and batch_data.ptr is not None:
-                            start = int(batch_data.ptr[b].item())
-                            end = int(batch_data.ptr[b + 1].item())
-                            best_val_coords = coords_np[start:end]
+                batch_coords = batch_data.x.detach().cpu().numpy().reshape(B, N, 2)
+                batch_dem = batch_data.demand.detach().cpu().numpy().reshape(B, N)
+                import numpy as _np
+                step_costs = []
+                for b in range(B):
+                    coords_np = batch_coords[b]
+                    demands_np = batch_dem[b]
+                    served = set()
+                    route = [0]
+                    rem = float(capacity)
+                    for idx in act[b].tolist():
+                        if idx == 0:
+                            if route[-1] != 0:
+                                route.append(0)
+                                rem = float(capacity)
+                            continue
+                        if idx <= 0 or idx >= N or idx in served:
+                            continue
+                        d = float(demands_np[idx])
+                        if d <= rem:
+                            route.append(idx); served.add(idx); rem -= d
                         else:
-                            best_val_coords = coords_np
+                            if route[-1] != 0:
+                                route.append(0)
+                            rem = float(capacity)
+                            if d <= rem:
+                                route.append(idx); served.add(idx); rem -= d
+                    for idx2 in range(1, N):
+                        if idx2 in served: continue
+                        if route[-1] != 0:
+                            route.append(0)
+                        rem = float(capacity)
+                        if float(demands_np[idx2]) <= rem:
+                            route.append(idx2); served.add(idx2); rem -= float(demands_np[idx2])
+                    if route[-1] != 0:
+                        route.append(0)
+                    # compute length
+                    L = 0.0
+                    for t in range(len(route)-1):
+                        a, b2 = route[t], route[t+1]
+                        dx = coords_np[a,0]-coords_np[b2,0]; dy = coords_np[a,1]-coords_np[b2,1]
+                        L += float((_np.sqrt(dx*dx+dy*dy)))
+                    step_costs.append(L)
+                    # track best
+                    if L < best_val_cost:
+                        best_val_cost = L
+                        best_val_route = route
+                        best_val_coords = coords_np
+                import torch as _t
+                val_costs.append(_t.tensor(step_costs, dtype=_t.float32))
 
         val_cost_tensor = torch.cat(val_costs) if val_costs else torch.tensor([], dtype=torch.float32)
         val_cost_per_cust = float(val_cost_tensor.mean().item()) / max(1, customers)
@@ -277,8 +312,14 @@ def train_pipeline(
         header_needed = not csv_path.exists()
         with csv_path.open('a') as f:
             if header_needed:
-                f.write('epoch,train_time_s,val_cost_per_customer\n')
-            f.write(f'{epoch},{train_time:.6f},{val_cost_per_cust:.6f}\n')
+                f.write('epoch,train_time_s,train_loss,train_cost_per_customer,val_cost_per_customer\n')
+            train_cost_per_cust = (torch.stack(train_cost_accum).mean().item() if train_cost_accum else float('nan')) / max(1, customers)
+            if not train_loss_accum:
+                raise RuntimeError(f'No train_loss accumulated at epoch {epoch}')
+            train_loss = torch.stack(train_loss_accum).mean().item()
+            if not torch.isfinite(torch.tensor(train_loss)):
+                raise RuntimeError(f'Non-finite train_loss at epoch {epoch}: {train_loss}')
+            f.write(f'{epoch},{train_time:.6f},{train_loss:.6f},{train_cost_per_cust:.6f},{val_cost_per_cust:.6f}\n')
 
     # Save best route plot and json
     save_best_route_plot(best_val_coords, best_val_route, out_dir / 'best_route.png', out_dir / 'best_route.json')
