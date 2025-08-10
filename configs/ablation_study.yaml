@@ -93,7 +93,7 @@ problem:
   vehicle_capacity: 50
   depot_location: "center"
   node_distribution: "uniform"
-  demand_range: [1, 9]
+  demand_range: [1, 10]
   coordinate_range: [0, 100]
 
 # Evaluation Metrics

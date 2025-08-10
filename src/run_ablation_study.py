@@ -25,11 +25,17 @@ import argparse
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
-from src.models.ablation_models import create_ablation_model
-from src.data.instance_creator.InstanceGenerator import InstanceGenerator
-from src.utils.RL.euclidean_cost_eval import euclidean_cost
+# TEMPORARILY DISABLED: Models moved to models_backup/ during cleanup
+# from src.models.ablation_models import create_ablation_model
+# from src.data.instance_creator.InstanceGenerator import InstanceGenerator
+# from src.utils.RL.euclidean_cost_eval import euclidean_cost
 import warnings
 warnings.filterwarnings("ignore")
+
+print("⚠️  ABLATION STUDY TEMPORARILY DISABLED")
+print("   Models have been moved to src/models_backup/ during cleanup.")
+print("   To re-enable, restore required models to src/models/ or run from models_backup.")
+exit(1)
 
 
 class AblationStudyRunner:

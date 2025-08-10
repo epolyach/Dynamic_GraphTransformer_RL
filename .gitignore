@@ -99,6 +99,7 @@ wandb/
 
 # TensorBoard
 runs/
+logs/tensorboard/
 tensorboard/
 
 # Model checkpoints

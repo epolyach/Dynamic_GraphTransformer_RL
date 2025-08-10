@@ -1,0 +1,45 @@
+# Production-scale configuration for publication-ready results
+# Comprehensive evaluation with large datasets and thorough analysis
+
+# =================================================================
+# FREQUENTLY CHANGED PARAMETERS (Basic Problem & Training Settings)
+# =================================================================
+
+# Problem Settings - Production scale for publication
+problem:
+  num_customers: 200        # Fixed number of customers (excluding depot)
+  vehicle_capacity: 50      # Integer capacity
+  demand_range: [1, 10]     # Integer demands [min, max]
+  coord_range: 100          # Coordinate range [0, coord_range] then normalized to unit square
+
+# Training Configuration - Publication-grade training  
+training:
+  num_instances: 50000      # Number of training instances
+  batch_size: 32            # Batch size for training
+  num_epochs: 200           # Number of training epochs
+  learning_rate: 1e-4       # Base learning rate
+
+# =================================================================
+# LESS FREQUENTLY CHANGED PARAMETERS
+# =================================================================
+
+# Model Architecture - Shared by ALL model types
+# These parameters are used by: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL
+model:
+  hidden_dim: 256           # Hidden dimension for all models
+  num_heads: 16             # Number of attention heads  
+  num_layers: 8             # Number of transformer layers
+
+# Advanced Training Configuration
+training_advanced:
+  gradient_clip_norm: 1.0   # Gradient clipping for stability
+  
+  # Learning rate schedule
+  warmup_epochs: 20         # Linear warmup epochs before cosine decay
+  min_lr: 1e-7              # Minimum LR at end of cosine schedule
+    
+  # Reinforcement Learning parameters
+  entropy_coef: 0.01        # Initial entropy coefficient
+  entropy_min: 0.0          # Minimum entropy coefficient
+  temp_start: 1.5           # Initial sampling temperature
+  temp_min: 0.2             # Minimum sampling temperature

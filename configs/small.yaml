@@ -1,0 +1,45 @@
+# Small-scale configuration for quick testing and development
+# Optimized for fast iteration and debugging
+
+# =================================================================
+# FREQUENTLY CHANGED PARAMETERS (Basic Problem & Training Settings)
+# =================================================================
+
+# Problem Settings - Small scale for quick testing (based on GAT_RL)
+problem:
+  num_customers: 20         # Fixed number of customers (excluding depot)
+  vehicle_capacity: 30      # Integer capacity (based on GAT_RL load_capacity=3 scaled up)
+  demand_range: [1, 10]     # Integer demands [min, max] (based on GAT_RL max_demand=10)
+  coord_range: 100          # Coordinate range [0, coord_range] then normalized to unit square
+
+# Training Configuration - Fast training for development  
+training:
+  num_instances: 200        # Number of training instances
+  batch_size: 8            # Batch size for training
+  num_epochs: 8           # Number of training epochs
+  learning_rate: 1e-3      # Base learning rate
+
+# =================================================================
+# LESS FREQUENTLY CHANGED PARAMETERS
+# =================================================================
+
+# Model Architecture - Shared by ALL model types
+# These parameters are used by: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL
+model:
+  hidden_dim: 64           # Hidden dimension for all models
+  num_heads: 4             # Number of attention heads  
+  num_layers: 2            # Number of transformer layers
+
+# Advanced Training Configuration
+training_advanced:
+  gradient_clip_norm: 1.0   # Gradient clipping for stability
+  
+  # Learning rate schedule
+  warmup_epochs: 5          # Linear warmup epochs before cosine decay
+  min_lr: 1e-4             # Minimum LR at end of cosine schedule
+    
+  # Reinforcement Learning parameters
+  entropy_coef: 0.01       # Initial entropy coefficient
+  entropy_min: 0.0         # Minimum entropy coefficient
+  temp_start: 1.5          # Initial sampling temperature
+  temp_min: 0.2            # Minimum sampling temperature

@@ -24,16 +24,15 @@ import seaborn as sns
 import pandas as pd
 import math
 
-# Force CPU for reliable comparison
-# Auto-detect best available device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"🖥️  Using device: {device}")
+# CPU-optimized version - no GPU support
+device = torch.device("cpu")
+print(f"🖥️  Using device: {device} (CPU-optimized)")
 
 
 def setup_logging():
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(message)s'
     )
     return logging.getLogger(__name__)
 
@@ -43,36 +42,62 @@ def set_seeds(seed=42):
 
 
 def configure_cpu_threads(max_threads: int = None):
-    """Configure CPU threading to improve parallel performance."""
+    """Enhanced CPU threading configuration for optimal multicore performance."""
     import os
     try:
         if max_threads is None:
-            # Leave one core free for system tasks
-            max_threads = max(1, (os.cpu_count() or 4) - 1)
+            # Use all available cores for maximum performance
+            max_threads = os.cpu_count() or 4
+        
+        # Set PyTorch threading
         torch.set_num_threads(max_threads)
-        torch.set_num_interop_threads(max(1, max_threads // 2))
-        # Optional: respect existing OMP/MKL settings if present
-    except Exception:
-        pass
+        # Set inter-op threads for CPU parallelism (use fewer threads to avoid oversubscription)
+        torch.set_num_interop_threads(max(1, max_threads // 4))
+        
+        # Configure OpenMP if available
+        os.environ['OMP_NUM_THREADS'] = str(max_threads)
+        os.environ['MKL_NUM_THREADS'] = str(max_threads)
+        os.environ['VECLIB_MAXIMUM_THREADS'] = str(max_threads)
+        os.environ['NUMEXPR_NUM_THREADS'] = str(max_threads)
+        
+        # Optimize for CPU performance (quiet mode)
+        os.environ['KMP_BLOCKTIME'] = '0'
+        os.environ['KMP_SETTINGS'] = '0'  # Disable verbose output
+        os.environ['KMP_AFFINITY'] = 'granularity=fine,compact,1,0'  # Remove verbose
+        
+        print(f"🚀 CPU optimization: {max_threads} threads configured")
+        print(f"   PyTorch threads: {torch.get_num_threads()}")
+        print(f"   Inter-op threads: {torch.get_num_interop_threads()}")
+        
+    except Exception as e:
+        print(f"⚠️ CPU threading configuration failed: {e}")
 
 # Configure CPU threads for better multithreading performance
 if device.type == 'cpu':
     configure_cpu_threads()
 
-def generate_cvrp_instance(num_customers=20, capacity=3, coord_range=20, demand_range=(1, 10), seed=None):
-    """Generate CVRP instance exactly matching GAT-RL configuration"""
+def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, seed=None):
+    """Generate CVRP instance with integer demands and configurable capacity
+    
+    Args:
+        num_customers: Number of customer nodes (excluding depot)
+        capacity: Vehicle capacity (integer)
+        coord_range: Coordinate range for generation (will be normalized)
+        demand_range: Tuple (min_demand, max_demand) for integer demands
+        seed: Random seed for reproducibility
+    """
     if seed is not None:
         np.random.seed(seed)
     
-    # Generate coordinates exactly like GAT-RL: random integers 0 to max_distance+1, then divide by 100
+    # Generate coordinates: random integers 0 to coord_range, then divide by coord_range for normalization to [0,1]
     coords = np.zeros((num_customers + 1, 2))
     for i in range(num_customers + 1):
-        coords[i] = np.random.randint(0, coord_range + 1, size=2) / 100
+        coords[i] = np.random.randint(0, coord_range + 1, size=2) / coord_range
     
-    # Generate demands exactly like GAT-RL: random integers 1 to max_demand+1, then divide by 10
+    # Generate integer demands from demand_range (no division)
     demands = np.zeros(num_customers + 1)
     for i in range(1, num_customers + 1):  # Skip depot (index 0)
-        demands[i] = np.random.randint(demand_range[0], demand_range[1] + 1) / 10
+        demands[i] = np.random.randint(demand_range[0], demand_range[1] + 1)
     
     # Compute distance matrix
     distances = np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(axis=2))
@@ -1069,8 +1094,26 @@ def compute_naive_baseline_cost(instance):
     
     return naive_cost
 
-def validate_route(route, n_customers, model_name="Unknown"):
-    """Validate that a route is correct CVRP solution"""
+def validate_route(route, n_customers, model_name="Unknown", instance=None):
+    """RIGOROUS VALIDATION: Validate that a route is a correct CVRP solution
+    
+    Validates:
+    1. Route structure (starts/ends at depot, no consecutive depots)
+    2. Customer coverage (all customers visited exactly once)
+    3. Capacity constraints (no truck overloading)
+    4. Route feasibility (valid node indices)
+    
+    Args:
+        route: List of node indices representing the vehicle route
+        n_customers: Number of customers (excluding depot)
+        model_name: Model identifier for error reporting
+        instance: Instance data containing demands and capacity (optional but recommended)
+    
+    Returns:
+        bool: True if route is valid, otherwise exits with detailed error
+    """
+    
+    # === BASIC STRUCTURE VALIDATION ===
     if len(route) == 0:
         print(f"\n🚨 VALIDATION FAILED: {model_name}")
         print(f"Error: Empty route!")
@@ -1091,7 +1134,7 @@ def validate_route(route, n_customers, model_name="Unknown"):
         print(f"Route: {route}")
         sys.exit(1)
     
-    # Check for consecutive depot visits
+    # Check for consecutive depot visits (depot->depot is forbidden)
     for i in range(len(route) - 1):
         if route[i] == 0 and route[i + 1] == 0:
             print(f"\n🚨 VALIDATION FAILED: {model_name}")
@@ -1099,17 +1142,20 @@ def validate_route(route, n_customers, model_name="Unknown"):
             print(f"Route: {route}")
             sys.exit(1)
     
-    # Check for duplicate customer visits
+    # === CUSTOMER COVERAGE VALIDATION ===
     customers_in_route = [node for node in route if node != 0]
     unique_customers = set(customers_in_route)
+    
+    # Check for duplicate customer visits
     if len(customers_in_route) != len(unique_customers):
         duplicates = [x for x in customers_in_route if customers_in_route.count(x) > 1]
         print(f"\n🚨 VALIDATION FAILED: {model_name}")
         print(f"Error: Duplicate customer visits: {duplicates}")
+        print(f"Customers in route: {customers_in_route}")
         print(f"Route: {route}")
         sys.exit(1)
     
-    # Check if all customers are visited
+    # Check if all customers are visited exactly once
     expected_customers = set(range(1, n_customers + 1))
     if unique_customers != expected_customers:
         missing = expected_customers - unique_customers
@@ -1123,6 +1169,85 @@ def validate_route(route, n_customers, model_name="Unknown"):
             print(f"Extra/invalid customers: {sorted(extra)}")
         print(f"Route: {route}")
         sys.exit(1)
+    
+    # === NODE INDEX VALIDATION ===
+    # Check for invalid node indices
+    max_valid_index = n_customers  # depot=0, customers=1 to n_customers
+    invalid_nodes = [node for node in route if node < 0 or node > max_valid_index]
+    if invalid_nodes:
+        print(f"\n🚨 VALIDATION FAILED: {model_name}")
+        print(f"Error: Invalid node indices: {invalid_nodes}")
+        print(f"Valid range: 0 to {max_valid_index} (depot=0, customers=1-{n_customers})")
+        print(f"Route: {route}")
+        sys.exit(1)
+    
+    # === CAPACITY CONSTRAINT VALIDATION ===
+    if instance is not None and 'demands' in instance and 'capacity' in instance:
+        demands = instance['demands']
+        vehicle_capacity = instance['capacity']
+        
+        # Simulate route execution to check capacity constraints
+        current_load = 0.0
+        max_load_violation = 0.0
+        violation_segments = []
+        
+        # Split route into trips (depot to depot segments)
+        trips = []
+        current_trip = []
+        
+        for i, node in enumerate(route):
+            current_trip.append(node)
+            if node == 0 and len(current_trip) > 1:  # End of trip (return to depot)
+                trips.append(current_trip[:])
+                current_trip = [0]  # Start new trip at depot
+        
+        # Validate each trip's capacity
+        for trip_idx, trip in enumerate(trips):
+            trip_load = 0.0
+            trip_customers = [node for node in trip if node != 0]
+            
+            for customer in trip_customers:
+                if customer <= len(demands) - 1:  # Valid customer index
+                    customer_demand = demands[customer]
+                    trip_load += customer_demand
+                    
+                    # Check if capacity is exceeded at any point
+                    if trip_load > vehicle_capacity:
+                        violation = trip_load - vehicle_capacity
+                        if violation > max_load_violation:
+                            max_load_violation = violation
+                        violation_segments.append({
+                            'trip': trip_idx,
+                            'customer': customer,
+                            'load': trip_load,
+                            'capacity': vehicle_capacity,
+                            'violation': violation
+                        })
+        
+        # Report capacity violations
+        if violation_segments:
+            print(f"\n🚨 VALIDATION FAILED: {model_name}")
+            print(f"Error: Capacity constraint violations detected!")
+            print(f"Vehicle capacity: {vehicle_capacity}")
+            print(f"Maximum violation: {max_load_violation:.3f}")
+            print(f"Violations:")
+            for v in violation_segments:
+                print(f"  Trip {v['trip']}: Customer {v['customer']} causes load {v['load']:.3f} > {v['capacity']} (excess: {v['violation']:.3f})")
+            print(f"Route trips: {trips}")
+            print(f"Full route: {route}")
+            sys.exit(1)
+        
+        # === DEMAND CONSISTENCY CHECK ===
+        # Verify that all customer demands are reasonable (> 0)
+        zero_demand_customers = []
+        for customer in range(1, len(demands)):
+            if demands[customer] <= 0:
+                zero_demand_customers.append(customer)
+        
+        if zero_demand_customers:
+            print(f"\n⚠️  WARNING: {model_name}")
+            print(f"Customers with zero/negative demand: {zero_demand_customers}")
+            # This is a warning, not a failure
     
     return True
 
@@ -1188,7 +1313,7 @@ def train_model(model, instances, config, model_name, logger):
                 n_customers = len(instance['coords']) - 1
                 
                 # VALIDATE ROUTE - This will exit with error if route is invalid
-                validate_route(route, n_customers, f"{model_name}-TRAIN")
+                validate_route(route, n_customers, f"{model_name}-TRAIN", instance)
 
                 total_cost = compute_route_cost(route, instance['distances'])
                 normalized_cost = compute_normalized_cost(route, instance['distances'], n_customers)
@@ -1243,7 +1368,7 @@ def train_model(model, instances, config, model_name, logger):
                         n_customers = len(instance['coords']) - 1
                         
                         # VALIDATE ROUTE - This will exit with error if route is invalid
-                        validate_route(route, n_customers, f"{model_name}-VAL")
+                        validate_route(route, n_customers, f"{model_name}-VAL", instance)
 
                         total_cost = compute_route_cost(route, instance['distances'])
                         normalized_cost = compute_normalized_cost(route, instance['distances'], n_customers)
@@ -1265,26 +1390,39 @@ def train_model(model, instances, config, model_name, logger):
         'final_val_cost': val_costs[-1] if val_costs else train_costs[-1]
     }
 
+def load_config(config_path):
+    """Load configuration from YAML file"""
+    import yaml
+    
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
+
 def parse_args():
     parser = argparse.ArgumentParser(description='CPU Comparative Study')
-    parser.add_argument('--customers', type=int, default=15)
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--instances', type=int, default=800)
-    parser.add_argument('--batch', type=int, default=8)
-    parser.add_argument('--coord_range', type=int, default=100)
-    parser.add_argument('--max_demand', type=int, default=10)
-    parser.add_argument('--capacity', type=int, default=3)
-    parser.add_argument('--plot_suffix', type=str, default='')
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--entropy_coef', type=float, default=0.01, help='Initial entropy regularization coefficient')
-    parser.add_argument('--entropy_min', type=float, default=0.0, help='Minimum entropy coefficient at end of schedule')
-    parser.add_argument('--warmup_epochs', type=int, default=5, help='Linear warmup epochs before cosine decay')
-    parser.add_argument('--min_lr', type=float, default=1e-4, help='Minimum LR at end of cosine schedule')
-    parser.add_argument('--temp_start', type=float, default=1.5, help='Initial sampling temperature')
-    parser.add_argument('--temp_min', type=float, default=0.2, help='Minimum sampling temperature')
+    parser.add_argument('--config', type=str, default='configs/small.yaml', help='Path to YAML configuration file')
+    parser.add_argument('--customers', type=int, default=None, help='Override number of customers from config')
+    parser.add_argument('--epochs', type=int, default=None, help='Override number of epochs from config')
+    parser.add_argument('--instances', type=int, default=None, help='Override number of instances from config')
+    parser.add_argument('--batch', type=int, default=None, help='Override batch size from config')
+    parser.add_argument('--coord_range', type=int, default=None, help='Override coordinate range from config')
+    parser.add_argument('--max_demand', type=int, default=None, help='Override max demand from config')
+    parser.add_argument('--capacity', type=int, default=None, help='Override capacity from config')
+    parser.add_argument('--plot_suffix', type=str, default='', help='Suffix for plot filenames')
+    parser.add_argument('--hidden_dim', type=int, default=None, help='Override hidden dimension from config')
+    parser.add_argument('--entropy_coef', type=float, default=None, help='Override initial entropy regularization coefficient')
+    parser.add_argument('--entropy_min', type=float, default=None, help='Override minimum entropy coefficient')
+    parser.add_argument('--warmup_epochs', type=int, default=None, help='Override warmup epochs')
+    parser.add_argument('--min_lr', type=float, default=None, help='Override minimum LR')
+    parser.add_argument('--temp_start', type=float, default=None, help='Override initial sampling temperature')
+    parser.add_argument('--temp_min', type=float, default=None, help='Override minimum sampling temperature')
     parser.add_argument('--only_dgt', action='store_true', help='Train only the DGT+RL model to avoid extra deps')
     parser.add_argument('--exclude_dgt', action='store_true', help='Train all models except DGT+RL and reuse prior DGT results')
-    parser.add_argument('--reuse_dgt_path', type=str, default='pytorch/comparative_study_complete.pt', help='Path to prior DGT results file to reuse when --exclude_dgt is set')
+    parser.add_argument('--reuse_dgt_path', type=str, default='results/small/analysis/comparative_study_complete.pt', help='Path to prior DGT results file to reuse when --exclude_dgt is set')
     return parser.parse_args()
 
 
@@ -1333,10 +1471,11 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
 
     # Run the legacy training loop (kept intact)
     logger.info(f"🏋️ Training {model_name} (legacy RL training)...")
-    ckpt_folder = 'pytorch/legacy_checkpoints'
+    logger.info(f"   Legacy training config: lr={lr}, n_steps={n_steps}, num_epochs={num_epochs}, T={T}")
+    ckpt_folder = 'results/small/checkpoints/legacy_checkpoints'
     os.makedirs(ckpt_folder, exist_ok=True)
     # Capture time to find latest CSV emitted by legacy loop
-    before_csv = set(glob.glob('instances/*.csv'))
+    before_csv = set(glob.glob('logs/training/*.csv'))
     legacy_train(model, train_loader, val_loader, ckpt_folder, 'actor.pt', lr, n_steps, num_epochs, T)
 
     # After training, evaluate on validation with greedy to get final cost
@@ -1372,16 +1511,31 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
     train_losses = []
     train_costs = []
     try:
-        after_csv = set(glob.glob('instances/*.csv'))
+        after_csv = set(glob.glob('logs/training/*.csv'))
         new_csvs = sorted(list(after_csv - before_csv), key=lambda p: os.path.getmtime(p))
         csv_path = new_csvs[-1] if new_csvs else sorted(list(after_csv), key=lambda p: os.path.getmtime(p))[-1]
+        logger.info(f"   📄 Using legacy CSV: {csv_path}")
         df = pd.read_csv(csv_path)
+        logger.info(f"   📊 CSV shape: {df.shape}, columns: {list(df.columns)}")
+        
+        # Debug: Show first few rows
+        logger.info(f"   📋 First 3 rows of CSV:")
+        for i, row in df.head(3).iterrows():
+            logger.info(f"      Row {i}: {dict(row)}")
+        
         # Columns are strings; convert to float
         if 'mean_loss' in df.columns:
-            train_losses = [float(x) for x in df['mean_loss'].tolist()][:num_epochs]
+            legacy_losses = [float(x) for x in df['mean_loss'].tolist()][:num_epochs]
+            logger.info(f"   🔢 Extracted {len(legacy_losses)} loss values (requested {num_epochs})")
+            # STANDARDIZE: Legacy uses advantage * log_prob (positive sign)
+            # Our models use -advantage * log_prob (negative sign)
+            # Convert legacy to our convention by negating
+            train_losses = [-loss for loss in legacy_losses]
         if 'mean_reward' in df.columns:
             train_costs = [float(x) for x in df['mean_reward'].tolist()][:num_epochs]
-    except Exception:
+            logger.info(f"   💰 Extracted {len(train_costs)} cost values (requested {num_epochs})")
+    except Exception as e:
+        logger.warning(f"   ⚠️ Failed to extract CSV data: {e}")
         # Fallback if CSV missing
         train_losses = []
         train_costs = []
@@ -1464,29 +1618,122 @@ def run_comparative_study():
     
     set_seeds(42)
     
-    # Ensure output directory exists
-    os.makedirs("utils/plots", exist_ok=True)
+    # Load base configuration from YAML
+    config = load_config(args.config)
+    
+    # Extract nested config values into flat structure for easier access
+    # Problem settings
+    if 'problem' in config:
+        config.update({
+            'num_customers': config['problem']['num_customers'],
+            'capacity': config['problem']['vehicle_capacity'],
+            'coord_range': config['problem']['coord_range'],
+            'demand_range': config['problem']['demand_range']
+        })
+    
+    # Training settings
+    if 'training' in config:
+        config.update({
+            'num_instances': config['training']['num_instances'],
+            'batch_size': config['training']['batch_size'],
+            'num_epochs': config['training']['num_epochs'],
+            'learning_rate': config['training']['learning_rate']
+        })
+    
+    # Model settings
+    if 'model' in config:
+        config.update({
+            'hidden_dim': config['model']['hidden_dim'],
+            'num_heads': config['model']['num_heads'],
+            'num_layers': config['model']['num_layers']
+        })
+    
+    # Advanced training settings
+    if 'training_advanced' in config:
+        config.update({
+            'grad_clip': config['training_advanced']['gradient_clip_norm'],
+            'warmup_epochs': config['training_advanced']['warmup_epochs'],
+            'min_lr': config['training_advanced']['min_lr'],
+            'entropy_coef': config['training_advanced']['entropy_coef'],
+            'entropy_min': config['training_advanced']['entropy_min'],
+            'temp_start': config['training_advanced']['temp_start'],
+            'temp_min': config['training_advanced']['temp_min']
+        })
+    
+    # Override config values with command-line arguments if provided
+    if args.customers is not None:
+        config['num_customers'] = args.customers
+    if args.epochs is not None:
+        config['num_epochs'] = args.epochs
+    if args.instances is not None:
+        config['num_instances'] = args.instances
+    if args.batch is not None:
+        config['batch_size'] = args.batch
+    if args.coord_range is not None:
+        config['coord_range'] = args.coord_range
+    if args.max_demand is not None:
+        config['demand_range'] = (1, args.max_demand)
+    if args.capacity is not None:
+        config['capacity'] = args.capacity
+    if args.hidden_dim is not None:
+        config['hidden_dim'] = args.hidden_dim
+    if args.entropy_coef is not None:
+        config['entropy_coef'] = args.entropy_coef
+    if args.entropy_min is not None:
+        config['entropy_min'] = args.entropy_min
+    if args.warmup_epochs is not None:
+        config['warmup_epochs'] = args.warmup_epochs
+    if args.min_lr is not None:
+        config['min_lr'] = args.min_lr
+    if args.temp_start is not None:
+        config['temp_start'] = args.temp_start
+    if args.temp_min is not None:
+        config['temp_min'] = args.temp_min
+    
+    # Convert string values to proper numeric types
+    if isinstance(config.get('learning_rate'), str):
+        config['learning_rate'] = float(config['learning_rate'])
+    if isinstance(config.get('entropy_coef'), str):
+        config['entropy_coef'] = float(config['entropy_coef'])
+    if isinstance(config.get('entropy_min'), str):
+        config['entropy_min'] = float(config['entropy_min'])
+    if isinstance(config.get('temp_start'), str):
+        config['temp_start'] = float(config['temp_start'])
+    if isinstance(config.get('temp_min'), str):
+        config['temp_min'] = float(config['temp_min'])
+    if isinstance(config.get('min_lr'), str):
+        config['min_lr'] = float(config['min_lr'])
+    if isinstance(config.get('grad_clip'), str):
+        config['grad_clip'] = float(config['grad_clip'])
+    if isinstance(config.get('gradient_clip_norm'), str):
+        config['gradient_clip_norm'] = float(config['gradient_clip_norm'])
+    
+    # Provide defaults for any missing keys
+    config.setdefault('temperature', 1.0)
+    
+    # Ensure output directories exist (will be created by save_results based on scale)
     os.makedirs("pytorch", exist_ok=True)
     
-    config = {
-        'num_customers': args.customers,
-        'capacity': args.capacity,
-        'coord_range': args.coord_range,
-        'demand_range': (1, args.max_demand),  # Match GAT-RL exactly: 1 to max_demand+1
-'hidden_dim': args.hidden_dim,
-        'num_heads': 4,
-        'num_layers': 2,
-        'batch_size': args.batch,
-        'num_epochs': args.epochs,
-        'learning_rate': 1e-3,
-        'grad_clip': 1.0,
-'temperature': 1.0,
-        'num_instances': args.instances,
-        'entropy_coef': args.entropy_coef,
-        'entropy_min': args.entropy_min
-    }
-    
-    logger.info(f"📋 Config: {config['num_customers']} customers, {config['num_epochs']} epochs, {config['num_instances']} instances, batch {config['batch_size']}")
+    # Display clean config summary
+    logger.info("\n" + "="*60)
+    logger.info("📋 PROBLEM & TRAINING CONFIGURATION")
+    logger.info("="*60)
+    logger.info(f"🎯 Problem Settings:")
+    logger.info(f"   Customers: {config['num_customers']} (excluding depot)")
+    logger.info(f"   Vehicle Capacity: {config['capacity']}")
+    logger.info(f"   Demand Range: {config['demand_range'][0]}-{config['demand_range'][1]}")
+    logger.info(f"   Coordinate Range: [0, {config['coord_range']}] → normalized to [0,1]")
+    logger.info(f"🏋️ Training Settings:")
+    logger.info(f"   Instances: {config['num_instances']}")
+    logger.info(f"   Epochs: {config['num_epochs']}")
+    logger.info(f"   Batch Size: {config['batch_size']}")
+    logger.info(f"   Learning Rate: {config['learning_rate']}")
+    logger.info(f"")
+    logger.info(f"🧠 Model Architecture:")
+    logger.info(f"   Hidden Dimension: {config['hidden_dim']}")
+    logger.info(f"   Attention Heads: {config['num_heads']}")
+    logger.info(f"   Transformer Layers: {config['num_layers']}")
+    logger.info("="*60)
     
     # Generate instances
     logger.info("🔄 Generating CVRP instances...")
@@ -1569,8 +1816,16 @@ def run_comparative_study():
                 'train_cost': train_costs + [float('nan')] * max(0, epochs - len(train_costs)),
                 'val_cost': val_costs_sparse
             })
+            # Determine scale for output path
+            num_customers = config.get('num_customers', 15)
+            scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+            
+            # Ensure CSV directory exists
+            csv_dir = f"results/{scale}/csv"
+            os.makedirs(csv_dir, exist_ok=True)
+            
             suffix = f"_{args.plot_suffix}" if args.plot_suffix else ""
-            out_hist = f"utils/plots/history_{_sanitize(model_name)}{suffix}.csv"
+            out_hist = f"{csv_dir}/history_{_sanitize(model_name)}{suffix}.csv"
             df_hist.to_csv(out_hist, index=False)
             logger.info(f"   🧾 Saved history CSV: {out_hist}")
         except Exception as e:
@@ -1595,7 +1850,7 @@ def run_comparative_study():
         
         # For parameter count in plots, estimate from saved state_dict if available
         try:
-            sd = torch.load('pytorch/model_dgt+rl.pt', map_location='cpu')
+            sd = torch.load('results/small/pytorch/model_dgtplus_rl.pt', map_location='cpu')
             state = sd.get('model_state_dict', sd)
             dgt_params = int(sum(t.numel() for t in state.values() if hasattr(t, 'numel')))
             # Create a dummy module to report params for plotting
@@ -1613,6 +1868,9 @@ def run_comparative_study():
     # Generate comparison plots and save results BEFORE strict validation to ensure outputs are persisted
     create_comparison_plots(results, training_times, config, logger, naive_avg_cost, models)
 
+    # Create and solve test instance for detailed analysis
+    test_results = create_and_solve_test_instance(models, config, logger)
+    
     # Persist artifacts regardless of validation outcome
     save_results(results, training_times, models, config)
 
@@ -1655,13 +1913,13 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     palette = sns.color_palette("tab10", n_colors=len(model_names))
     color_map = {name: palette[i] for i, name in enumerate(model_names)}
 
-    # 1. Training Loss Comparison
+    # 1. Training Loss Comparison (standardized REINFORCE loss for all models)
     plt.subplot(2, 4, 1)
     for model_name, result in results.items():
         plt.plot(result['train_losses'], label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-    plt.title('Training Loss Evolution', fontsize=12, fontweight='bold')
+    plt.title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
-    plt.ylabel('Loss')
+    plt.ylabel('REINFORCE Loss')
     plt.legend()
     plt.grid(True, alpha=0.3)
     
@@ -1715,7 +1973,7 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     
     # Add value labels on bars (normalized)
     for bar, cost in zip(bars, all_costs_normalized):
-        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.2,
+        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.01,
                 f'{cost:.2f}', ha='center', va='bottom', fontweight='bold')
     
     plt.grid(True, alpha=0.3, axis='y')
@@ -1730,7 +1988,7 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     plt.xticks(range(len(model_names)), [name.replace(' ', '\n') for name in model_names])
     
     for bar, time_val in zip(bars, times):
-        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1,
                 f'{time_val:.1f}s', ha='center', va='bottom', fontweight='bold')
     
     plt.grid(True, alpha=0.3, axis='y')
@@ -1786,10 +2044,17 @@ def create_comparison_plots(results, training_times, config, logger, naive_basel
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
+    
+    # Determine scale and ensure plots directory exists
+    num_customers = config.get('num_customers', 15)
+    scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+    plots_dir = f"results/{scale}/plots"
+    os.makedirs(plots_dir, exist_ok=True)
+    
     # Determine suffix from CLI
     args = parse_args()
     suffix = f"_{args.plot_suffix}" if args.plot_suffix else ""
-    out_path = f"utils/plots/comparative_study_results{suffix}.png"
+    out_path = f"{plots_dir}/comparative_study_results{suffix}.png"
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
     logger.info(f"📊 Comparison plots saved to {out_path}")
     
@@ -1868,10 +2133,16 @@ def create_performance_table(results, training_times, param_counts, logger):
     
     df = pd.DataFrame(data)
     
+    # Determine scale and ensure CSV directory exists  
+    # Note: We need to get config from somewhere - using default for now
+    scale = 'small'  # Default scale - this will be corrected when called from main function
+    csv_dir = f"results/{scale}/csv"
+    os.makedirs(csv_dir, exist_ok=True)
+    
     # Save to CSV
     args = parse_args()
     suffix = f"_{args.plot_suffix}" if args.plot_suffix else ""
-    csv_path = f'utils/plots/comparative_results{suffix}.csv'
+    csv_path = f'{csv_dir}/comparative_results{suffix}.csv'
     df.to_csv(csv_path, index=False)
     logger.info(f"📋 Detailed results saved to {csv_path}")
     
@@ -1952,14 +2223,28 @@ def validate_naive_baseline_correctness(results, naive_avg_cost, config, logger,
         logger.info("✅✅✅ STRICT VALIDATION PASSED: All models ≤ naive baseline! ✅✅✅")
 
 def save_results(results, training_times, models, config):
-    """Save all results and models"""
+    """Save all results and models to organized results structure"""
     
-    # Create pytorch directory if it does not exist
-    os.makedirs("pytorch", exist_ok=True)
+    # Determine experiment scale based on problem size
+    num_customers = config.get('num_customers', 15)
+    if num_customers <= 20:
+        scale = 'small'
+    elif num_customers <= 50:
+        scale = 'medium'
+    else:
+        scale = 'production'
     
-    # Save models
+    # Create organized directories
+    pytorch_dir = f"results/{scale}/pytorch"
+    analysis_dir = f"results/{scale}/analysis"
+    logs_dir = f"results/{scale}/logs"
+    os.makedirs(pytorch_dir, exist_ok=True)
+    os.makedirs(analysis_dir, exist_ok=True)
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Save individual models to pytorch directory
     for model_name, model in models.items():
-        filename = f"pytorch/model_{model_name.lower().replace(' ', '_')}.pt"
+        filename = f"{pytorch_dir}/model_{model_name.lower().replace(' ', '_').replace('+', 'plus')}.pt"
         torch.save({
             'model_state_dict': model.state_dict(),
             'model_name': model_name,
@@ -1968,15 +2253,198 @@ def save_results(results, training_times, models, config):
             'training_time': training_times[model_name]
         }, filename)
     
-    # Save complete results
+    # Save complete comparative study results to analysis directory
     torch.save({
         'results': results,
         'training_times': training_times,
+        'config': config,
+        'experiment_scale': scale
+    }, f'{analysis_dir}/comparative_study_complete.pt')
+
+def create_and_solve_test_instance(models, config, logger):
+    """Create a test CVRP instance and solve it with each trained model for detailed analysis"""
+    logger.info("\n🧪 Creating test instance for detailed model comparison...")
+    
+    # Determine scale
+    num_customers = config.get('num_customers', 15)
+    scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+    test_dir = f"results/{scale}/test_instances"
+    os.makedirs(test_dir, exist_ok=True)
+    
+    # Create a representative test instance
+    test_instance = generate_cvrp_instance(
+        num_customers=config['num_customers'],
+        capacity=config['capacity'],
+        coord_range=config['coord_range'],
+        demand_range=config['demand_range'],
+        seed=12345  # Fixed seed for reproducibility
+    )
+    
+    # Save test instance
+    np.savez(f"{test_dir}/test_instance.npz",
+             coords=test_instance['coords'],
+             demands=test_instance['demands'],
+             distances=test_instance['distances'],
+             capacity=test_instance['capacity'])
+    
+    logger.info(f"📍 Test instance: {config['num_customers']} customers, capacity={config['capacity']}")
+    logger.info(f"   Coords range: {test_instance['coords'].min():.3f} to {test_instance['coords'].max():.3f}")
+    logger.info(f"   Demands range: {test_instance['demands'][1:].min():.3f} to {test_instance['demands'][1:].max():.3f}")
+    
+    # Compute naive baseline for reference
+    naive_cost = compute_naive_baseline_cost(test_instance)
+    naive_route = naive_baseline_solution(test_instance)
+    naive_normalized = naive_cost / config['num_customers']
+    
+    logger.info(f"   Naive baseline: {naive_cost:.3f} ({naive_normalized:.3f}/customer)")
+    
+    # Test each model on the instance
+    test_results = {}
+    
+    for model_name, model in models.items():
+        logger.info(f"\n🔍 Testing {model_name} on test instance...")
+        model.eval()
+        
+        with torch.no_grad():
+            # Test both greedy and sampling - handle legacy model differently
+            if model_name == 'GAT+RL (legacy)':
+                # Legacy model uses different interface and expects batched PyG data
+                from torch_geometric.loader import DataLoader
+                test_data = build_pyg_data_from_instance(test_instance)
+                # Create a DataLoader with batch_size=1 to properly batch the single instance
+                test_loader = DataLoader([test_data], batch_size=1, shuffle=False)
+                test_batch = next(iter(test_loader))
+                
+                n_steps = config['num_customers'] * 2
+                T = 2.5
+                
+                # Legacy model returns actions, log_probs (no entropy)
+                greedy_actions, greedy_log_probs = model(test_batch, n_steps=n_steps, greedy=True, T=T)
+                sample_actions, sample_log_probs = model(test_batch, n_steps=n_steps, greedy=False, T=T)
+                
+                # Convert to route format (add depot at start and end)
+                # Handle different possible tensor shapes from legacy model
+                if greedy_actions.dim() == 1:
+                    # If 1D, add batch dimension
+                    greedy_actions = greedy_actions.unsqueeze(0)
+                    sample_actions = sample_actions.unsqueeze(0)
+                
+                depot = torch.zeros(greedy_actions.size(0), 1, dtype=torch.long)
+                greedy_routes = [torch.cat([depot, greedy_actions, depot], dim=1)[0].cpu().tolist()]
+                sample_routes = [torch.cat([depot, sample_actions, depot], dim=1)[0].cpu().tolist()]
+                
+                # Set dummy entropy values
+                greedy_entropy = torch.zeros(1)
+                sample_entropy = torch.zeros(1)
+            else:
+                # Regular models
+                greedy_routes, greedy_log_probs, greedy_entropy = model([test_instance], greedy=True)
+                sample_routes, sample_log_probs, sample_entropy = model([test_instance], greedy=False, temperature=1.0)
+            
+            greedy_route = greedy_routes[0]
+            sample_route = sample_routes[0]
+            
+            # Validate routes
+            validate_route(greedy_route, config['num_customers'], f"{model_name}-GREEDY-TEST", test_instance)
+            validate_route(sample_route, config['num_customers'], f"{model_name}-SAMPLE-TEST", test_instance)
+            
+            # Compute costs
+            greedy_cost = compute_route_cost(greedy_route, test_instance['distances'])
+            sample_cost = compute_route_cost(sample_route, test_instance['distances'])
+            
+            # Compute improvement over naive
+            greedy_improvement = ((naive_cost - greedy_cost) / naive_cost) * 100
+            sample_improvement = ((naive_cost - sample_cost) / naive_cost) * 100
+            
+            test_results[model_name] = {
+                'greedy_route': greedy_route,
+                'sample_route': sample_route,
+                'greedy_cost': greedy_cost,
+                'sample_cost': sample_cost,
+                'greedy_cost_per_customer': greedy_cost / config['num_customers'],
+                'sample_cost_per_customer': sample_cost / config['num_customers'],
+                'greedy_improvement': greedy_improvement,
+                'sample_improvement': sample_improvement,
+                'greedy_log_prob': greedy_log_probs[0].item(),
+                'sample_log_prob': sample_log_probs[0].item(),
+                'greedy_entropy': greedy_entropy[0].item(),
+                'sample_entropy': sample_entropy[0].item()
+            }
+            
+            logger.info(f"   Greedy: {greedy_cost:.3f} ({greedy_cost/config['num_customers']:.3f}/cust) - {greedy_improvement:+.1f}% vs naive")
+            logger.info(f"   Sample: {sample_cost:.3f} ({sample_cost/config['num_customers']:.3f}/cust) - {sample_improvement:+.1f}% vs naive")
+            logger.info(f"   Route lengths: Greedy={len(greedy_route)}, Sample={len(sample_route)}")
+    
+    # Create detailed test results analysis
+    test_analysis = {
+        'test_instance': {
+            'coords': test_instance['coords'].tolist(),
+            'demands': test_instance['demands'].tolist(),
+            'capacity': test_instance['capacity'],
+            'num_customers': config['num_customers']
+        },
+        'naive_baseline': {
+            'route': naive_route,
+            'cost': naive_cost,
+            'cost_per_customer': naive_normalized
+        },
+        'model_results': test_results,
         'config': config
-    }, 'pytorch/comparative_study_complete.pt')
+    }
+    
+    # Save detailed test analysis to analysis directory (consolidating data there)
+    analysis_dir = f"results/{scale}/analysis"
+    torch.save(test_analysis, f"{analysis_dir}/test_instance_analysis.pt")
+    
+    # Also save as JSON for easy reading
+    import json
+    
+    # Convert numpy types to native Python for JSON serialization
+    def convert_for_json(obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {key: convert_for_json(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_for_json(item) for item in obj]
+        else:
+            return obj
+    
+    json_analysis = convert_for_json(test_analysis)
+    with open(f"{analysis_dir}/test_instance_analysis.json", 'w') as f:
+        json.dump(json_analysis, f, indent=2)
+    
+    logger.info(f"\n💾 Test results saved to:")
+    logger.info(f"   Binary: {analysis_dir}/test_instance_analysis.pt")
+    logger.info(f"   JSON: {analysis_dir}/test_instance_analysis.json")
+    logger.info(f"   Instance: {test_dir}/test_instance.npz")
+    
+    # Print summary table (normalized per customer)
+    logger.info("\n📊 TEST INSTANCE PERFORMANCE SUMMARY (Per Customer)")
+    logger.info("=" * 80)
+    logger.info(f"{'Model':<20} {'Greedy Cost/Cust':<15} {'Sample Cost/Cust':<15} {'Greedy Impr':<12} {'Sample Impr':<12}")
+    logger.info("-" * 80)
+    
+    for model_name, results in test_results.items():
+        greedy_per_cust = results['greedy_cost'] / config['num_customers']
+        sample_per_cust = results['sample_cost'] / config['num_customers']
+        logger.info(f"{model_name:<20} {greedy_per_cust:<15.3f} {sample_per_cust:<15.3f} {results['greedy_improvement']:<12.1f}% {results['sample_improvement']:<12.1f}%")
+    
+    logger.info(f"{'Naive Baseline':<20} {naive_normalized:<15.3f} {naive_normalized:<15.3f} {'0.0':<12} {'0.0':<12}")
+    logger.info("=" * 80)
+    
+    return test_results
 
 if __name__ == "__main__":
     results = run_comparative_study()
     args = parse_args()
     suffix = f"_{args.plot_suffix}" if args.plot_suffix else ""
-    print(f"\n🎉 Comparative study completed! Check utils/plots/comparative_study_results{suffix}.png for detailed analysis.")
+    # Get the scale to show correct output path - load config to get num_customers
+    config = load_config(args.config)
+    num_customers = args.customers if args.customers is not None else config.get('problem', {}).get('num_customers', 15)
+    scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+    print(f"\n🎉 Comparative study completed! Check results/{scale}/plots/comparative_study_results{suffix}.png for detailed analysis.")

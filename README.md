@@ -7,7 +7,7 @@ A comprehensive comparative study implementing and comparing 6 different neural 
 ### Prerequisites
 - Python 3.8+
 - PyTorch
-- CUDA-capable GPU (optional, but recommended)
+- CPU-optimized (GPU dependencies removed)
 
 ### Installation
 ```bash
@@ -24,35 +24,203 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Run Comparative Study
+### Run Studies
+
+#### Main Comparative Study (Recommended)
 ```bash
-# CPU version (auto-detects CUDA if available)
+# CPU-optimized scientific comparison
 python run_comparative_study.py
 
-# GPU version (explicit GPU optimization)
-python run_comparative_study_gpu.py --customers 15 --epochs 10 --instances 800 --batch 8
+# With custom parameters
+python run_comparative_study.py --customers 20 --epochs 25 --instances 1000
+python run_comparative_study.py --batch 16 --max_demand 15 --capacity 5
+
+# Quick testing vs full evaluation
+python run_comparative_study.py --customers 10 --epochs 5 --instances 200  # Quick
+python run_comparative_study.py --customers 50 --epochs 100 --instances 5000  # Full
+```
+
+#### Academic Ablation Study
+```bash
+# Statistical analysis with multiple runs
+python src/run_ablation_study.py --config configs/ablation.yaml
 ```
 
 ## 📋 Project Structure
 
 ```
 .
-├── run_comparative_study.py         # Main CPU version (latest)
-├── run_comparative_study_gpu.py     # GPU-optimized version
-├── pytorch/                         # Trained models & results
-│   ├── model_pointer+rl.pt         # Pointer Network (21K params)
-│   ├── model_gt-greedy.pt          # Graph Transformer Greedy (92K params)
-│   ├── model_gt+rl.pt              # Graph Transformer RL (92K params)
-│   ├── model_dgt+rl.pt             # Dynamic Graph Transformer (92K params)
-│   ├── model_gat+rl.pt             # Graph Attention Transformer (59K params)
-│   └── comparative_study_complete.pt # Complete study results
-├── utils/
-│   ├── plots/                      # All visualization files
-│   └── comparative_results.csv     # Results data
+├── run_comparative_study.py         # Main scientific comparative study
 ├── src/                            # Source code modules
-├── configs/                        # Configuration files
-├── experiments/                    # Experiment setups
+│   ├── run_ablation_study.py      # Academic ablation study framework
+│   ├── models/                     # Essential models (cleaned up)
+│   ├── models_backup/              # Experimental/unused models (moved here)
+│   ├── training/                   # Training utilities (cleaned up)
+│   ├── training_backup/            # Legacy training modules (moved here)
+│   └── utils/                      # Helper functions and RL utilities
+├── src_batch/                      # Legacy compatibility layer (see below)
+├── configs/                        # Configuration system
+│   ├── small.yaml                 # Quick testing config
+│   ├── medium.yaml                # Research experiments config
+│   ├── production.yaml            # Publication-ready config
+│   └── default_config.yaml        # Default CPU configuration
+├── results/                        # Organized experimental results by scale
+│   ├── small/                      # Quick testing results (≤20 customers)
+│   ├── medium/                     # Research experiment results (21-50 customers)
+│   └── production/                 # Publication-ready results (>50 customers)
+├── logs/                           # All logging output
+│   ├── tensorboard/               # TensorBoard logs (moved from runs/)
+│   └── training/                  # CSV training logs (moved from instances/)
 └── venv/                          # Python virtual environment
+```
+
+## 🔗 Legacy Compatibility (`src_batch/`)
+
+The `src_batch/` directory provides a compatibility layer for integrating with the legacy `GAT_RL` repository. This layer enables the project to:
+
+- **Maintain Backward Compatibility**: Use original GAT+RL implementations for comparison studies
+- **Access Legacy Training Loops**: Preserve original training algorithms and their specific behaviors
+- **Import External Components**: Dynamically load modules from the external `GAT_RL` codebase
+- **Bridge Architecture Differences**: Handle differences between the new CPU-optimized code and legacy implementations
+
+### How it Works:
+- **Dynamic Module Loading**: Uses `_legacy_loader.py` to import modules from file paths
+- **Path Management**: Automatically adds the external `GAT_RL` repository to Python's import path
+- **Transparent Imports**: Allows imports like `from src_batch.model.Model import Model` to work seamlessly
+- **Optional Dependency**: The legacy components are loaded only when needed and available
+
+### Legacy Path Structure:
+```
+src_batch/
+├── _legacy_loader.py      # Dynamic module loading utilities
+├── legacy_shim.py         # Main compatibility shim
+├── legacy_path.py         # Path management
+├── encoder/               # Legacy encoder forwarding
+├── decoder/               # Legacy decoder forwarding  
+├── model/                 # Legacy model forwarding
+└── train/                 # Legacy training forwarding
+```
+
+**Note**: The `src_batch/` layer expects an external `GAT_RL` repository at `../GAT_RL/`. If this repository is not available, the legacy GAT+RL model will be skipped automatically.
+
+## 🧹 Cleaned Project Structure
+
+This project has undergone a comprehensive cleanup to improve maintainability:
+
+### **Backup Directories:**
+- **`src/models_backup/`** - Contains experimental model implementations that were moved during cleanup
+- **`src/training_backup/`** - Contains legacy training modules that are no longer used
+
+### **Current Active Structure:**
+- **All models are defined inline** in `run_comparative_study.py` for better maintainability
+- **All training logic is inline** in the main script with optimized CPU performance
+- **Legacy GAT+RL comparison** works through `src_batch/` → `../GAT_RL/` (external dependency)
+- **Clean package directories** with only essential functionality
+
+### **Restoration:**
+If you need any experimental models or training modules, they can be easily restored from the backup directories. Each backup contains detailed restoration instructions in its README file.
+
+## ⚙️ Configuration System
+
+The project uses a three-tier configuration system for different experimental scales:
+
+### 🔬 Small Scale (`configs/small.yaml`) - Quick Testing & Development
+**Purpose**: Fast iteration, debugging, and initial development
+- **Nodes**: 10-20 customers
+- **Epochs**: 10
+- **Dataset**: 800 training instances
+- **Batch Size**: 8
+- **Model**: Lightweight (64 hidden dim, 2-4 layers)
+- **Results**: `results/small/`
+- **Training Time**: ~5-10 min
+
+### 🧪 Medium Scale (`configs/medium.yaml`) - Research Experiments
+**Purpose**: Balanced experiments for research validation
+- **Nodes**: 20-50 customers
+- **Epochs**: 50
+- **Dataset**: 10,000 training instances
+- **Batch Size**: 16
+- **Model**: Standard research scale (128 hidden dim, 4-8 layers)
+- **Results**: `results/medium/`
+- **Training Time**: ~2-4 hours
+
+### 🏭 Production Scale (`configs/production.yaml`) - Publication-Ready Results
+**Purpose**: Comprehensive evaluation for publications
+- **Nodes**: 20-200 customers
+- **Epochs**: 200
+- **Dataset**: 100,000 training instances
+- **Batch Size**: 32
+- **Model**: Full-scale (256 hidden dim, 8+ layers)
+- **Results**: `results/production/`
+- **Training Time**: ~1-2 days
+
+## 📊 Results Organization
+
+All experimental results are automatically organized in the `results/` directory by problem scale:
+
+```
+results/
+├── small/              # ≤20 customers (5-10 min training)
+├── medium/             # 21-50 customers (2-4 hour training)
+└── production/         # >50 customers (1-2 day training)
+    ├── analysis/       # Complete study results (.pt) + test analysis (.json)
+    ├── csv/            # Training history + comparative results (.csv)
+    ├── logs/           # Training logs and diagnostics
+    ├── plots/          # Visualization plots (.png)
+    ├── pytorch/        # Individual model checkpoints (.pt files)
+    └── test_instances/ # Test CVRP instances (.npz) for detailed analysis
+```
+
+### 🧪 **Test Instance Analysis**
+
+Each experiment automatically creates a **fixed test instance** (seed=12345) to provide:
+- **Reproducible Comparisons**: Same instance tested across all models
+- **Detailed Route Analysis**: Both greedy and sampling strategies evaluated
+- **Performance Validation**: All routes validated against CVRP constraints
+- **Improvement Metrics**: Quantified improvements over naive baseline
+- **Multiple Output Formats**: Binary (.pt) for processing, JSON (.json) for inspection
+
+**Example test analysis output:**
+```
+📊 TEST INSTANCE PERFORMANCE SUMMARY
+================================================================================
+Model                Greedy Cost  Sample Cost  Greedy Impr  Sample Impr
+--------------------------------------------------------------------------------
+Pointer+RL           9.642        10.123       +15.2%       +10.7%
+GT+RL                9.234        9.891        +19.0%       +13.1%
+DGT+RL               8.892        9.456        +21.9%       +16.8%
+Naive Baseline       11.380       11.380       0.0          0.0
+================================================================================
+```
+
+## 🔬 Scientific Validation
+
+### Rigorous Route Validation
+The comparative study includes **comprehensive CVRP constraint validation** for scientific rigor:
+
+#### ✅ **Constraint Validation**:
+1. **Route Structure**: Start/end at depot, no consecutive depot visits
+2. **Customer Coverage**: All customers visited exactly once, no duplicates
+3. **Capacity Constraints**: Vehicle load never exceeds capacity during any trip
+4. **Node Validation**: All route indices within valid range
+5. **Trip Analysis**: Route decomposition into individual depot-to-depot trips
+
+#### 🚨 **Strict Error Reporting**:
+- **Immediate Termination**: Invalid routes cause immediate failure with detailed diagnostics
+- **Capacity Violations**: Reports exact load, capacity, excess, and violating customers
+- **Route Decomposition**: Shows trip-by-trip breakdown for analysis
+- **Scientific Integrity**: Ensures all reported results are based on valid CVRP solutions
+
+```
+Example Validation Output:
+🚨 VALIDATION FAILED: DGT+RL-TRAIN
+Error: Capacity constraint violations detected!
+Vehicle capacity: 3.0
+Maximum violation: 0.5
+Violations:
+  Trip 0: Customer 5 causes load 3.5 > 3.0 (excess: 0.5)
+Route trips: [[0, 2, 5, 0], [0, 1, 3, 4, 0]]
+Full route: [0, 2, 5, 0, 1, 3, 4, 0]
 ```
 
 ## 🏗️ Architecture Comparison
@@ -95,6 +263,59 @@ This study implements and compares 6 different neural network architectures:
 - **Features**: Best of both approaches
 - **Performance**: Most flexible, highest potential
 
+## 🧠 Data Representation Approach
+
+### Raw Tensor Batching vs PyTorch Geometric (PyG)
+
+This project uses **two different data representation approaches** for scientific comparison:
+
+#### 🔧 **Our Models**: Raw Tensor Batching
+**Models**: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL (our implementation)
+
+**Approach**: Direct tensor manipulation with explicit batching
+```python
+# Example: [batch_size, max_nodes, features]
+node_features = torch.zeros(batch_size, max_nodes, 3)  # coords + demands
+demands_batch = torch.zeros(batch_size, max_nodes)     # demands only
+capacities = torch.zeros(batch_size)                   # vehicle capacities
+```
+
+**Why we chose raw tensors for CVRP**:
+- ✅ **CVRP-Optimized**: Complete graphs don't benefit from sparse representations
+- ✅ **Simplicity**: Direct control over data flow and transformations
+- ✅ **Performance**: Less overhead for fully-connected scenarios
+- ✅ **Debugging**: Easier to inspect intermediate tensor states
+- ✅ **Dependencies**: No external PyG dependency required
+- ✅ **CPU Efficiency**: Better performance on CPU with standard PyTorch operations
+
+#### 🌐 **Legacy GAT+RL**: PyTorch Geometric (PyG) Data
+**Model**: GAT+RL (legacy) - retained for comparison
+
+**Approach**: Graph-structured data with PyG Data objects
+```python
+# Example: PyG Data object with graph structure
+data = Data(x=node_coords, edge_index=edge_index, 
+           edge_attr=distances, demand=demands)
+```
+
+**Why PyG is retained in legacy model**:
+- 🔬 **Research Comparison**: Maintains compatibility with original implementation
+- 📊 **Baseline Preservation**: Enables fair comparison with published results
+- 🔗 **Graph Flexibility**: Demonstrates alternative approach for reference
+
+### 🎯 **Decision Rationale**
+
+For **CVRP specifically**, raw tensor batching is superior because:
+1. **Complete Connectivity**: CVRP uses complete graphs (any city → any city)
+2. **Fixed Structure**: Standardized node features (coordinates, demands) 
+3. **Performance**: PyG's sparsity advantages don't apply to complete graphs
+4. **Simplicity**: Fewer dependencies and easier deployment
+
+**PyG would be better for**:
+- Sparse road networks (only some cities connected)
+- Complex edge features (traffic, road conditions)
+- Extending to other graph problems beyond routing
+
 ## 📊 Performance Results
 
 ### Typical Performance (15 customers, 100 coordinate range):
@@ -117,9 +338,11 @@ This study implements and compares 6 different neural network architectures:
 ### Core Features
 - **Sequential Route Generation**: All models generate complete routes through iterative decision-making
 - **REINFORCE Learning**: Proper policy gradient implementation with baseline
-- **Constraint Handling**: Vehicle capacity and customer visit constraints
-- **GPU Optimization**: Efficient batching and tensor operations
-- **Route Validation**: Comprehensive validation of generated solutions
+- **Rigorous Constraint Validation**: Real-time capacity and coverage constraint checking
+- **CPU Optimization**: Efficient batching and tensor operations optimized for CPU
+- **Scientific Validation**: Every training and validation route verified against CVRP constraints
+- **Trip-by-Trip Analysis**: Route decomposition for detailed constraint verification
+- **Immediate Error Reporting**: Comprehensive diagnostics for constraint violations
 
 ### Data Generation
 - **Coordinates**: Random integers [0, max_distance], normalized by /100
@@ -136,8 +359,9 @@ This study implements and compares 6 different neural network architectures:
 
 ## 🔧 Configuration Options
 
-### Command Line Arguments (GPU version):
+### Command Line Arguments:
 ```bash
+--config <path>         # Configuration file (small/medium/production)
 --customers 15          # Number of customers (default: 15)
 --epochs 10             # Training epochs (default: 10) 
 --instances 800         # Training instances (default: 800)
@@ -145,46 +369,54 @@ This study implements and compares 6 different neural network architectures:
 --max_distance 100      # Coordinate range (default: 100)
 --max_demand 10         # Demand range (default: 10)
 --capacity 3            # Vehicle capacity (default: 3)
---device auto           # Device: cuda/cpu/auto (default: auto)
 ```
 
-### CPU Version Configuration:
-The CPU version uses fixed configuration optimized for stability:
-- 15 customers, 10 epochs, 800 instances
-- Batch size 8, capacity 3
-- Auto-device detection (CUDA if available)
+### CPU-Optimized Configuration:
+The system is now fully CPU-optimized with:
+- Multi-threaded CPU execution using all available cores
+- Optimized tensor operations for CPU
+- Memory-efficient batching
+- No GPU dependencies or CUDA requirements
 
 ## 🧪 Experimental Features
 
 ### Recent Improvements
-- **Fixed REINFORCE Implementation**: Correct advantage calculation
-- **Proper Route Generation**: Sequential decision-making matching CVRP requirements  
-- **GPU Optimization**: Efficient tensor operations and memory management
-- **Architecture Matching**: GPU version now matches CPU sequential generation
-- **Comprehensive Validation**: Route correctness and constraint satisfaction
+- **🧪 Test Instance Analysis**: Reproducible test instances with detailed model comparison
+- **📂 Organized Directory Structure**: Clean scale-based organization (small/medium/production)
+- **🚨 Rigorous Scientific Validation**: Comprehensive CVRP constraint validation with detailed error reporting
+- **🧹 Reorganized Project Structure**: Clean separation of current vs legacy code, removed unused directories
+- **✅ Fixed REINFORCE Implementation**: Correct advantage calculation and policy gradients
+- **🛣️ Proper Route Generation**: Sequential decision-making matching CVRP requirements  
+- **⚡ CPU Optimization**: Full CPU-only operation with optimized multi-threading
+- **🔍 Enhanced Route Validation**: Capacity constraints, trip analysis, and constraint verification
+- **📊 Comprehensive Output**: Structured results with plots, CSVs, model checkpoints, and test analysis
 
 ### Architecture Evolution
-The project evolved from single-action classification models to proper sequential route generation models, fixing fundamental architectural issues that prevented effective learning.
+The project evolved from single-action classification models to proper sequential route generation models with rigorous scientific validation:
+
+1. **🛣️ Sequential Route Generation**: Fixed fundamental architectural issues for proper CVRP solving
+2. **🚨 Comprehensive Validation**: Added strict constraint checking for scientific integrity
+3. **📂 Project Reorganization**: Clean scale-based structure (small/medium/production)
+4. **🧪 Test Instance Framework**: Reproducible test instances with detailed model comparison
+5. **📊 Enhanced Logging**: Organized results with plots, CSVs, and comprehensive analysis
+6. **🔍 Scientific Rigor**: Every route validated against CVRP constraints during training and evaluation
+7. **🧹 Directory Cleanup**: Removed unused directories, consolidated data in analysis/
 
 ## 🚨 Common Issues & Solutions
 
 ### Installation Issues
 ```bash
 # If PyTorch installation fails
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# If CUDA issues on GPU
-export CUDA_VISIBLE_DEVICES=0
-python run_comparative_study_gpu.py --device cuda
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### Memory Issues
 ```bash
 # Reduce batch size for large problems
-python run_comparative_study_gpu.py --batch 4 --customers 10
+python run_comparative_study.py --config configs/small.yaml
 
-# Use CPU version for very large instances
-python run_comparative_study.py
+# Use small configuration for limited resources
+python run_comparative_study.py --config configs/small.yaml
 ```
 
 ### Performance Issues
@@ -199,15 +431,25 @@ python run_comparative_study.py
 2. **Architecture Expansion**: Added 5 additional model architectures
 3. **GPU Optimization**: Created GPU-optimized version with batching
 4. **Critical Fixes**: Fixed REINFORCE advantages and route generation
-5. **Architecture Alignment**: Made GPU version match CPU sequential approach
-6. **Performance Validation**: Achieved 38-46% improvements over naive baseline
+5. **CPU Migration**: Full transition to CPU-only optimized implementation
+6. **Scientific Validation**: Added rigorous CVRP constraint validation
+7. **Project Reorganization**: Clean scale-based structure (small/medium/production)
+8. **Test Instance Framework**: Reproducible test instances for model comparison
+9. **Directory Cleanup**: Removed unused directories, consolidated analysis data
+10. **Enhanced Validation**: Comprehensive route validation with detailed error reporting
+11. **Performance Validation**: Achieved 38-46% improvements over naive baseline
 
 ### Lessons Learned
-- **Sequential vs Single-step**: CVRP requires sequential decision-making, not classification
-- **Route Validation**: Critical for ensuring legitimate solutions
-- **REINFORCE Implementation**: Advantage calculation direction matters significantly
-- **Architecture Matters**: Different approaches excel in different scenarios
-- **GPU Optimization**: Batching and tensor operations provide major speedups
+- **🛣️ Sequential vs Single-step**: CVRP requires sequential decision-making, not classification
+- **🚨 Scientific Validation**: Rigorous constraint checking is essential for research integrity
+- **🔍 Route Validation**: Real-time validation during training prevents invalid solution learning
+- **⚡ REINFORCE Implementation**: Advantage calculation direction matters significantly
+- **🏗️ Architecture Matters**: Different approaches excel in different scenarios
+- **💻 CPU Optimization**: Efficient CPU parallelism can provide excellent performance
+- **📂 Project Organization**: Scale-based structure (small/medium/production) improves workflow
+- **🧪 Test Instance Value**: Reproducible test instances enable consistent model comparison
+- **🧹 Directory Cleanup**: Removing unused directories reduces complexity and confusion
+- **📊 Comprehensive Analysis**: Consolidated data in analysis/ directory improves accessibility
 
 ## 🎯 Future Work
 

@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.DEBUG,
                     datefmt='%Y-%m-%d %H:%M:%S')
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')  # CPU-only version
 logging.info(f"Running on device: {device}")
 
 def main_train():
@@ -78,12 +78,12 @@ def main_train():
     logging.info("Calling the train function")
     # Call the train function
     train(model, data_loader, valid_loader, folder, filename, lr, n_steps, num_epochs, T)
-    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+    # CPU profiling only (GPU profiling removed)
+    # with profile(activities=[ProfilerActivity.CPU], record_shapes=True) as prof:
     #     with record_function("model_inference"):
-    #         train(model, data_loader, folder, filename, lr, n_steps, num_epochs, T)
+    #         train(model, data_loader, valid_loader, folder, filename, lr, n_steps, num_epochs, T)
         
     # logging.info(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     logging.info("Training pipeline finished")
 
 if __name__ == "__main__":

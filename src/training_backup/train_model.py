@@ -11,8 +11,9 @@ from ..RL.euclidean_cost import euclidean_cost
 from ..RL.Rollout_Baseline import RolloutBaseline, rollout
 
 now = datetime.datetime.now().strftime("%Y-%m-%d %H")
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-writer = SummaryWriter()
+device = torch.device('cpu')  # CPU-only version
+# Use organized log directory instead of default 'runs/'
+writer = SummaryWriter(log_dir='logs/tensorboard')
 
 def train(model, data_loader, valid_loader, folder, filename, lr, n_steps, num_epochs, T):
     # Gradient clipping value
@@ -60,7 +61,7 @@ def train(model, data_loader, valid_loader, folder, filename, lr, n_steps, num_e
             
             #LOSS
             reinforce_loss = torch.mean(advantage.detach() * tour_logp)
-            memory_allocated = torch.cuda.memory_allocated()
+            memory_allocated = 0  # CPU version - no GPU memory tracking
             
             # Actor Backward pass
             actor_optim.zero_grad()
@@ -125,8 +126,9 @@ def train(model, data_loader, valid_loader, folder, filename, lr, n_steps, num_e
         # Convert the results to a pandas DataFrame
         results_df = pd.DataFrame(training_results)
 
-        # Save the results to a CSV file
-        results_df.to_csv(f'instances/{now}h.csv', index=False)
+        # Save the results to a CSV file  
+        os.makedirs('logs/training', exist_ok=True)
+        results_df.to_csv(f'logs/training/{now}h.csv', index=False)
 
 
         # Save if the Loss is less than the minimum so far

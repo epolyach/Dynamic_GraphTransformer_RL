@@ -4,8 +4,8 @@ from scipy.stats import ttest_rel
 from ..RL.euclidean_cost import euclidean_cost
 
 
-# Define the device
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Define the device - CPU only
+device = torch.device('cpu')
 
 def rollout(model, dataset, n_nodes, T):
     model.eval()  # Set the model to evaluation mode

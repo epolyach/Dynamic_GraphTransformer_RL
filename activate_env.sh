@@ -1,12 +1,20 @@
 #!/bin/bash
-# Activate the virtual environment for Dynamic Graph Transformer project
+# Activate the virtual environment for Dynamic Graph Transformer project (CPU-optimized)
 source venv/bin/activate
-echo "🚀 Dynamic Graph Transformer environment activated!"
+echo "🚀 Dynamic Graph Transformer environment activated! (CPU-optimized)"
 echo "Python: $(which python)"
 echo "PyTorch: $(python -c 'import torch; print(torch.__version__)')"
+echo "CPU Threads: $(python -c 'import torch; print(torch.get_num_threads())')"
 echo ""
-echo "Available commands:"
-echo "  python train_small.py    - Train on small instances (10 nodes)"
-echo "  python test_gpu.py       - Test GPU availability"
-echo "  jupyter notebook         - Start Jupyter for development"
+echo "Available configurations:"
+echo "  🔬 configs/small.yaml       - Quick testing (10 epochs, 800 instances)"
+echo "  🧪 configs/medium.yaml      - Research experiments (50 epochs, 10k instances)"
+echo "  🏭 configs/production.yaml  - Publication results (200 epochs, 100k instances)"
+echo ""
+echo "Usage examples:"
+echo "  python run_comparative_study.py --config configs/small.yaml"
+echo "  python run_comparative_study.py --config configs/medium.yaml"
+echo "  python run_comparative_study.py --config configs/production.yaml"
+echo ""
+echo "Results will be saved to results/{small,medium,production}/ respectively"
 echo ""
