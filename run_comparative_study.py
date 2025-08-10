@@ -90,12 +90,12 @@ def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, s
         np.random.seed(seed)
     
     # Generate coordinates: random integers 0 to coord_range, then divide by coord_range for normalization to [0,1]
-    coords = np.zeros((num_customers + 1, 2))
+    coords = np.zeros((num_customers + 1, 2), dtype=np.float64)
     for i in range(num_customers + 1):
         coords[i] = np.random.randint(0, coord_range + 1, size=2) / coord_range
     
-    # Generate integer demands from demand_range (no division)
-    demands = np.zeros(num_customers + 1)
+    # Generate integer demands from demand_range - ensure they are integers
+    demands = np.zeros(num_customers + 1, dtype=np.int32)
     for i in range(1, num_customers + 1):  # Skip depot (index 0)
         demands[i] = np.random.randint(demand_range[0], demand_range[1] + 1)
     
@@ -104,9 +104,9 @@ def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, s
     
     return {
         'coords': coords,
-        'demands': demands,
+        'demands': demands.astype(np.int32),  # Ensure demands are integers
         'distances': distances,
-        'capacity': capacity
+        'capacity': int(capacity)  # Ensure capacity is integer
     }
 
 class BaselinePointerNetwork(nn.Module):
@@ -2418,10 +2418,22 @@ def create_and_solve_test_instance(models, config, logger):
     with open(f"{analysis_dir}/test_instance_analysis.json", 'w') as f:
         json.dump(json_analysis, f, indent=2)
     
+    # Create route visualizations
+    try:
+        from visualize_test_routes import plot_test_instance_routes, create_interactive_route_analysis
+        plots_dir = f"results/{scale}/plots"
+        plot_test_instance_routes(test_analysis, config, logger, plots_dir)
+        create_interactive_route_analysis(test_analysis, config, analysis_dir)
+        logger.info(f"   🎨 Created route visualizations in {plots_dir}")
+        logger.info(f"   📄 Created interactive HTML report in {analysis_dir}")
+    except Exception as e:
+        logger.warning(f"   ⚠️ Failed to create route visualizations: {e}")
+    
     logger.info(f"\n💾 Test results saved to:")
     logger.info(f"   Binary: {analysis_dir}/test_instance_analysis.pt")
     logger.info(f"   JSON: {analysis_dir}/test_instance_analysis.json")
     logger.info(f"   Instance: {test_dir}/test_instance.npz")
+    logger.info(f"   HTML Report: {analysis_dir}/test_instance_analysis.html")
     
     # Print summary table (normalized per customer)
     logger.info("\n📊 TEST INSTANCE PERFORMANCE SUMMARY (Per Customer)")
