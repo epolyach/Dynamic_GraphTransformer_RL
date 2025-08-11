@@ -1,23 +1,23 @@
-# Medium-scale configuration for thorough evaluation
-# Balanced between development speed and comprehensive results
+# Small-scale configuration for quick testing and development
+# Optimized for fast iteration and debugging
 
 # =====================================================================
 # CRITICAL PARAMETERS - FREQUENTLY CHANGED (Business Logic)
 # =====================================================================
 
-# Problem Definition - Core CVRP problem settings (medium scale)
+# Problem Definition - Core CVRP problem settings
 problem:
-  num_customers: 50         # Medium-scale customer count
-  vehicle_capacity: 40      # Increased capacity for larger problems
-  demand_range: [1, 10]     # Integer demands [min, max]
+  num_customers: 13         # Fixed number of customers (excluding depot)
+  vehicle_capacity: 20      # Integer capacity (based on GAT_RL load_capacity=3 scaled up)
+  demand_range: [1, 10]     # Integer demands [min, max] (based on GAT_RL max_demand=10)
   coord_range: 100          # Coordinate range [0, coord_range] then normalized to unit square
 
-# Training Configuration - Medium-scale training parameters
+# Training Configuration - Primary training parameters
 training:
-  num_instances: 4096       # More training instances for better convergence
-  batch_size: 32            # Larger batch size for stability
-  num_epochs: 64            # Moderate epoch count for medium-scale
-  learning_rate: 5e-4       # Slightly lower LR for larger problems
+  num_instances: 2048       # Number of training instances
+  batch_size: 256           # Batch size for training
+  num_epochs: 32             # Number of training epochs
+  learning_rate: 1e-3       # Base learning rate
   train_val_split: 0.8      # Training/validation split ratio
   validation_frequency: 3   # Run validation every N epochs
   
@@ -30,13 +30,14 @@ experiment:
 # MODERATE PARAMETERS - MODEL ARCHITECTURE & ADVANCED TRAINING
 # =====================================================================
 
-# Model Architecture - Enhanced for medium-scale problems
+# Model Architecture - Shared by ALL model types
+# These parameters are used by: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL
 model:
   # Core architecture parameters
   input_dim: 3              # Input dimension (coords + demand)
-  hidden_dim: 128           # Increased hidden dimension for medium scale
-  num_heads: 8              # More attention heads for complex patterns  
-  num_layers: 4             # Deeper transformer layers
+  hidden_dim: 64            # Hidden dimension for all models
+  num_heads: 4              # Number of attention heads  
+  num_layers: 2             # Number of transformer layers
   transformer_dropout: 0.1  # Dropout for transformer encoder layers
   feedforward_multiplier: 2 # Transformer feedforward dim multiplier (feedforward = hidden_dim * multiplier)
   edge_embedding_divisor: 4 # Edge embedding divisor (edge_dim = hidden_dim // divisor)
@@ -68,7 +69,7 @@ model:
     edge_dim: 16           # Edge embedding dimension
     num_layers: 4           # Number of GAT layers
     negative_slope: 0.2     # LeakyReLU negative slope
-    dropout: 0.5           # Reduced dropout for medium scale
+    dropout: 0.6           # Dropout probability
 
 # Advanced Training Configuration
 training_advanced:
@@ -76,20 +77,20 @@ training_advanced:
   optimizer: "Adam"         # Optimizer type
   gradient_clip_norm: 1.0   # Gradient clipping for stability
   
-  # Learning rate schedule (more conservative for medium scale)
-  warmup_epochs: 10         # Longer warmup for medium scale
-  min_lr: 1e-5              # Lower minimum LR
+  # Learning rate schedule
+  warmup_epochs: 5          # Linear warmup epochs before cosine decay
+  min_lr: 1e-4              # Minimum LR at end of cosine schedule
     
   # Reinforcement Learning parameters
-  entropy_coef: 0.02        # Higher entropy for exploration in medium scale
-  entropy_min: 0.001        # Small minimum entropy to maintain exploration
-  temp_start: 2.0           # Higher initial temperature for medium scale
-  temp_min: 0.3             # Higher minimum temperature
+  entropy_coef: 0.01        # Initial entropy coefficient
+  entropy_min: 0.0          # Minimum entropy coefficient (cosine decay)
+  temp_start: 1.5           # Initial sampling temperature
+  temp_min: 0.2             # Minimum sampling temperature (cosine decay)
   
   # Legacy GAT training parameters
   legacy_gat:
-    learning_rate: 5e-5     # Lower learning rate for stable training
-    temperature: 2.5        # Temperature parameter for legacy training
+    learning_rate: 1e-4     # Learning rate for legacy GAT (hardcoded in original)
+    temperature: 2.0        # Temperature parameter for legacy training
     
 # =====================================================================
 # ACCEPTABLE PARAMETERS - SYSTEM & INFRASTRUCTURE

@@ -366,7 +366,7 @@ def set_seeds(seed=42):
     np.random.seed(seed)
 
 def load_config(config_path):
-    """Load configuration from YAML file"""
+    """Load configuration from YAML file with proper type conversion"""
     import yaml
     
     if not os.path.exists(config_path):
@@ -375,9 +375,45 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
     
+    # Fix type conversions for numerical parameters that might be read as strings
+    
+    # Convert inference parameters
+    if 'inference' in config:
+        inf_config = config['inference']
+        if 'log_prob_epsilon' in inf_config:
+            inf_config['log_prob_epsilon'] = float(inf_config['log_prob_epsilon'])
+        if 'masked_score_value' in inf_config:
+            inf_config['masked_score_value'] = float(inf_config['masked_score_value'])
+        if 'default_temperature' in inf_config:
+            inf_config['default_temperature'] = float(inf_config['default_temperature'])
+        if 'max_steps_multiplier' in inf_config:
+            inf_config['max_steps_multiplier'] = int(inf_config['max_steps_multiplier'])
+        if 'attention_temperature_scaling' in inf_config:
+            inf_config['attention_temperature_scaling'] = float(inf_config['attention_temperature_scaling'])
+    
+    # Convert training_advanced parameters
+    if 'training_advanced' in config:
+        ta_config = config['training_advanced']
+        # Convert legacy_gat sub-parameters
+        if 'legacy_gat' in ta_config:
+            lg_config = ta_config['legacy_gat']
+            if 'learning_rate' in lg_config:
+                lg_config['learning_rate'] = float(lg_config['learning_rate'])
+            if 'temperature' in lg_config:
+                lg_config['temperature'] = float(lg_config['temperature'])
+    
+    # Convert model parameters
+    if 'model' in config:
+        model_config = config['model']
+        # Convert dynamic_graph_transformer sub-parameters
+        if 'dynamic_graph_transformer' in model_config:
+            dgt_config = model_config['dynamic_graph_transformer']
+            if 'residual_gate_init' in dgt_config:
+                dgt_config['residual_gate_init'] = float(dgt_config['residual_gate_init'])
+    
     return config
 
-def load_trained_models(scale_dir, logger):
+def load_trained_models(scale_dir, config, logger):
     """Load all trained models from saved files"""
     models = {}
     model_files = {
@@ -404,22 +440,31 @@ def load_trained_models(scale_dir, logger):
     except Exception as e:
         logger.warning(f"Legacy GAT+RL unavailable: {e}")
     
-    # Load regular models
+    # Load regular models with proper parameters
     for name, filepath in model_files.items():
         if os.path.exists(filepath):
             try:
                 state_dict = torch.load(filepath, map_location=device, weights_only=False)
                 
+                # Extract model config parameters
+                input_dim = config['model']['input_dim']
+                hidden_dim = config['model']['hidden_dim']
+                num_heads = config['model']['num_heads']
+                num_layers = config['model']['num_layers']
+                dropout = config['model']['transformer_dropout']
+                feedforward_multiplier = config['model']['feedforward_multiplier']
+                edge_embedding_divisor = config['model']['edge_embedding_divisor']
+                
                 if name == 'Pointer+RL':
-                    model = BaselinePointerNetwork(3, 64)
+                    model = BaselinePointerNetwork(input_dim, hidden_dim, config)
                 elif name == 'GT-Greedy':
-                    model = GraphTransformerGreedy(3, 64, 4, 2)
+                    model = GraphTransformerGreedy(input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config)
                 elif name == 'GT+RL':
-                    model = GraphTransformerNetwork(3, 64, 4, 2)
+                    model = GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config)
                 elif name == 'DGT+RL':
-                    model = DynamicGraphTransformerNetwork(3, 64, 4, 2)
+                    model = DynamicGraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config)
                 elif name == 'GAT+RL':
-                    model = GraphAttentionTransformer(3, 64, 4, 2)
+                    model = GraphAttentionTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, edge_embedding_divisor, config)
                 
                 if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
                     model.load_state_dict(state_dict['model_state_dict'])
@@ -504,7 +549,13 @@ def create_and_solve_test_instance(models, config, logger):
                 sample_entropy = torch.zeros(1)
             else:
                 # Regular models - only use greedy for this standalone script
-                greedy_routes, greedy_log_probs, greedy_entropy = model([test_instance], greedy=True)
+                greedy_routes, greedy_log_probs, greedy_entropy = model(
+                    [test_instance], 
+                    max_steps=config['inference']['max_steps_multiplier'] * config['num_customers'],
+                    temperature=config['inference']['default_temperature'],
+                    greedy=True, 
+                    config=config
+                )
                 sample_routes = greedy_routes  # Use same route for consistency
                 sample_log_probs = greedy_log_probs
                 sample_entropy = greedy_entropy
@@ -649,7 +700,7 @@ def main():
     
     # Load models
     scale_dir = f'results/{scale}/pytorch'
-    models = load_trained_models(scale_dir, logger)
+    models = load_trained_models(scale_dir, config, logger)
     
     if not models:
         logger.error(f"No trained models found in {scale_dir}")

@@ -58,6 +58,19 @@ python make_test_instance.py --config configs/production.yaml
 python make_test_instance.py --config configs/small.yaml --seed 42 --visualize
 ```
 
+#### 4. Results Cleanup (Optional)
+```bash
+# Clean results folder for a specific scale while preserving directory structure
+python erase_run.py --config configs/small.yaml
+python erase_run.py --scale medium --dry-run
+
+# Clean all scales (with confirmation)
+python erase_run.py --all
+
+# Force cleanup without confirmation
+python erase_run.py --scale production --force
+```
+
 ## 📋 Project Structure
 
 ```
@@ -65,6 +78,7 @@ python make_test_instance.py --config configs/small.yaml --seed 42 --visualize
 ├── run_train_validation.py        # Main training and validation pipeline
 ├── make_comparative_plot.py        # Generate performance comparison plots
 ├── make_test_instance.py           # Create test instances and route visualizations
+├── erase_run.py                    # Results cleanup utility (preserves directory structure)
 ├── src/                            # Source code modules
 │   ├── models/                     # Essential models (cleaned up)
 │   ├── models_backup/              # Experimental/unused models (moved here)
@@ -446,6 +460,79 @@ The project evolved from single-action classification models to proper sequentia
 5. **📊 Enhanced Logging**: Organized results with plots, CSVs, and comprehensive analysis
 6. **🔍 Scientific Rigor**: Every route validated against CVRP constraints during training and evaluation
 7. **🧹 Directory Cleanup**: Removed unused directories, consolidated data in analysis/
+
+## 🧹 Results Cleanup Utility (`erase_run.py`)
+
+The `erase_run.py` script provides a safe and efficient way to clean up experimental results while preserving the directory structure:
+
+### Key Features
+- **Scale-Aware Cleanup**: Automatically detects scale (small/medium/production) from config files
+- **Structure Preservation**: Removes files while keeping directory structure intact
+- **Selective Cleaning**: Clean specific scales or all scales at once
+- **Safety Features**: Dry-run mode and confirmation prompts
+- **Empty Directory Cleanup**: Optionally removes empty subdirectories
+- **Detailed Reporting**: Shows what will be removed before taking action
+
+### Usage Examples
+```bash
+# Clean specific scale based on config file
+python erase_run.py --config configs/small.yaml
+
+# Clean specific scale directly
+python erase_run.py --scale medium
+
+# Preview what would be removed (dry-run mode)
+python erase_run.py --scale production --dry-run
+
+# Clean all scales with confirmation
+python erase_run.py --all
+
+# Force cleanup without confirmation prompts
+python erase_run.py --all --force
+
+# Preserve empty subdirectories
+python erase_run.py --scale small --no-clean-empty
+```
+
+### What Gets Cleaned
+- **Files Removed**: All `.pt`, `.png`, `.csv`, `.json`, `.log`, `.npz` files
+- **Structure Preserved**: Main directories (`analysis/`, `plots/`, `csv/`, `pytorch/`, etc.)
+- **Empty Directories**: Removed by default (can be disabled with `--no-clean-empty`)
+
+### Safety Features
+- **Confirmation Prompts**: Asks before permanent deletion (unless `--force`)
+- **Dry Run Mode**: `--dry-run` shows what would be removed without actually deleting
+- **Detailed Reporting**: Lists file counts and directory structure before cleanup
+- **Error Handling**: Safe handling of missing directories and file permission issues
+
+### Example Output
+```bash
+🧹 RESULTS FOLDER CLEANUP
+==================================================
+📋 Scales to clean: small
+💥 Mode: ACTIVE CLEANUP
+
+🎯 Cleaning scale: small
+------------------------------
+🎯 Target: results/small/
+   📁 Directory structure: 8 subdirectories
+   📄 Files to remove: 23
+   🗑️  Removed: 23 files
+   📁 Preserved: 8 directories
+   🧹 Cleaned: 2 empty subdirectories
+   ✅ small: Complete
+
+📊 SUMMARY
+====================
+✅ Successfully cleaned: 1/1 scales
+🎉 All cleanup operations completed successfully!
+```
+
+### When to Use
+- **Between Experiments**: Clean old results before running new experiments
+- **Disk Space Management**: Free up storage while keeping project structure
+- **Fresh Start**: Reset specific scales for new parameter combinations
+- **Development Workflow**: Quick cleanup during iterative development
 
 ## 🚨 Common Issues & Solutions
 
