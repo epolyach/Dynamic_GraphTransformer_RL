@@ -190,26 +190,41 @@ results/
     └── test_instances/ # Test CVRP instances (.npz) for detailed analysis
 ```
 
-### 🧪 **Test Instance Analysis**
+### 🧪 **Test Instance Analysis** - Standalone Script
 
-Each experiment automatically creates a **fixed test instance** (seed=12345) to provide:
-- **Reproducible Comparisons**: Same instance tested across all models
-- **Detailed Route Analysis**: Both greedy and sampling strategies evaluated
-- **Performance Validation**: All routes validated against CVRP constraints
-- **Improvement Metrics**: Quantified improvements over naive baseline
-- **Multiple Output Formats**: Binary (.pt) for processing, JSON (.json) for inspection
+The `make_test_instance.py` script runs as a **separate stage** after training and provides:
+- **Fixed Test Instance**: Creates reproducible test instance (seed=12345) for all models
+- **Route Optimization**: Solves the instance with each trained model using greedy selection
+- **Detailed Trip Analysis**: Validates capacity constraints and shows trip-by-trip breakdown
+- **Visual Route Plots**: Generates individual route visualization PNG files for each model
+- **Route Data Export**: Saves route details as JSON files for further analysis
+- **Comparison Plot**: Creates unified comparison visualization of all model routes
 
-**Example test analysis output:**
+**Outputs Generated:**
+- `test_route_<model>.png` - Individual route visualization for each model
+- `test_route_<model>.json` - Route data including coordinates, demands, and costs
+- `test_routes_comparison.png` - Side-by-side comparison of all model routes
+
+**Example test instance results (20 customers, capacity=30):**
 ```
 📊 TEST INSTANCE PERFORMANCE SUMMARY
 ================================================================================
-Model                Greedy Cost  Sample Cost  Greedy Impr  Sample Impr
+Model                Route Cost   Cost/Customer  Trips  Improvement vs Baseline
 --------------------------------------------------------------------------------
-Pointer+RL           9.642        10.123       +15.2%       +10.7%
-GT+RL                9.234        9.891        +19.0%       +13.1%
-DGT+RL               8.892        9.456        +21.9%       +16.8%
-Naive Baseline       11.380       11.380       0.0          0.0
+GAT+RL               11.997       0.600          4      +54.8%
+Pointer+RL           12.800       0.640          4      +51.2%  
+GT-Greedy            12.930       0.647          4      +50.3%
+GT+RL                14.110       0.706          4      +46.8%
+DGT+RL               14.926       0.746          4      +43.8%
+GAT+RL (legacy)      26.549       1.327          20     +0.3%
+Naive Baseline       26.549       1.327          20     0.0%
 ================================================================================
+
+Trip Analysis Example (GAT+RL - Best Performance):
+🚛 Trip 1: 0 → 16 → 7 → 3 → 4 → 5 → 0 | Demand: 30/30 (100.0%) ✅
+🚛 Trip 2: 0 → 12 → 9 → 19 → 1 → 0     | Demand: 30/30 (100.0%) ✅  
+🚛 Trip 3: 0 → 6 → 10 → 11 → 18 → 8 → 0 | Demand: 30/30 (100.0%) ✅
+🚛 Trip 4: 0 → 17 → 2 → 15 → 14 → 13 → 20 → 0 | Demand: 22/30 (73.3%) ✅
 ```
 
 ## 🔬 Scientific Validation
