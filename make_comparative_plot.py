@@ -35,7 +35,7 @@ def setup_logging():
     )
     return logging.getLogger(__name__)
 
-def load_results(scale='small'):
+def load_results(scale):
     """Load saved training results and model information"""
     logger = setup_logging()
     
@@ -147,11 +147,21 @@ def compute_naive_baseline_cost_per_customer(config):
     logger.info("📊 Computing actual naive baseline from generated instances...")
     
     # Use the same parameters as training
-    num_customers = config.get('num_customers', 20)
-    capacity = config.get('capacity', 20) 
-    coord_range = config.get('coord_range', 100)
-    demand_range = config.get('demand_range', [1, 10])
-    num_instances = config.get('num_instances')  # Use ALL instances for accuracy
+    if 'problem' in config:
+        num_customers = config['problem']['num_customers']
+        capacity = config['problem']['vehicle_capacity']
+        coord_range = config['problem']['coord_range']
+        demand_range = config['problem']['demand_range']
+    else:
+        num_customers = config['num_customers']
+        capacity = config['capacity']
+        coord_range = config['coord_range']
+        demand_range = config['demand_range']
+    
+    if 'training' in config:
+        num_instances = config['training']['num_instances']  # Use ALL instances for accuracy
+    else:
+        num_instances = config['num_instances']
     
     # Generate the same instances as training (using same seeds)
     naive_costs = []
@@ -169,7 +179,7 @@ def compute_naive_baseline_cost_per_customer(config):
     
     return naive_normalized
 
-def create_comparison_plots(results, training_times, model_params, config, scale='small', suffix=''):
+def create_comparison_plots(results, training_times, model_params, config, scale, suffix=''):
     """Create comprehensive comparison plots with normalized costs (per customer)"""
     logger = setup_logging()
     
@@ -206,7 +216,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         train_costs = result.get('train_costs', [])
         if train_costs:
             # Normalize training costs by dividing by number of customers
-            normalized_train_costs = [cost / config['num_customers'] for cost in train_costs]
+            num_customers = config.get('problem', {}).get('num_customers', config.get('num_customers', 1))
+            normalized_train_costs = [cost / num_customers for cost in train_costs]
             plt.plot(normalized_train_costs, label=model_name, linewidth=2, marker='s', markersize=3, color=color_map[model_name])
     plt.title('Training Cost Evolution (Per Customer)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
@@ -217,7 +228,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 3. Validation Cost vs Naive (NORMALIZED)
     plt.subplot(2, 4, 3)
     # Plot naive baseline as background reference line
-    num_epochs = config.get('num_epochs', 25)
+    num_epochs = config['training']['num_epochs']
+    num_customers = config['problem']['num_customers']
     val_epochs_full = list(range(0, num_epochs, 3))
     if len(val_epochs_full) == 0:
         val_epochs_full = [0]
@@ -227,7 +239,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         val_costs = result.get('val_costs', [])
         if val_costs:
             val_epochs = list(range(0, num_epochs, 3))[:len(val_costs)]
-            normalized_val_costs = [cost / config['num_customers'] for cost in val_costs][:len(val_epochs)]
+            normalized_val_costs = [cost / num_customers for cost in val_costs][:len(val_epochs)]
             plt.plot(val_epochs, normalized_val_costs, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
     plt.title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
@@ -238,7 +250,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 4. Final Performance Bar Chart with Naive Baseline (NORMALIZED)
     plt.subplot(2, 4, 4)
     # Normalize final costs by dividing by number of customers
-    final_costs_normalized = [results[name]['final_val_cost'] / config['num_customers'] for name in model_names]
+    final_costs_normalized = [results[name]['final_val_cost'] / num_customers for name in model_names]
     # Colors consistent with lines
     colors = [color_map[name] for name in model_names]
     
@@ -360,7 +372,8 @@ def create_performance_summary(results, training_times, model_params, config, na
     
     for model_name in model_names:
         result = results[model_name]
-        final_val_cost_per_customer = result['final_val_cost'] / config['num_customers']
+        num_customers = config['problem']['num_customers']
+        final_val_cost_per_customer = result['final_val_cost'] / num_customers
         improvement_vs_naive = ((naive_baseline_per_customer - final_val_cost_per_customer) / naive_baseline_per_customer) * 100
         
         # Calculate learning efficiency
@@ -442,21 +455,13 @@ def load_config(config_path):
     
     return config
 
-def determine_scale_from_config(config):
-    """Determine scale from config file"""
-    # Extract nested config values if they exist
-    if 'problem' in config:
-        num_customers = config['problem']['num_customers']
+def determine_scale_from_config_path(config_path):
+    """Determine scale directly from config filename"""
+    config_filename = Path(config_path).stem  # Get filename without extension
+    if config_filename in ['small', 'medium', 'production']:
+        return config_filename
     else:
-        num_customers = config.get('num_customers', 15)
-    
-    # Determine scale from num_customers
-    if num_customers <= 20:
-        return 'small'
-    elif num_customers <= 50:
-        return 'medium'
-    else:
-        return 'production'
+        raise ValueError(f"Unknown config scale '{config_filename}'. Expected 'small', 'medium', or 'production'")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Generate comparative study plots from saved results')
@@ -475,10 +480,9 @@ def main():
     logger.info(f"📂 Loading config from: {args.config}")
     
     try:
-        # Load config and determine scale
-        config = load_config(args.config)
-        scale = determine_scale_from_config(config)
-        logger.info(f"📏 Determined scale: {scale} (from {config.get('problem', {}).get('num_customers', config.get('num_customers', 'unknown'))} customers)")
+        # Determine scale from config filename
+        scale = determine_scale_from_config_path(args.config)
+        logger.info(f"📏 Determined scale: {scale} (from config filename)")
         
         # Load saved results
         results, training_times, model_params, loaded_config = load_results(scale)

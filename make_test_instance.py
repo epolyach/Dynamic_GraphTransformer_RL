@@ -267,7 +267,7 @@ def create_comparison_plot(coords, demands, sizes, model_results, naive_baseline
                 dpi=300, bbox_inches='tight')
     plt.close()
 
-def plot_test_instance_routes(test_analysis, config, logger, save_dir="results/small/plots"):
+def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=None):
     """
     Plot routes for all models on the test instance with annotated styling.
     
@@ -295,7 +295,11 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir="results/s
     validation_costs = {}
     try:
         # Try to load the comparative study results to get validation costs
-        comparative_results = torch.load('results/small/analysis/comparative_study_complete.pt', map_location='cpu', weights_only=False)
+        # Use scale parameter passed from calling function
+        if scale is None:
+            # Fallback scale determination if not provided
+            scale = 'small' if config['num_customers'] <= 20 else 'medium' if config['num_customers'] <= 50 else 'production'
+        comparative_results = torch.load(f'results/{scale}/analysis/comparative_study_complete.pt', map_location='cpu', weights_only=False)
         results = comparative_results.get('results', {})
         for model_name in model_results.keys():
             if model_name in results:
@@ -479,16 +483,14 @@ def load_trained_models(scale_dir, config, logger):
     
     return models
 
-def create_and_solve_test_instance(models, config, logger):
+def create_and_solve_test_instance(models, config, logger, scale):
     """Create a test CVRP instance and solve it with each trained model for detailed analysis
     
     This is an exact copy from run_comparative_study.py create_and_solve_test_instance function.
     """
     logger.info("\n🧪 Creating and solving a new test instance...")
     
-    # Determine scale
-    num_customers = config.get('num_customers', 15)
-    scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+    # Use scale passed from main function
     test_dir = f"results/{scale}/plots"
     os.makedirs(test_dir, exist_ok=True)
     
@@ -660,7 +662,7 @@ def create_and_solve_test_instance(models, config, logger):
     # Create route visualizations - now using integrated functions
     try:
         plots_dir = f"results/{scale}/plots"
-        plot_test_instance_routes(test_analysis, config, logger, plots_dir)
+        plot_test_instance_routes(test_analysis, config, logger, plots_dir, scale)
     except Exception as e:
         logger.warning(f"   ⚠️ Failed to create route visualizations: {e}")
     
@@ -695,8 +697,17 @@ def main():
             'demand_range': demand_range
         })
     
-    # Determine scale from num_customers
-    scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+    # Determine scale from config file path instead of num_customers
+    # This ensures consistency with how models were trained and saved
+    config_filename = os.path.basename(args.config)
+    if 'small' in config_filename:
+        scale = 'small'
+    elif 'medium' in config_filename:
+        scale = 'medium'
+    elif 'production' in config_filename:
+        scale = 'production'
+    else:
+        raise ValueError(f"Cannot determine scale from config filename: {config_filename}. Expected 'small', 'medium', or 'production' in filename.")
     
     # Load models
     scale_dir = f'results/{scale}/pytorch'
@@ -707,7 +718,7 @@ def main():
         return
     
     # Create and solve test instance (exact copy from run_comparative_study.py)
-    test_results = create_and_solve_test_instance(models, config, logger)
+    test_results = create_and_solve_test_instance(models, config, logger, scale)
     
     logger.info(f"\n💾 Generated plots and JSON files in results/{scale}/plots")
 

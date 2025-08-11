@@ -1489,7 +1489,7 @@ def parse_args():
     parser.add_argument('--temp_min', type=float, default=None, help='Override minimum sampling temperature')
     parser.add_argument('--only_dgt', action='store_true', help='Train only the DGT+RL model to avoid extra deps')
     parser.add_argument('--exclude_dgt', action='store_true', help='Train all models except DGT+RL and reuse prior DGT results')
-    parser.add_argument('--reuse_dgt_path', type=str, default='results/small/analysis/comparative_study_complete.pt', help='Path to prior DGT results file to reuse when --exclude_dgt is set')
+    parser.add_argument('--reuse_dgt_path', type=str, default=None, help='Path to prior DGT results file to reuse when --exclude_dgt is set')
     return parser.parse_args()
 
 
@@ -1508,7 +1508,7 @@ def build_pyg_data_from_instance(instance):
     return Data(x=coords, edge_index=edge_index, edge_attr=edge_attr, demand=demand, capacity=capacity)
 
 
-def train_legacy_gat_rl(model, instances, config, model_name, logger):
+def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
     """Train the legacy GAT_RL model using its original training loop (unchanged algorithms),
     then evaluate on the validation set to report final metrics. Additionally, extract
     per-epoch training metrics and per-3-epochs validation costs so plots show curves.
@@ -1543,7 +1543,7 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
     # Run the legacy training loop (kept intact)
     logger.info(f"🏋️ Training {model_name} (legacy RL training)...")
     logger.info(f"   Legacy training config: lr={lr}, n_steps={n_steps}, num_epochs={num_epochs}, T={T}")
-    ckpt_folder = 'results/small/checkpoints/legacy_checkpoints'
+    ckpt_folder = f'results/{scale}/checkpoints/legacy_checkpoints'
     os.makedirs(ckpt_folder, exist_ok=True)
     # Capture time to find latest CSV emitted by legacy loop
     before_csv = set(glob.glob('logs/training/*.csv'))
@@ -1932,7 +1932,7 @@ def run_comparative_study():
         
         start_time = time.time()
         if model_name == 'GAT+RL (legacy)':
-            result = train_legacy_gat_rl(model, instances, config, model_name, logger)
+            result = train_legacy_gat_rl(model, instances, config, model_name, logger, scale)
         else:
             result = train_model(model, instances, config, model_name, logger)
         training_time = time.time() - start_time
@@ -1957,9 +1957,8 @@ def run_comparative_study():
                 'train_cost': train_costs + [float('nan')] * max(0, epochs - len(train_costs)),
                 'val_cost': val_costs_sparse
             })
-            # Determine scale for output path
-            num_customers = config.get('num_customers', 15)
-            scale = 'small' if num_customers <= 20 else 'medium' if num_customers <= 50 else 'production'
+            # Use scale determined from config filename (passed from main function)
+            # Note: scale variable is available in this scope from the main function
             
             # Ensure CSV directory exists
             csv_dir = f"results/{scale}/csv"
@@ -1978,7 +1977,9 @@ def run_comparative_study():
     # If we excluded DGT, try to reuse prior DGT results for comparison
     if args.exclude_dgt:
         try:
-            prior = torch.load(args.reuse_dgt_path, map_location='cpu')
+            # Use scale-aware path if no explicit path provided
+            reuse_path = args.reuse_dgt_path or f'results/{scale}/analysis/comparative_study_complete.pt'
+            prior = torch.load(reuse_path, map_location='cpu')
             prior_results = prior.get('results', {})
             prior_times = prior.get('training_times', {})
             if 'DGT+RL' in prior_results:
@@ -1991,7 +1992,7 @@ def run_comparative_study():
         
         # For parameter count in plots, estimate from saved state_dict if available
         try:
-            sd = torch.load('results/small/pytorch/model_dgtplus_rl.pt', map_location='cpu')
+            sd = torch.load(f'results/{scale}/pytorch/model_dgtplus_rl.pt', map_location='cpu')
             state = sd.get('model_state_dict', sd)
             dgt_params = int(sum(t.numel() for t in state.values() if hasattr(t, 'numel')))
             # Create a dummy module to report params for plotting

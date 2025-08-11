@@ -1,4 +1,4 @@
-# Small-scale configuration for quick testing and development
+# Medium-scale configuration for quick testing and development
 # Optimized for fast iteration and debugging
 
 # =====================================================================
@@ -112,7 +112,7 @@ system:
 
 # Inference and Evaluation Settings
 inference:
-  default_temperature: 1.0      # Default temperature for model forward passes
+  default_temperature: 2.0      # Default temperature for model forward passes
   greedy_evaluation: true       # Use greedy decoding for validation
   max_steps_multiplier: 2       # Max steps = num_customers * multiplier
   attention_temperature_scaling: 0.5  # Attention scaling factor (sqrt power for attention)
