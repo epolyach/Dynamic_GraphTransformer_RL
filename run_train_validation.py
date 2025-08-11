@@ -1257,8 +1257,8 @@ def train_model(model, instances, config, model_name, logger):
     
     # Learning rate schedule: linear warmup -> cosine decay
     base_lr = config['learning_rate']
-    warmup_epochs = int(config.get('warmup_epochs', 5))
-    min_lr = float(config.get('min_lr', 1e-4))
+    warmup_epochs = int(config['warmup_epochs'])
+    min_lr = float(config['min_lr'])
     def lr_factor(ep):
         if warmup_epochs > 0 and ep < warmup_epochs:
             return (ep + 1) / warmup_epochs
@@ -1289,8 +1289,8 @@ def train_model(model, instances, config, model_name, logger):
         num_batches = len(train_instances) // batch_size
         
         # Temperature schedule: cosine from temp_start -> temp_min
-        temp_start = float(config.get('temp_start', 1.5))
-        temp_min = float(config.get('temp_min', 0.2))
+        temp_start = float(config['temp_start'])
+        temp_min = float(config['temp_min'])
         if config['num_epochs'] > 1:
             cosine_t = 0.5 * (1 + math.cos(math.pi * epoch / (config['num_epochs'] - 1)))
         else:
@@ -1534,10 +1534,8 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
             train_costs = [float(x) for x in df['mean_reward'].tolist()][:num_epochs]
             logger.info(f"   💰 Extracted {len(train_costs)} cost values (requested {num_epochs})")
     except Exception as e:
-        logger.warning(f"   ⚠️ Failed to extract CSV data: {e}")
-        # Fallback if CSV missing
-        train_losses = []
-        train_costs = []
+        # CRITICAL: Legacy CSV extraction failure indicates training data corruption or missing files
+        raise RuntimeError(f"❌ CRITICAL: Failed to extract legacy training CSV data for {model_name}. This indicates corrupted training logs or missing CSV files. Error: {e}")
 
     # Ensure lengths match expected plotting length
     if len(train_losses) < num_epochs:
@@ -1545,9 +1543,9 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
     if len(train_costs) < num_epochs:
         train_costs += [float('nan')] * (num_epochs - len(train_costs))
 
-    # Build validation curve by evaluating checkpoints at epochs [0, 3, 6, ...]
+    # Build validation curve by evaluating checkpoints at epochs [0, 4, 8, ...]
     val_costs = []
-    eval_epochs = list(range(0, num_epochs, 3))
+    eval_epochs = list(range(0, num_epochs, 4))
     with torch.no_grad():
         for e in eval_epochs:
             ckpt_path = os.path.join(ckpt_folder, f'{e}', 'actor.pt')
@@ -1620,24 +1618,38 @@ def run_comparative_study():
     # Load base configuration from YAML
     config = load_config(args.config)
     
-    # Extract nested config values into flat structure for easier access
-    # Problem settings
-    if 'problem' in config:
-        config.update({
-            'num_customers': config['problem']['num_customers'],
-            'capacity': config['problem']['vehicle_capacity'],
-            'coord_range': config['problem']['coord_range'],
-            'demand_range': config['problem']['demand_range']
-        })
+    # STRICT CONFIG VALIDATION: Extract nested config values with mandatory checks
+    # Problem settings - REQUIRED
+    if 'problem' not in config:
+        raise ValueError("❌ CRITICAL: Missing 'problem' section in configuration file")
     
-    # Training settings
-    if 'training' in config:
-        config.update({
-            'num_instances': config['training']['num_instances'],
-            'batch_size': config['training']['batch_size'],
-            'num_epochs': config['training']['num_epochs'],
-            'learning_rate': config['training']['learning_rate']
-        })
+    required_problem_keys = ['num_customers', 'vehicle_capacity', 'coord_range', 'demand_range']
+    for key in required_problem_keys:
+        if key not in config['problem']:
+            raise ValueError(f"❌ CRITICAL: Missing required problem configuration: '{key}'")
+    
+    config.update({
+        'num_customers': config['problem']['num_customers'],
+        'capacity': config['problem']['vehicle_capacity'],
+        'coord_range': config['problem']['coord_range'],
+        'demand_range': config['problem']['demand_range']
+    })
+    
+    # Training settings - REQUIRED
+    if 'training' not in config:
+        raise ValueError("❌ CRITICAL: Missing 'training' section in configuration file")
+    
+    required_training_keys = ['num_instances', 'batch_size', 'num_epochs', 'learning_rate']
+    for key in required_training_keys:
+        if key not in config['training']:
+            raise ValueError(f"❌ CRITICAL: Missing required training configuration: '{key}'")
+    
+    config.update({
+        'num_instances': config['training']['num_instances'],
+        'batch_size': config['training']['batch_size'],
+        'num_epochs': config['training']['num_epochs'],
+        'learning_rate': config['training']['learning_rate']
+    })
     
     # Model settings
     if 'model' in config:
@@ -1765,6 +1777,9 @@ def run_comparative_study():
             from src_batch.model.Model import Model as LegacyGATModel
             models['GAT+RL (legacy)'] = LegacyGATModel(node_input_dim=3, edge_input_dim=1, hidden_dim=128, edge_dim=16, layers=4, negative_slope=0.2, dropout=0.6)
         except Exception as e:
+            # CRITICAL: Legacy model loading failure requires torch_geometric dependency
+            if 'only_dgt' not in vars(args) or not args.only_dgt:
+                raise RuntimeError(f"❌ CRITICAL: Legacy GAT+RL model loading failed. This likely indicates missing torch_geometric dependency. Use --only_dgt flag to skip legacy models or install torch_geometric. Error: {e}")
             logger.warning(f"Legacy GAT+RL unavailable (torch_geometric not installed?): {e}")
     
     # Training results storage
@@ -1827,7 +1842,8 @@ def run_comparative_study():
             df_hist.to_csv(out_hist, index=False)
             logger.info(f"   🧾 Saved history CSV: {out_hist}")
         except Exception as e:
-            logger.warning(f"Failed to save per-model CSV for {model_name}: {e}")
+            # CRITICAL: CSV saving failure indicates serious file system or data integrity issues
+            raise RuntimeError(f"❌ CRITICAL: Failed to save training history CSV for {model_name}. This indicates file system issues or data corruption. Error: {e}")
         
         logger.info(f"   ✅ {model_name} completed in {training_time:.1f}s")
         logger.info(f"   Final validation cost: {result['final_val_cost']:.3f} ({result['final_val_cost'] / config['num_customers']:.3f}/cust)")

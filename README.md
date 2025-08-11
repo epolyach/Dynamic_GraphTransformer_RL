@@ -239,11 +239,22 @@ The comparative study includes **comprehensive CVRP constraint validation** for 
 4. **Node Validation**: All route indices within valid range
 5. **Trip Analysis**: Route decomposition into individual depot-to-depot trips
 
-#### 🚨 **Strict Error Reporting**:
-- **Immediate Termination**: Invalid routes cause immediate failure with detailed diagnostics
-- **Capacity Violations**: Reports exact load, capacity, excess, and violating customers
-- **Route Decomposition**: Shows trip-by-trip breakdown for analysis
-- **Scientific Integrity**: Ensures all reported results are based on valid CVRP solutions
+#### 🚨 **Strict Error Handling Philosophy**:
+**CRITICAL ERRORS** (immediate termination with detailed diagnostics):
+- **Configuration Issues**: Missing config sections, required keys, or invalid values
+- **Dependency Failures**: Legacy model loading failures without `--only_dgt` flag
+- **Data Corruption**: Failed CSV extraction, missing training logs, or corrupted results
+- **Route Validation**: Invalid routes, capacity violations, coverage issues, or constraint violations
+- **File System Errors**: Failed CSV exports, missing checkpoint files, or I/O failures
+- **Parameter Inference**: Failed model parameter counting or state dictionary issues
+
+**No Fallbacks or Warnings**: The pipeline prioritizes correctness over convenience. Any condition that could lead to invalid results, silent degradation, or incomplete data causes immediate termination rather than warnings or fallback behaviors.
+
+**Scientific Integrity**: All reported results are guaranteed to be based on:
+- ✅ Valid CVRP solutions that satisfy all constraints
+- ✅ Complete training data without missing epochs or corrupted logs  
+- ✅ Successful model loading and parameter counting
+- ✅ Verified file exports and result persistence
 
 ```
 Example Validation Output:
