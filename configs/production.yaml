@@ -1,45 +1,147 @@
 # Production-scale configuration for publication-ready results
 # Comprehensive evaluation with large datasets and thorough analysis
 
-# =================================================================
-# FREQUENTLY CHANGED PARAMETERS (Basic Problem & Training Settings)
-# =================================================================
+# =====================================================================
+# CRITICAL PARAMETERS - FREQUENTLY CHANGED (Business Logic)
+# =====================================================================
 
-# Problem Settings - Production scale for publication
+# Problem Definition - Production-scale CVRP problem settings
 problem:
-  num_customers: 200        # Fixed number of customers (excluding depot)
-  vehicle_capacity: 50      # Integer capacity
+  num_customers: 100        # Production-scale customer count (balanced for computational feasibility)
+  vehicle_capacity: 50      # Higher capacity for large-scale problems
   demand_range: [1, 10]     # Integer demands [min, max]
   coord_range: 100          # Coordinate range [0, coord_range] then normalized to unit square
 
-# Training Configuration - Publication-grade training  
+# Training Configuration - Production-grade training parameters
 training:
-  num_instances: 50000      # Number of training instances
-  batch_size: 32            # Batch size for training
-  num_epochs: 200           # Number of training epochs
-  learning_rate: 1e-4       # Base learning rate
+  num_instances: 20000      # Large dataset for publication results
+  batch_size: 64            # Large batch size for stable gradients
+  num_epochs: 150           # Sufficient epochs for convergence
+  learning_rate: 1e-4       # Conservative learning rate for stability
+  train_val_split: 0.8      # Training/validation split ratio
+  validation_frequency: 3   # Run validation every N epochs
+  
+# Experimental Control - Critical for reproducibility
+experiment:
+  random_seed: 42           # Random seed for reproducible results
+  device: "cpu"             # Device to use ("cpu" or "cuda")
+  
+# =====================================================================
+# MODERATE PARAMETERS - MODEL ARCHITECTURE & ADVANCED TRAINING
+# =====================================================================
 
-# =================================================================
-# LESS FREQUENTLY CHANGED PARAMETERS
-# =================================================================
-
-# Model Architecture - Shared by ALL model types
-# These parameters are used by: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL
+# Model Architecture - Maximum capacity for production-scale
 model:
-  hidden_dim: 256           # Hidden dimension for all models
-  num_heads: 16             # Number of attention heads  
-  num_layers: 8             # Number of transformer layers
+  # Core architecture parameters
+  input_dim: 3              # Input dimension (coords + demand)
+  hidden_dim: 256           # Large hidden dimension for production scale
+  num_heads: 16             # Many attention heads for complex patterns  
+  num_layers: 6             # Deep transformer layers (balanced for performance)
+  transformer_dropout: 0.05 # Lower dropout for production scale (more stable)
+  feedforward_multiplier: 2 # Transformer feedforward dim multiplier (feedforward = hidden_dim * multiplier)
+  edge_embedding_divisor: 4 # Edge embedding divisor (edge_dim = hidden_dim // divisor)
+  
+  # Model-specific parameters
+  pointer_network:
+    input_multiplier: 2     # Input dim multiplier for pointer network layers (hidden_dim * multiplier)
+    context_multiplier: 2   # Context multiplier for pointer network layers (hidden_dim * multiplier)
+    output_dim: 1           # Output dimension for pointer network final layer
+  
+  dynamic_graph_transformer:
+    state_features: 4       # Number of dynamic state features
+    residual_gate_init: -2.19722458  # Initial value for learnable residual gate
+    update_input_multiplier: 2  # Input multiplier for dynamic update layers
+    update_activation: "relu"   # Activation function for dynamic updates
+    
+  graph_transformer:
+    input_multiplier: 2     # Input dim multiplier for graph transformer pointer layers
+    output_dim: 1           # Output dimension for graph transformer pointer layers
+    
+  graph_attention_transformer:
+    input_multiplier: 2     # Input dim multiplier for GAT pointer layers
+    output_dim: 1           # Output dimension for GAT pointer layers
+    
+  legacy_gat:
+    node_input_dim: 3       # Node input dimension for legacy GAT
+    edge_input_dim: 1       # Edge input dimension for legacy GAT  
+    hidden_dim: 256         # Large hidden dimension for production (matched to other models)
+    edge_dim: 32           # Larger edge embedding dimension
+    num_layers: 6           # Deeper GAT layers
+    negative_slope: 0.2     # LeakyReLU negative slope
+    dropout: 0.3           # Lower dropout for production scale
 
 # Advanced Training Configuration
 training_advanced:
-  gradient_clip_norm: 1.0   # Gradient clipping for stability
+  # Optimization parameters
+  optimizer: "Adam"         # Optimizer type
+  gradient_clip_norm: 0.5   # Tighter gradient clipping for stability
   
-  # Learning rate schedule
-  warmup_epochs: 20         # Linear warmup epochs before cosine decay
-  min_lr: 1e-7              # Minimum LR at end of cosine schedule
+  # Learning rate schedule (conservative for production)
+  warmup_epochs: 20         # Long warmup for production scale
+  min_lr: 1e-6              # Very low minimum LR for fine-tuning
     
   # Reinforcement Learning parameters
-  entropy_coef: 0.01        # Initial entropy coefficient
-  entropy_min: 0.0          # Minimum entropy coefficient
-  temp_start: 1.5           # Initial sampling temperature
-  temp_min: 0.2             # Minimum sampling temperature
+  entropy_coef: 0.03        # Higher entropy for thorough exploration
+  entropy_min: 0.005        # Maintain some exploration throughout training
+  temp_start: 2.5           # High initial temperature for production scale
+  temp_min: 0.5             # Conservative minimum temperature
+  
+  # Legacy GAT training parameters
+  legacy_gat:
+    learning_rate: 1e-5     # Very conservative LR for production stability
+    temperature: 2.5        # Temperature parameter for legacy training
+    
+# =====================================================================
+# ACCEPTABLE PARAMETERS - SYSTEM & INFRASTRUCTURE
+# =====================================================================
+
+# System Configuration - Hardware and performance settings
+system:
+  # CPU Threading (only used when device="cpu")
+  cpu_optimization:
+    auto_detect_threads: true    # Auto-detect number of CPU threads
+    max_threads: null           # Override max threads (null = auto-detect)
+    inter_op_threads_divisor: 2  # More inter-op threads for production (max_threads // 2)
+    
+  # Environment variables for CPU optimization
+  openmp_settings:
+    kmp_blocktime: "0"          # KMP_BLOCKTIME
+    kmp_settings: "0"           # KMP_SETTINGS (disable verbose)
+    kmp_affinity: "granularity=fine,compact,1,0"  # KMP_AFFINITY
+
+# Inference and Evaluation Settings
+inference:
+  default_temperature: 1.0      # Default temperature for model forward passes
+  greedy_evaluation: true       # Use greedy decoding for validation
+  max_steps_multiplier: 2       # Max steps = num_customers * multiplier
+  attention_temperature_scaling: 0.5  # Attention scaling factor (sqrt power for attention)
+  
+  # Numerical stability
+  log_prob_epsilon: 1e-12       # Small epsilon for log probability computation
+  masked_score_value: -1e9      # Large negative value for masked scores
+
+# Output and Logging Configuration
+output:
+  # Directory structure
+  results_base_dir: "results"   # Base directory for all results
+  subdirectories:
+    pytorch: "pytorch"          # Model checkpoints and state dicts
+    analysis: "analysis"        # Analysis results and study data
+    logs: "logs"               # Training logs and metrics
+    csv: "csv"                 # CSV export files
+    checkpoints: "checkpoints"  # Training checkpoints
+    
+  # File naming patterns
+  model_filename_template: "model_{model_name}.pt"  # Template for model files
+  
+  # Legacy paths
+  legacy_paths:
+    checkpoints: "legacy_checkpoints"  # Legacy GAT checkpoint subdirectory
+    training_logs: "logs/training"     # Legacy training CSV logs
+    checkpoint_name: "actor.pt"        # Legacy checkpoint filename
+    
+# Logging Configuration
+logging:
+  level: "INFO"                 # Logging level
+  format: "%(message)s"        # Log message format
+  progress_bars: true          # Enable tqdm progress bars

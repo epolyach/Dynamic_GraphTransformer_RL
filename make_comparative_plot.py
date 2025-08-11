@@ -101,23 +101,73 @@ def load_results(scale='small'):
     
     return filtered_results, filtered_times, filtered_params, config
 
+def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, seed=None):
+    """Generate CVRP instance (same as training script)"""
+    import numpy as np
+    if seed is not None:
+        np.random.seed(seed)
+    
+    # Generate coordinates: random integers 0 to coord_range, then divide by coord_range for normalization to [0,1]
+    coords = np.zeros((num_customers + 1, 2), dtype=np.float64)
+    for i in range(num_customers + 1):
+        coords[i] = np.random.randint(0, coord_range + 1, size=2) / coord_range
+    
+    # Generate integer demands from demand_range - ensure they are integers
+    demands = np.zeros(num_customers + 1, dtype=np.int32)
+    for i in range(1, num_customers + 1):  # Skip depot (index 0)
+        demands[i] = np.random.randint(demand_range[0], demand_range[1] + 1)
+    
+    # Compute distance matrix
+    distances = np.sqrt(((coords[:, None, :] - coords[None, :, :]) ** 2).sum(axis=2))
+    
+    return {
+        'coords': coords,
+        'demands': demands.astype(np.int32),  # Ensure demands are integers
+        'distances': distances,
+        'capacity': int(capacity)  # Ensure capacity is integer
+    }
+
+def compute_naive_baseline_cost(instance):
+    """Compute cost of naive solution: depot->node->depot for each customer (same as training script)"""
+    distances = instance['distances']
+    n_customers = len(instance['coords']) - 1  # excluding depot
+    naive_cost = 0.0
+    
+    for customer_idx in range(1, n_customers + 1):  # customers are indexed 1 to n
+        naive_cost += distances[0, customer_idx] * 2  # depot->customer->depot
+    
+    return naive_cost
+
 def compute_naive_baseline_cost_per_customer(config):
-    """Compute naive baseline cost per customer for comparison"""
-    # The naive baseline visits each customer individually: depot->customer->depot
-    # This is a theoretical upper bound. We'll estimate based on typical problem geometry.
+    """Compute ACTUAL naive baseline cost per customer using the same method as training"""
+    import numpy as np
+    from tqdm import tqdm
     
-    # For a unit square [0,1] x [0,1], average distance from depot (0,0) to random point is ~0.38
-    # So naive cost per customer ≈ 2 * 0.38 = 0.76 for unit coordinates
-    # But our coordinates are normalized, so we use a more conservative estimate
+    logger = setup_logging()
+    logger.info("📊 Computing actual naive baseline from generated instances...")
     
+    # Use the same parameters as training
     num_customers = config.get('num_customers', 20)
+    capacity = config.get('capacity', 20) 
     coord_range = config.get('coord_range', 100)
+    demand_range = config.get('demand_range', [1, 10])
+    num_instances = config.get('num_instances')  # Use ALL instances for accuracy
     
-    # Estimate based on coordinate normalization and problem size
-    # This is an approximation - the actual naive baseline would be computed from instances
-    estimated_naive_per_customer = 0.22  # Based on typical normalized coordinates
+    # Generate the same instances as training (using same seeds)
+    naive_costs = []
+    for i in range(num_instances):
+        instance = generate_cvrp_instance(
+            num_customers, capacity, coord_range, demand_range, seed=i
+        )
+        naive_cost = compute_naive_baseline_cost(instance)
+        naive_costs.append(naive_cost)
     
-    return estimated_naive_per_customer
+    naive_avg_cost = np.mean(naive_costs)
+    naive_normalized = naive_avg_cost / num_customers
+    
+    logger.info(f"   📍 Computed naive baseline: {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust) from {num_instances} instances")
+    
+    return naive_normalized
 
 def create_comparison_plots(results, training_times, model_params, config, scale='small', suffix=''):
     """Create comprehensive comparison plots with normalized costs (per customer)"""

@@ -24,46 +24,65 @@ import seaborn as sns
 import pandas as pd
 import math
 
-# CPU-optimized version - no GPU support
-device = torch.device("cpu")
-print(f"🖥️  Using device: {device} (CPU-optimized)")
+def get_device_from_config(config):
+    """Get device from config, with fallback to CPU"""
+    device_str = config.get('experiment', {}).get('device', 'cpu')
+    device = torch.device(device_str)
+    print(f"🖥️  Using device: {device} ({device_str.upper()}-optimized)")
+    return device
 
-
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(message)s'
-    )
+def setup_logging(config=None):
+    """Setup logging with configuration"""
+    if config and 'logging' in config:
+        level_str = config['logging'].get('level', 'INFO')
+        format_str = config['logging'].get('format', '%(message)s')
+        level = getattr(logging, level_str.upper(), logging.INFO)
+    else:
+        level = logging.INFO
+        format_str = '%(message)s'
+    
+    logging.basicConfig(level=level, format=format_str)
     return logging.getLogger(__name__)
 
-def set_seeds(seed=42):
+def set_seeds(config=None, seed=None):
+    """Set random seeds from config or explicit value"""
+    if seed is None:
+        seed = config.get('experiment', {}).get('random_seed', 42) if config else 42
     torch.manual_seed(seed)
     np.random.seed(seed)
 
 
-def configure_cpu_threads(max_threads: int = None):
-    """Enhanced CPU threading configuration for optimal multicore performance."""
+def configure_cpu_threads(config=None):
+    """Enhanced CPU threading configuration from config parameters."""
     import os
     try:
-        if max_threads is None:
-            # Use all available cores for maximum performance
-            max_threads = os.cpu_count() or 4
+        # Get CPU optimization settings from config
+        cpu_config = config.get('system', {}).get('cpu_optimization', {}) if config else {}
+        openmp_config = config.get('system', {}).get('openmp_settings', {}) if config else {}
+        
+        # Determine max threads
+        if cpu_config.get('auto_detect_threads', True):
+            max_threads = cpu_config.get('max_threads') or os.cpu_count() or 4
+        else:
+            max_threads = cpu_config.get('max_threads', 4)
         
         # Set PyTorch threading
         torch.set_num_threads(max_threads)
-        # Set inter-op threads for CPU parallelism (use fewer threads to avoid oversubscription)
-        torch.set_num_interop_threads(max(1, max_threads // 4))
         
-        # Configure OpenMP if available
+        # Set inter-op threads with configurable divisor
+        divisor = cpu_config.get('inter_op_threads_divisor', 4)
+        torch.set_num_interop_threads(max(1, max_threads // divisor))
+        
+        # Configure OpenMP if available (use config values or defaults)
         os.environ['OMP_NUM_THREADS'] = str(max_threads)
         os.environ['MKL_NUM_THREADS'] = str(max_threads)
         os.environ['VECLIB_MAXIMUM_THREADS'] = str(max_threads)
         os.environ['NUMEXPR_NUM_THREADS'] = str(max_threads)
         
-        # Optimize for CPU performance (quiet mode)
-        os.environ['KMP_BLOCKTIME'] = '0'
-        os.environ['KMP_SETTINGS'] = '0'  # Disable verbose output
-        os.environ['KMP_AFFINITY'] = 'granularity=fine,compact,1,0'  # Remove verbose
+        # Apply OpenMP settings from config
+        os.environ['KMP_BLOCKTIME'] = openmp_config.get('kmp_blocktime', '0')
+        os.environ['KMP_SETTINGS'] = openmp_config.get('kmp_settings', '0')
+        os.environ['KMP_AFFINITY'] = openmp_config.get('kmp_affinity', 'granularity=fine,compact,1,0')
         
         print(f"🚀 CPU optimization: {max_threads} threads configured")
         print(f"   PyTorch threads: {torch.get_num_threads()}")
@@ -71,10 +90,6 @@ def configure_cpu_threads(max_threads: int = None):
         
     except Exception as e:
         print(f"⚠️ CPU threading configuration failed: {e}")
-
-# Configure CPU threads for better multithreading performance
-if device.type == 'cpu':
-    configure_cpu_threads()
 
 def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, seed=None):
     """Generate CVRP instance with integer demands and configurable capacity
@@ -112,7 +127,7 @@ def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, s
 class BaselinePointerNetwork(nn.Module):
     """Pipeline 1: Simple Pointer Network with basic attention"""
     
-    def __init__(self, input_dim=3, hidden_dim=64):
+    def __init__(self, input_dim, hidden_dim, config=None):
         super().__init__()
         self.hidden_dim = hidden_dim
         
@@ -124,17 +139,20 @@ class BaselinePointerNetwork(nn.Module):
         self.attention_key = nn.Linear(hidden_dim, hidden_dim)
         self.attention_value = nn.Linear(hidden_dim, hidden_dim)
         
-        # Pointer network
+        # Pointer network with configurable multiplier
+        input_multiplier = config['model']['pointer_network']['input_multiplier']
+        
         self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * input_multiplier, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
         
-    def forward(self, instances, max_steps=None, temperature=1.0, greedy=False):
+    def forward(self, instances, max_steps, temperature, greedy, config):
         batch_size = len(instances)
-        if max_steps is None:
-            max_steps = len(instances[0]['coords']) * 2
+        
+        # Calculate max steps from config
+        max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
@@ -157,13 +175,14 @@ class BaselinePointerNetwork(nn.Module):
         K = self.attention_key(embedded)
         V = self.attention_value(embedded)
         
-        attention_scores = torch.bmm(Q, K.transpose(1, 2)) / (self.hidden_dim ** 0.5)
+        attention_scaling = config['inference']['attention_temperature_scaling']
+        attention_scores = torch.bmm(Q, K.transpose(1, 2)) / (self.hidden_dim ** attention_scaling)
         attention_weights = torch.softmax(attention_scores, dim=-1)
         attended = torch.bmm(attention_weights, V)
         
-        return self._generate_routes(attended, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances)
+        return self._generate_routes(attended, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config)
     
-    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances):
+    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config):
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
         routes = [[] for _ in range(batch_size)]
         all_log_probs = []
@@ -230,11 +249,13 @@ class BaselinePointerNetwork(nn.Module):
             done_mask = all_masked & currently_at_depot_vec
             batch_done[done_mask] = True
             
-            # Use large negative instead of -inf to keep softmax finite
-            scores = scores.masked_fill(mask, -1e9)
+            # Use config-based masked score value instead of hardcoded -1e9
+            masked_score_value = config['inference']['masked_score_value']
+            scores = scores.masked_fill(mask, masked_score_value)
             logits = scores / temperature
             probs = torch.softmax(logits, dim=-1)
-            log_probs = torch.log(probs + 1e-12)
+            log_prob_epsilon = config['inference']['log_prob_epsilon']
+            log_probs = torch.log(probs + log_prob_epsilon)
 
             # Entropy per batch at this step (robust to zeros)
             step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
@@ -293,7 +314,7 @@ class BaselinePointerNetwork(nn.Module):
 class GraphTransformerNetwork(nn.Module):
     """Pipeline 2: Graph Transformer with multi-head self-attention"""
     
-    def __init__(self, input_dim=3, hidden_dim=64, num_heads=4, num_layers=2):
+    def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -306,8 +327,8 @@ class GraphTransformerNetwork(nn.Module):
             nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
-                dim_feedforward=hidden_dim * 2,
-                dropout=0.1,
+                dim_feedforward=hidden_dim * feedforward_multiplier,
+                dropout=dropout,
                 batch_first=True
             ) for _ in range(num_layers)
         ])
@@ -315,17 +336,20 @@ class GraphTransformerNetwork(nn.Module):
         # Graph-level aggregation
         self.graph_attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
         
-        # Pointer network
+        # Pointer network with configurable context multiplier
+        context_multiplier = config['model']['pointer_network']['context_multiplier']
         self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * context_multiplier, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
         
-    def forward(self, instances, max_steps=None, temperature=1.0, greedy=False):
+    def forward(self, instances, max_steps=None, temperature=None, greedy=False, config=None):
         batch_size = len(instances)
         if max_steps is None:
-            max_steps = len(instances[0]['coords']) * 2
+            max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
+        if temperature is None:
+            temperature = config['inference']['default_temperature']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
@@ -352,9 +376,9 @@ class GraphTransformerNetwork(nn.Module):
         graph_context, _ = self.graph_attention(x, x, x)
         enhanced_embeddings = x + graph_context  # Residual connection
         
-        return self._generate_routes(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances)
+        return self._generate_routes(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config)
     
-    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances):
+    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config):
         # Same routing logic as baseline but with enhanced embeddings
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
         routes = [[] for _ in range(batch_size)]
@@ -411,10 +435,12 @@ class GraphTransformerNetwork(nn.Module):
             done_mask = all_masked & currently_at_depot_vec
             batch_done[done_mask] = True
             
-            scores = scores.masked_fill(mask, -1e9)
+            masked_score_value = config['inference']['masked_score_value']
+            scores = scores.masked_fill(mask, masked_score_value)
             logits = scores / temperature
             probs = torch.softmax(logits, dim=-1)
-            log_probs = torch.log(probs + 1e-12)
+            log_prob_epsilon = config['inference']['log_prob_epsilon']
+            log_probs = torch.log(probs + log_prob_epsilon)
 
             # Entropy per batch at this step (robust to zeros)
             step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
@@ -473,7 +499,7 @@ class GraphTransformerNetwork(nn.Module):
 class GraphTransformerGreedy(nn.Module):
     """Pipeline 3: Graph Transformer with Greedy Selection (No RL)"""
     
-    def __init__(self, input_dim=3, hidden_dim=64, num_heads=4, num_layers=2):
+    def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -481,13 +507,13 @@ class GraphTransformerGreedy(nn.Module):
         # Node embedding
         self.node_embedding = nn.Linear(input_dim, hidden_dim)
         
-        # Multi-head self-attention layers
+        # Multi-head self-attention layers  
         self.transformer_layers = nn.ModuleList([
             nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
-                dim_feedforward=hidden_dim * 2,
-                dropout=0.1,
+                dim_feedforward=hidden_dim * feedforward_multiplier,
+                dropout=dropout,
                 batch_first=True
             ) for _ in range(num_layers)
         ])
@@ -495,18 +521,21 @@ class GraphTransformerGreedy(nn.Module):
         # Graph-level aggregation
         self.graph_attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
         
-        # Pointer network for greedy selection
+        # Pointer network for greedy selection with configurable context multiplier
+        context_multiplier = config['model']['pointer_network']['context_multiplier']
         self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * context_multiplier, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
         
-    def forward(self, instances, max_steps=None, temperature=1.0, greedy=True):  # Always greedy
+    def forward(self, instances, max_steps=None, temperature=None, greedy=True, config=None):  # Always greedy
         # Same as GraphTransformerNetwork but always uses greedy=True
         batch_size = len(instances)
         if max_steps is None:
-            max_steps = len(instances[0]['coords']) * 2
+            max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
+        if temperature is None:
+            temperature = config['inference']['default_temperature']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
@@ -533,9 +562,9 @@ class GraphTransformerGreedy(nn.Module):
         graph_context, _ = self.graph_attention(x, x, x)
         enhanced_embeddings = x + graph_context  # Residual connection
         
-        return self._generate_routes(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, True, instances)  # Force greedy
+        return self._generate_routes(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, True, instances, config)  # Force greedy
     
-    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances):
+    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config):
         # Same routing logic as GraphTransformerNetwork but always greedy
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
         routes = [[] for _ in range(batch_size)]
@@ -597,10 +626,12 @@ class GraphTransformerGreedy(nn.Module):
                     batch_done[b] = True
             
             # Stable logits/probs to avoid NaNs
-            scores = scores.masked_fill(mask, -1e9)
+            masked_score_value = config['inference']['masked_score_value']
+            scores = scores.masked_fill(mask, masked_score_value)
             logits = scores / temperature
             probs = torch.softmax(logits, dim=-1)
-            log_probs = torch.log(probs + 1e-12)
+            log_prob_epsilon = config['inference']['log_prob_epsilon']
+            log_probs = torch.log(probs + log_prob_epsilon)
 
             # Entropy per batch at this step (robust to zeros)
             step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
@@ -648,7 +679,7 @@ class GraphTransformerGreedy(nn.Module):
 class DynamicGraphTransformerNetwork(nn.Module):
     """Pipeline 4: Dynamic Graph Transformer with adaptive updates"""
     
-    def __init__(self, input_dim=3, hidden_dim=64, num_heads=4, num_layers=2):
+    def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -661,34 +692,43 @@ class DynamicGraphTransformerNetwork(nn.Module):
             nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 nhead=num_heads,
-                dim_feedforward=hidden_dim * 2,
-                dropout=0.1,
+                dim_feedforward=hidden_dim * feedforward_multiplier,
+                dropout=dropout,
                 batch_first=True
             ) for _ in range(num_layers)
         ])
         
-        # Dynamic update components
-        self.state_encoder = nn.Linear(4, hidden_dim)  # capacity_used, step, visited_count, distance_from_depot
+        # Dynamic update components with config-based parameters
+        dgt_config = config['model']['dynamic_graph_transformer']
+        state_features = dgt_config['state_features']
+        self.state_encoder = nn.Linear(state_features, hidden_dim)
+        
         # PreNorm + gated residual for stability of dynamic updates
         self.pre_norm = nn.LayerNorm(hidden_dim)
-        self.res_gate = nn.Parameter(torch.tensor(-2.19722458))  # sigmoid ~= 0.1
+        residual_gate_init = dgt_config['residual_gate_init']
+        self.res_gate = nn.Parameter(torch.tensor(residual_gate_init))
+        
+        update_multiplier = dgt_config['update_input_multiplier']
         self.dynamic_update = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * update_multiplier, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
         
-        # Enhanced pointer network
+        # Enhanced pointer network with configurable dimensions
+        pointer_multiplier = 3  # node + context + state
         self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * 3, hidden_dim),  # node + context + state
+            nn.Linear(hidden_dim * pointer_multiplier, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1)
         )
         
-    def forward(self, instances, max_steps=None, temperature=1.0, greedy=False):
+    def forward(self, instances, max_steps=None, temperature=None, greedy=False, config=None):
         batch_size = len(instances)
         if max_steps is None:
-            max_steps = len(instances[0]['coords']) * 2
+            max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
+        if temperature is None:
+            temperature = config['inference']['default_temperature']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
@@ -713,9 +753,9 @@ class DynamicGraphTransformerNetwork(nn.Module):
         for layer in self.transformer_layers:
             x = layer(x)
         
-        return self._generate_routes_dynamic(x, node_features, demands_batch, capacities, distances_batch, max_steps, temperature, greedy, instances)
+        return self._generate_routes_dynamic(x, node_features, demands_batch, capacities, distances_batch, max_steps, temperature, greedy, instances, config)
     
-    def _generate_routes_dynamic(self, node_embeddings, node_features, demands_batch, capacities, distances_batch, max_steps, temperature, greedy, instances=None):
+    def _generate_routes_dynamic(self, node_embeddings, node_features, demands_batch, capacities, distances_batch, max_steps, temperature, greedy, instances=None, config=None):
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
         routes = [[] for _ in range(batch_size)]
         all_log_probs = []
@@ -807,10 +847,12 @@ class DynamicGraphTransformerNetwork(nn.Module):
             done_mask = all_masked & currently_at_depot_vec
             batch_done[done_mask] = True
             
-            scores = scores.masked_fill(mask, -1e9)
+            masked_score_value = config['inference']['masked_score_value']
+            scores = scores.masked_fill(mask, masked_score_value)
             logits = scores / temperature
             probs = torch.softmax(logits, dim=-1)
-            log_probs = torch.log(probs + 1e-12)
+            log_prob_epsilon = config['inference']['log_prob_epsilon']
+            log_probs = torch.log(probs + log_prob_epsilon)
 
             # Entropy per batch at this step (robust to zeros)
             step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
@@ -875,7 +917,7 @@ class DynamicGraphTransformerNetwork(nn.Module):
 class GraphAttentionTransformer(nn.Module):
     """Pipeline 5: Graph Attention Transformer with Edge Features"""
     
-    def __init__(self, input_dim=3, hidden_dim=64, num_heads=4, num_layers=2):
+    def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, edge_embedding_divisor, config):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
@@ -883,8 +925,10 @@ class GraphAttentionTransformer(nn.Module):
         # Node embedding
         self.node_embedding = nn.Linear(input_dim, hidden_dim)
         
-        # Edge feature embedding (distance)
-        self.edge_embedding = nn.Linear(1, hidden_dim // 4)
+        # Edge feature embedding (distance) with config-based parameters
+        gat_config = config['model']['graph_attention_transformer']
+        edge_input_dim = 1  # Distance scalar
+        self.edge_embedding = nn.Linear(edge_input_dim, hidden_dim // edge_embedding_divisor)
         
         # Graph Attention layers
         self.gat_layers = nn.ModuleList([
@@ -899,17 +943,20 @@ class GraphAttentionTransformer(nn.Module):
         # Final attention aggregation
         self.global_attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
         
-        # Enhanced pointer network
+        # Enhanced pointer network with configurable multiplier
+        input_multiplier = gat_config['input_multiplier']
         self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim * input_multiplier, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
+            nn.Linear(hidden_dim, gat_config['output_dim'])
         )
         
-    def forward(self, instances, max_steps=None, temperature=1.0, greedy=False):
+    def forward(self, instances, max_steps=None, temperature=None, greedy=False, config=None):
         batch_size = len(instances)
         if max_steps is None:
-            max_steps = len(instances[0]['coords']) * 2
+            max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
+        if temperature is None:
+            temperature = config['inference']['default_temperature']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
@@ -940,9 +987,9 @@ class GraphAttentionTransformer(nn.Module):
         global_context, _ = self.global_attention(x, x, x)
         enhanced_embeddings = x + global_context
         
-        return self._generate_routes_gat(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances)
+        return self._generate_routes_gat(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config)
     
-    def _generate_routes_gat(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances):
+    def _generate_routes_gat(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config):
         # Same routing logic but with GAT-enhanced embeddings
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
         routes = [[] for _ in range(batch_size)]
@@ -997,10 +1044,12 @@ class GraphAttentionTransformer(nn.Module):
                 elif mask[b].all() and currently_at_depot:
                     batch_done[b] = True
             
-            scores = scores.masked_fill(mask, -1e9)
+            masked_score_value = config['inference']['masked_score_value']
+            scores = scores.masked_fill(mask, masked_score_value)
             logits = scores / temperature
             probs = torch.softmax(logits, dim=-1)
-            log_probs = torch.log(probs + 1e-12)
+            log_prob_epsilon = config['inference']['log_prob_epsilon']
+            log_probs = torch.log(probs + log_prob_epsilon)
 
             # Entropy per batch at this step (robust to zeros)
             step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
@@ -1272,8 +1321,9 @@ def train_model(model, instances, config, model_name, logger):
     train_costs = []
     val_costs = []
     
-    # Split data
-    split_idx = int(0.8 * len(instances))
+    # Split data using config value
+    train_val_split = config.get('training', {}).get('train_val_split', 0.8)
+    split_idx = int(train_val_split * len(instances))
     train_instances = instances[:split_idx]
     val_instances = instances[split_idx:]
     
@@ -1304,7 +1354,14 @@ def train_model(model, instances, config, model_name, logger):
             
             optimizer.zero_grad()
             
-            routes, log_probs, entropies = model(batch_instances, temperature=current_temp)
+            if model_name == 'Pointer+RL':
+                routes, log_probs, entropies = model(batch_instances, max_steps=None, temperature=current_temp, greedy=False, config=config)
+            elif model_name in ['GT+RL', 'GT-Greedy']:
+                routes, log_probs, entropies = model(batch_instances, max_steps=None, temperature=current_temp, greedy=False, config=config)
+            elif model_name in ['DGT+RL', 'GAT+RL']:
+                routes, log_probs, entropies = model(batch_instances, max_steps=None, temperature=current_temp, greedy=False, config=config)
+            else:
+                routes, log_probs, entropies = model(batch_instances, temperature=current_temp)
             
             # Compute costs and validate routes
             costs = []
@@ -1353,8 +1410,9 @@ def train_model(model, instances, config, model_name, logger):
         train_losses.append(np.mean(epoch_losses))
         train_costs.append(np.mean(epoch_costs))
         
-        # Validation
-        if epoch % 3 == 0:
+        # Validation using config frequency
+        validation_frequency = config.get('training', {}).get('validation_frequency', 3)
+        if epoch % validation_frequency == 0:
             model.eval()
             val_batch_costs = []
             val_batch_normalized = []
@@ -1362,7 +1420,17 @@ def train_model(model, instances, config, model_name, logger):
             with torch.no_grad():
                 for i in range(0, len(val_instances), batch_size):
                     batch_val = val_instances[i:i + batch_size]
-                    routes, _, _ = model(batch_val, greedy=True)
+                    if model_name == 'Pointer+RL':
+                        # Calculate max steps and temperature from config
+                        max_steps_val = len(batch_val[0]['coords']) * config['inference']['max_steps_multiplier'] if batch_val else 0
+                        temp_val = config['inference'].get('default_temperature', config['temp_min'])
+                        routes, _, _ = model(batch_val, max_steps_val, temp_val, True, config)
+                    elif model_name in ['GT+RL', 'GT-Greedy']:
+                        routes, _, _ = model(batch_val, max_steps=None, temperature=None, greedy=True, config=config)
+                    elif model_name in ['DGT+RL', 'GAT+RL']:
+                        routes, _, _ = model(batch_val, max_steps=None, temperature=None, greedy=True, config=config)
+                    else:
+                        routes, _, _ = model(batch_val, greedy=True)
                     
                     for j, (route, instance) in enumerate(zip(routes, batch_val)):
                         n_customers = len(instance['coords']) - 1
@@ -1455,7 +1523,9 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
 
     # Build Data list from our generated instances (match GAT_RL generation)
     data_list = [build_pyg_data_from_instance(inst) for inst in instances]
-    split_idx = int(0.8 * len(data_list))
+    # Use config-based train/val split from config file
+    train_val_split = config.get('training', {}).get('train_val_split', 0.8)
+    split_idx = int(train_val_split * len(data_list))
     train_data = data_list[:split_idx]
     val_data = data_list[split_idx:]
 
@@ -1463,9 +1533,11 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
     train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=False)
     val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
 
-    n_steps = config['num_customers'] * 2  # legacy expects a step bound
-    T = 2.5
-    lr = 1e-4
+    # Legacy training parameters - made configurable from training_advanced section
+    legacy_training = config.get('training_advanced', {}).get('legacy_gat', {})
+    n_steps = config['num_customers'] * legacy_training.get('max_steps_multiplier', config['inference']['max_steps_multiplier'])
+    T = legacy_training.get('temperature', config['inference']['default_temperature'])
+    lr = legacy_training.get('learning_rate', config['learning_rate'])
     num_epochs = config['num_epochs']
 
     # Run the legacy training loop (kept intact)
@@ -1610,13 +1682,28 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger):
 def run_comparative_study():
     """Main function to run all 6 pipelines and compare"""
     args = parse_args()
-    logger = setup_logging()
-    logger.info("🚀 Starting Comparative Study: 6 Pipeline Architectures (CPU)")
-    
-    set_seeds(42)
     
     # Load base configuration from YAML
     config = load_config(args.config)
+    
+    # Initialize system settings from config
+    logger = setup_logging(config)
+    device = get_device_from_config(config)
+    set_seeds(config)
+    
+    # Configure CPU optimization if using CPU
+    if device.type == 'cpu':
+        configure_cpu_threads(config)
+    
+    logger.info(f"🚀 Starting Comparative Study: 6 Pipeline Architectures ({device.type.upper()})")
+    
+    # Extract scale from config filename (no more threshold guessing!)
+    config_filename = Path(args.config).stem  # 'small', 'medium', 'production'
+    if config_filename in ['small', 'medium', 'production']:
+        scale = config_filename
+    else:
+        # Fallback for custom config files
+        scale = 'custom'
     
     # STRICT CONFIG VALIDATION: Extract nested config values with mandatory checks
     # Problem settings - REQUIRED
@@ -1719,6 +1806,32 @@ def run_comparative_study():
     if isinstance(config.get('gradient_clip_norm'), str):
         config['gradient_clip_norm'] = float(config['gradient_clip_norm'])
     
+    # Convert inference configuration parameters to proper numeric types
+    if 'inference' in config:
+        inference_config = config['inference']
+        if isinstance(inference_config.get('default_temperature'), str):
+            inference_config['default_temperature'] = float(inference_config['default_temperature'])
+        if isinstance(inference_config.get('max_steps_multiplier'), str):
+            inference_config['max_steps_multiplier'] = int(inference_config['max_steps_multiplier'])
+        if isinstance(inference_config.get('attention_temperature_scaling'), str):
+            inference_config['attention_temperature_scaling'] = float(inference_config['attention_temperature_scaling'])
+        if isinstance(inference_config.get('log_prob_epsilon'), str):
+            inference_config['log_prob_epsilon'] = float(inference_config['log_prob_epsilon'])
+        if isinstance(inference_config.get('masked_score_value'), str):
+            inference_config['masked_score_value'] = float(inference_config['masked_score_value'])
+    
+    # Convert training_advanced configuration parameters to proper numeric types
+    if 'training_advanced' in config:
+        training_advanced = config['training_advanced']
+        if 'legacy_gat' in training_advanced:
+            legacy_gat_config = training_advanced['legacy_gat']
+            if isinstance(legacy_gat_config.get('learning_rate'), str):
+                legacy_gat_config['learning_rate'] = float(legacy_gat_config['learning_rate'])
+            if isinstance(legacy_gat_config.get('temperature'), str):
+                legacy_gat_config['temperature'] = float(legacy_gat_config['temperature'])
+            if isinstance(legacy_gat_config.get('max_steps_multiplier'), str):
+                legacy_gat_config['max_steps_multiplier'] = int(legacy_gat_config['max_steps_multiplier'])
+    
     # Provide defaults for any missing keys
     config.setdefault('temperature', 1.0)
     
@@ -1762,20 +1875,34 @@ def run_comparative_study():
     naive_normalized = naive_avg_cost / config['num_customers']
     logger.info(f"📍 Naive baseline (depot->customer->depot): {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust)")
     
-    # Initialize models
+    # Initialize models with config-based parameters
+    input_dim = config.get('model', {}).get('input_dim', 3)
+    dropout = config.get('model', {}).get('transformer_dropout', 0.1)
+    feedforward_multiplier = config.get('model', {}).get('feedforward_multiplier', 4)
+    edge_embedding_divisor = config.get('model', {}).get('edge_embedding_divisor', 4)
     models = {
-        'Pointer+RL': BaselinePointerNetwork(3, config['hidden_dim']),
-        'GT-Greedy': GraphTransformerGreedy(3, config['hidden_dim'], config['num_heads'], config['num_layers']),
-        'GT+RL': GraphTransformerNetwork(3, config['hidden_dim'], config['num_heads'], config['num_layers']),
-        'DGT+RL': DynamicGraphTransformerNetwork(3, config['hidden_dim'], config['num_heads'], config['num_layers']),
-        'GAT+RL': GraphAttentionTransformer(3, config['hidden_dim'], config['num_heads'], config['num_layers'])
+        'Pointer+RL': BaselinePointerNetwork(input_dim, config['hidden_dim'], config),
+        'GT-Greedy': GraphTransformerGreedy(input_dim, config['hidden_dim'], config['num_heads'], config['num_layers'], dropout, feedforward_multiplier, config),
+        'GT+RL': GraphTransformerNetwork(input_dim, config['hidden_dim'], config['num_heads'], config['num_layers'], dropout, feedforward_multiplier, config),
+        'DGT+RL': DynamicGraphTransformerNetwork(input_dim, config['hidden_dim'], config['num_heads'], config['num_layers'], dropout, feedforward_multiplier, config),
+        'GAT+RL': GraphAttentionTransformer(input_dim, config['hidden_dim'], config['num_heads'], config['num_layers'], dropout, edge_embedding_divisor, config)
     }
     
     # Optionally include legacy model if not restricted to DGT and dependency is available
     if not args.only_dgt:
         try:
             from src_batch.model.Model import Model as LegacyGATModel
-            models['GAT+RL (legacy)'] = LegacyGATModel(node_input_dim=3, edge_input_dim=1, hidden_dim=128, edge_dim=16, layers=4, negative_slope=0.2, dropout=0.6)
+            # Legacy GAT model with config-based parameters where applicable
+            legacy_config = config.get('model', {}).get('legacy_gat', {})
+            models['GAT+RL (legacy)'] = LegacyGATModel(
+                node_input_dim=3, 
+                edge_input_dim=1, 
+                hidden_dim=legacy_config.get('hidden_dim', config.get('hidden_dim', 128)), 
+                edge_dim=legacy_config.get('edge_dim', 16),
+                layers=legacy_config.get('layers', config.get('num_layers', 4)), 
+                negative_slope=legacy_config.get('negative_slope', 0.2), 
+                dropout=legacy_config.get('dropout', 0.6)
+            )
         except Exception as e:
             # CRITICAL: Legacy model loading failure requires torch_geometric dependency
             if 'only_dgt' not in vars(args) or not args.only_dgt:
@@ -1880,10 +2007,10 @@ def run_comparative_study():
             logger.warning(f"Failed to infer DGT+RL parameter count: {e}")
     
     # Save results
-    save_results(results, training_times, models, config)
+    save_results(results, training_times, models, config, scale=scale)
     
     # Persist artifacts regardless of validation outcome
-    save_results(results, training_times, models, config)
+    save_results(results, training_times, models, config, scale=scale)
 
     # Now run strict validation, but log failures without preventing saved outputs
     try:
@@ -1905,7 +2032,7 @@ def run_comparative_study():
         logger.info("")
     
     # Save results
-    save_results(results, training_times, models, config)
+    save_results(results, training_times, models, config, scale=scale)
     
     return results
 
@@ -1976,17 +2103,10 @@ def validate_naive_baseline_correctness(results, naive_avg_cost, config, logger,
     else:
         logger.info("✅✅✅ STRICT VALIDATION PASSED: All models ≤ naive baseline! ✅✅✅")
 
-def save_results(results, training_times, models, config):
+def save_results(results, training_times, models, config, scale='small'):
     """Save all results and models to organized results structure"""
     
-    # Determine experiment scale based on problem size
-    num_customers = config.get('num_customers', 15)
-    if num_customers <= 20:
-        scale = 'small'
-    elif num_customers <= 50:
-        scale = 'medium'
-    else:
-        scale = 'production'
+    # Scale is determined by the config file name, not problem size
     
     # Create organized directories
     pytorch_dir = f"results/{scale}/pytorch"

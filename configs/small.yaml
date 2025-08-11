@@ -1,45 +1,148 @@
 # Small-scale configuration for quick testing and development
 # Optimized for fast iteration and debugging
 
-# =================================================================
-# FREQUENTLY CHANGED PARAMETERS (Basic Problem & Training Settings)
-# =================================================================
+# =====================================================================
+# CRITICAL PARAMETERS - FREQUENTLY CHANGED (Business Logic)
+# =====================================================================
 
-# Problem Settings - Small scale for quick testing (based on GAT_RL)
+# Problem Definition - Core CVRP problem settings
 problem:
-  num_customers: 20         # Fixed number of customers (excluding depot)
-  vehicle_capacity: 30      # Integer capacity (based on GAT_RL load_capacity=3 scaled up)
+  num_customers: 13         # Fixed number of customers (excluding depot)
+  vehicle_capacity: 20      # Integer capacity (based on GAT_RL load_capacity=3 scaled up)
   demand_range: [1, 10]     # Integer demands [min, max] (based on GAT_RL max_demand=10)
   coord_range: 100          # Coordinate range [0, coord_range] then normalized to unit square
 
-# Training Configuration - Fast training for development  
+# Training Configuration - Primary training parameters
 training:
-  num_instances: 1024        # Number of training instances
-  batch_size: 8            # Batch size for training
-  num_epochs: 8           # Number of training epochs
-  learning_rate: 1e-3      # Base learning rate
-
-# =================================================================
-# LESS FREQUENTLY CHANGED PARAMETERS
-# =================================================================
+  num_instances: 2048       # Number of training instances
+  batch_size: 256           # Batch size for training
+  num_epochs: 32             # Number of training epochs
+  learning_rate: 1e-3       # Base learning rate
+  train_val_split: 0.8      # Training/validation split ratio
+  validation_frequency: 3   # Run validation every N epochs
+  
+# Experimental Control - Critical for reproducibility
+experiment:
+  random_seed: 42           # Random seed for reproducible results
+  device: "cpu"             # Device to use ("cpu" or "cuda")
+  
+# =====================================================================
+# MODERATE PARAMETERS - MODEL ARCHITECTURE & ADVANCED TRAINING
+# =====================================================================
 
 # Model Architecture - Shared by ALL model types
 # These parameters are used by: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL
 model:
-  hidden_dim: 64           # Hidden dimension for all models
-  num_heads: 4             # Number of attention heads  
-  num_layers: 2            # Number of transformer layers
+  # Core architecture parameters
+  input_dim: 3              # Input dimension (coords + demand)
+  hidden_dim: 64            # Hidden dimension for all models
+  num_heads: 4              # Number of attention heads  
+  num_layers: 2             # Number of transformer layers
+  transformer_dropout: 0.1  # Dropout for transformer encoder layers
+  feedforward_multiplier: 2 # Transformer feedforward dim multiplier (feedforward = hidden_dim * multiplier)
+  edge_embedding_divisor: 4 # Edge embedding divisor (edge_dim = hidden_dim // divisor)
+  
+  # Model-specific parameters
+  pointer_network:
+    input_multiplier: 2     # Input dim multiplier for pointer network layers (hidden_dim * multiplier)
+    context_multiplier: 2   # Context multiplier for pointer network layers (hidden_dim * multiplier)
+    output_dim: 1           # Output dimension for pointer network final layer
+  
+  dynamic_graph_transformer:
+    state_features: 4       # Number of dynamic state features
+    residual_gate_init: -2.19722458  # Initial value for learnable residual gate
+    update_input_multiplier: 2  # Input multiplier for dynamic update layers
+    update_activation: "relu"   # Activation function for dynamic updates
+    
+  graph_transformer:
+    input_multiplier: 2     # Input dim multiplier for graph transformer pointer layers
+    output_dim: 1           # Output dimension for graph transformer pointer layers
+    
+  graph_attention_transformer:
+    input_multiplier: 2     # Input dim multiplier for GAT pointer layers
+    output_dim: 1           # Output dimension for GAT pointer layers
+    
+  legacy_gat:
+    node_input_dim: 3       # Node input dimension for legacy GAT
+    edge_input_dim: 1       # Edge input dimension for legacy GAT  
+    hidden_dim: 128         # Hidden dimension (legacy GAT uses different size)
+    edge_dim: 16           # Edge embedding dimension
+    num_layers: 4           # Number of GAT layers
+    negative_slope: 0.2     # LeakyReLU negative slope
+    dropout: 0.6           # Dropout probability
 
 # Advanced Training Configuration
 training_advanced:
+  # Optimization parameters
+  optimizer: "Adam"         # Optimizer type
   gradient_clip_norm: 1.0   # Gradient clipping for stability
   
   # Learning rate schedule
   warmup_epochs: 5          # Linear warmup epochs before cosine decay
-  min_lr: 1e-4             # Minimum LR at end of cosine schedule
+  min_lr: 1e-4              # Minimum LR at end of cosine schedule
     
   # Reinforcement Learning parameters
-  entropy_coef: 0.01       # Initial entropy coefficient
-  entropy_min: 0.0         # Minimum entropy coefficient
-  temp_start: 1.5          # Initial sampling temperature
-  temp_min: 0.2            # Minimum sampling temperature
+  entropy_coef: 0.01        # Initial entropy coefficient
+  entropy_min: 0.0          # Minimum entropy coefficient (cosine decay)
+  temp_start: 1.5           # Initial sampling temperature
+  temp_min: 0.2             # Minimum sampling temperature (cosine decay)
+  
+  # Legacy GAT training parameters
+  legacy_gat:
+    learning_rate: 1e-4     # Learning rate for legacy GAT (hardcoded in original)
+    temperature: 1.0        # Temperature parameter for legacy training
+    
+# =====================================================================
+# ACCEPTABLE PARAMETERS - SYSTEM & INFRASTRUCTURE
+# =====================================================================
+
+# System Configuration - Hardware and performance settings
+system:
+  # CPU Threading (only used when device="cpu")
+  cpu_optimization:
+    auto_detect_threads: true    # Auto-detect number of CPU threads
+    max_threads: null           # Override max threads (null = auto-detect)
+    inter_op_threads_divisor: 4  # Divisor for inter-op threads (max_threads // divisor)
+    
+  # Environment variables for CPU optimization
+  openmp_settings:
+    kmp_blocktime: "0"          # KMP_BLOCKTIME
+    kmp_settings: "0"           # KMP_SETTINGS (disable verbose)
+    kmp_affinity: "granularity=fine,compact,1,0"  # KMP_AFFINITY
+
+# Inference and Evaluation Settings
+inference:
+  default_temperature: 1.0      # Default temperature for model forward passes
+  greedy_evaluation: true       # Use greedy decoding for validation
+  max_steps_multiplier: 2       # Max steps = num_customers * multiplier
+  attention_temperature_scaling: 0.5  # Attention scaling factor (sqrt power for attention)
+  
+  # Numerical stability
+  log_prob_epsilon: 1e-12       # Small epsilon for log probability computation
+  masked_score_value: -1e9      # Large negative value for masked scores
+
+# Output and Logging Configuration
+output:
+  # Directory structure
+  results_base_dir: "results"   # Base directory for all results
+  subdirectories:
+    pytorch: "pytorch"          # Model checkpoints and state dicts
+    analysis: "analysis"        # Analysis results and study data
+    logs: "logs"               # Training logs and metrics
+    csv: "csv"                 # CSV export files
+    checkpoints: "checkpoints"  # Training checkpoints
+    
+  # File naming patterns
+  model_filename_template: "model_{model_name}.pt"  # Template for model files
+  
+  # Legacy paths
+  legacy_paths:
+    checkpoints: "legacy_checkpoints"  # Legacy GAT checkpoint subdirectory
+    training_logs: "logs/training"     # Legacy training CSV logs
+    checkpoint_name: "actor.pt"        # Legacy checkpoint filename
+    
+# Logging Configuration
+logging:
+  level: "INFO"                 # Logging level
+  format: "%(message)s"        # Log message format
+  progress_bars: true          # Enable tqdm progress bars
