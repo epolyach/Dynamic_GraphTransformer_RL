@@ -24,35 +24,48 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Run Studies
+### Main Pipeline
 
-#### Main Comparative Study (Recommended)
+The project uses a three-stage pipeline for comprehensive CVRP analysis:
+
+#### 1. Training and Validation
 ```bash
-# CPU-optimized scientific comparison
-python run_comparative_study.py
+# Train all models and save results
+python run_train_validation.py --config configs/small.yaml
+python run_train_validation.py --config configs/medium.yaml
+python run_train_validation.py --config configs/production.yaml
 
-# With custom parameters
-python run_comparative_study.py --customers 20 --epochs 25 --instances 1000
-python run_comparative_study.py --batch 16 --max_demand 15 --capacity 5
-
-# Quick testing vs full evaluation
-python run_comparative_study.py --customers 10 --epochs 5 --instances 200  # Quick
-python run_comparative_study.py --customers 50 --epochs 100 --instances 5000  # Full
+# With custom parameters (overrides config)
+python run_train_validation.py --config configs/small.yaml --customers 20 --epochs 25
 ```
 
-#### Academic Ablation Study
+#### 2. Generate Comparative Plots
 ```bash
-# Statistical analysis with multiple runs
-python src/run_ablation_study.py --config configs/ablation.yaml
+# Generate training curves and performance comparison plots
+python make_comparative_plot.py --config configs/small.yaml
+python make_comparative_plot.py --config configs/medium.yaml
+python make_comparative_plot.py --config configs/production.yaml
+```
+
+#### 3. Test Instance Analysis
+```bash
+# Create test instances and route visualizations
+python make_test_instance.py --config configs/small.yaml
+python make_test_instance.py --config configs/medium.yaml
+python make_test_instance.py --config configs/production.yaml
+
+# With custom parameters
+python make_test_instance.py --config configs/small.yaml --seed 42 --visualize
 ```
 
 ## 📋 Project Structure
 
 ```
 .
-├── run_comparative_study.py         # Main scientific comparative study
+├── run_train_validation.py        # Main training and validation pipeline
+├── make_comparative_plot.py        # Generate performance comparison plots
+├── make_test_instance.py           # Create test instances and route visualizations
 ├── src/                            # Source code modules
-│   ├── run_ablation_study.py      # Academic ablation study framework
 │   ├── models/                     # Essential models (cleaned up)
 │   ├── models_backup/              # Experimental/unused models (moved here)
 │   ├── training/                   # Training utilities (cleaned up)
@@ -68,6 +81,10 @@ python src/run_ablation_study.py --config configs/ablation.yaml
 │   ├── small/                      # Quick testing results (≤20 customers)
 │   ├── medium/                     # Research experiment results (21-50 customers)
 │   └── production/                 # Publication-ready results (>50 customers)
+├── plots/                          # Generated visualization outputs
+│   ├── comparative_study_results.png # Training curves and model comparison
+│   ├── test_route_*.png           # Individual test route visualizations
+│   └── test_route_*.json          # Route data for each model
 ├── logs/                           # All logging output
 │   ├── tensorboard/               # TensorBoard logs (moved from runs/)
 │   └── training/                  # CSV training logs (moved from instances/)
@@ -112,8 +129,10 @@ This project has undergone a comprehensive cleanup to improve maintainability:
 - **`src/training_backup/`** - Contains legacy training modules that are no longer used
 
 ### **Current Active Structure:**
-- **All models are defined inline** in `run_comparative_study.py` for better maintainability
+- **Three-stage pipeline**: Training (`run_train_validation.py`) → Plotting (`make_comparative_plot.py`) → Testing (`make_test_instance.py`)
+- **All models are defined inline** in `run_train_validation.py` for better maintainability
 - **All training logic is inline** in the main script with optimized CPU performance
+- **Separated visualization logic** in dedicated plotting and test instance scripts
 - **Legacy GAT+RL comparison** works through `src_batch/` → `../GAT_RL/` (external dependency)
 - **Clean package directories** with only essential functionality
 
@@ -412,11 +431,11 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 
 ### Memory Issues
 ```bash
-# Reduce batch size for large problems
-python run_comparative_study.py --config configs/small.yaml
-
 # Use small configuration for limited resources
-python run_comparative_study.py --config configs/small.yaml
+python run_train_validation.py --config configs/small.yaml
+
+# Or reduce batch size and problem size in config
+python run_train_validation.py --config configs/small.yaml --batch 4 --customers 10
 ```
 
 ### Performance Issues
