@@ -43,49 +43,49 @@
             </tr>
 
             <tr class="best">
-                <td>GT+RL</td>
-                <td>0.535</td>
-                <td>0.704</td>
-                <td>59.7%</td>
-                <td>25</td>
-            </tr>
-
-            <tr class="">
-                <td>DGT+RL</td>
-                <td>0.547</td>
-                <td>0.801</td>
-                <td>58.8%</td>
-                <td>25</td>
-            </tr>
-
-            <tr class="">
                 <td>GAT+RL</td>
-                <td>0.571</td>
-                <td>0.646</td>
-                <td>57.0%</td>
-                <td>25</td>
-            </tr>
-
-            <tr class="">
-                <td>GT-Greedy</td>
-                <td>0.610</td>
-                <td>0.610</td>
-                <td>54.1%</td>
+                <td>0.556</td>
+                <td>0.556</td>
+                <td>58.1%</td>
                 <td>25</td>
             </tr>
 
             <tr class="">
                 <td>Pointer+RL</td>
-                <td>0.787</td>
+                <td>0.566</td>
+                <td>0.602</td>
+                <td>57.3%</td>
+                <td>25</td>
+            </tr>
+
+            <tr class="">
+                <td>GT-Greedy</td>
+                <td>0.573</td>
+                <td>0.573</td>
+                <td>56.8%</td>
+                <td>25</td>
+            </tr>
+
+            <tr class="">
+                <td>GT+RL</td>
+                <td>0.688</td>
+                <td>0.626</td>
+                <td>48.1%</td>
+                <td>25</td>
+            </tr>
+
+            <tr class="">
+                <td>DGT+RL</td>
                 <td>0.706</td>
-                <td>40.7%</td>
+                <td>0.805</td>
+                <td>46.9%</td>
                 <td>25</td>
             </tr>
 
             <tr class="worst">
                 <td>GAT+RL (legacy)</td>
                 <td>1.327</td>
-                <td>0.773</td>
+                <td>0.846</td>
                 <td>-0.0%</td>
                 <td>41</td>
             </tr>
@@ -104,43 +104,43 @@
         <h2>Detailed Route Analysis</h2>
 
         <div class="model">
-            <h3>GT+RL</h3>
-            <p><strong>Cost per customer:</strong> 0.535</p>
-            <p><strong>Total cost:</strong> 10.703</p>
-            <p><strong>Route:</strong></p>
-            <div class="route">0 → 4 → 2 → 6 → 9 → 3 → 14 → 8 → 0 → 7 → 10 → 12 → 15 → 5 → 0 → 16 → 1 → 19 → 18 → 0 → 11 → 17 → 13 → 20 → 0</div>
-        </div>
-
-        <div class="model">
-            <h3>DGT+RL</h3>
-            <p><strong>Cost per customer:</strong> 0.547</p>
-            <p><strong>Total cost:</strong> 10.943</p>
-            <p><strong>Route:</strong></p>
-            <div class="route">0 → 3 → 16 → 9 → 6 → 5 → 0 → 7 → 4 → 10 → 19 → 20 → 0 → 12 → 1 → 11 → 2 → 8 → 0 → 17 → 18 → 15 → 14 → 13 → 0</div>
-        </div>
-
-        <div class="model">
             <h3>GAT+RL</h3>
-            <p><strong>Cost per customer:</strong> 0.571</p>
-            <p><strong>Total cost:</strong> 11.428</p>
+            <p><strong>Cost per customer:</strong> 0.556</p>
+            <p><strong>Total cost:</strong> 11.120</p>
             <p><strong>Route:</strong></p>
-            <div class="route">0 → 7 → 6 → 12 → 4 → 0 → 10 → 9 → 16 → 3 → 5 → 0 → 11 → 19 → 17 → 14 → 20 → 0 → 1 → 18 → 2 → 13 → 15 → 8 → 0</div>
-        </div>
-
-        <div class="model">
-            <h3>GT-Greedy</h3>
-            <p><strong>Cost per customer:</strong> 0.610</p>
-            <p><strong>Total cost:</strong> 12.197</p>
-            <p><strong>Route:</strong></p>
-            <div class="route">0 → 16 → 7 → 12 → 5 → 0 → 3 → 19 → 9 → 6 → 2 → 0 → 10 → 11 → 1 → 17 → 0 → 4 → 18 → 15 → 14 → 13 → 20 → 8 → 0</div>
+            <div class="route">0 → 7 → 6 → 3 → 4 → 2 → 5 → 0 → 9 → 16 → 10 → 1 → 8 → 0 → 12 → 19 → 11 → 15 → 0 → 20 → 14 → 17 → 18 → 13 → 0</div>
         </div>
 
         <div class="model">
             <h3>Pointer+RL</h3>
-            <p><strong>Cost per customer:</strong> 0.787</p>
-            <p><strong>Total cost:</strong> 15.732</p>
+            <p><strong>Cost per customer:</strong> 0.566</p>
+            <p><strong>Total cost:</strong> 11.327</p>
             <p><strong>Route:</strong></p>
-            <div class="route">0 → 16 → 12 → 11 → 8 → 0 → 17 → 7 → 19 → 4 → 5 → 0 → 10 → 18 → 6 → 1 → 15 → 0 → 3 → 9 → 13 → 2 → 14 → 20 → 0</div>
+            <div class="route">0 → 13 → 15 → 18 → 1 → 17 → 14 → 8 → 0 → 19 → 3 → 9 → 11 → 5 → 0 → 10 → 6 → 16 → 2 → 20 → 0 → 12 → 7 → 4 → 0</div>
+        </div>
+
+        <div class="model">
+            <h3>GT-Greedy</h3>
+            <p><strong>Cost per customer:</strong> 0.573</p>
+            <p><strong>Total cost:</strong> 11.465</p>
+            <p><strong>Route:</strong></p>
+            <div class="route">0 → 1 → 18 → 19 → 17 → 20 → 0 → 15 → 2 → 11 → 16 → 4 → 8 → 0 → 10 → 9 → 3 → 12 → 5 → 0 → 7 → 6 → 13 → 14 → 0</div>
+        </div>
+
+        <div class="model">
+            <h3>GT+RL</h3>
+            <p><strong>Cost per customer:</strong> 0.688</p>
+            <p><strong>Total cost:</strong> 13.769</p>
+            <p><strong>Route:</strong></p>
+            <div class="route">0 → 12 → 16 → 11 → 8 → 0 → 7 → 17 → 19 → 4 → 5 → 0 → 10 → 6 → 18 → 1 → 13 → 0 → 9 → 3 → 14 → 15 → 2 → 20 → 0</div>
+        </div>
+
+        <div class="model">
+            <h3>DGT+RL</h3>
+            <p><strong>Cost per customer:</strong> 0.706</p>
+            <p><strong>Total cost:</strong> 14.110</p>
+            <p><strong>Route:</strong></p>
+            <div class="route">0 → 16 → 12 → 11 → 8 → 0 → 7 → 17 → 19 → 4 → 5 → 0 → 10 → 6 → 18 → 1 → 15 → 0 → 3 → 9 → 13 → 2 → 14 → 20 → 0</div>
         </div>
 
         <div class="model">

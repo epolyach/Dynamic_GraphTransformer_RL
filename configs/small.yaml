@@ -14,7 +14,7 @@ problem:
 
 # Training Configuration - Fast training for development  
 training:
-  num_instances: 200        # Number of training instances
+  num_instances: 1024        # Number of training instances
   batch_size: 8            # Batch size for training
   num_epochs: 8           # Number of training epochs
   learning_rate: 1e-3      # Base learning rate
