@@ -25,10 +25,11 @@ import pandas as pd
 import math
 
 def get_device_from_config(config):
-    """Get device from config, with fallback to CPU"""
-    device_str = config.get('experiment', {}).get('device', 'cpu')
-    device = torch.device(device_str)
-    print(f"🖥️  Using device: {device} ({device_str.upper()}-optimized)")
+    """CPU-only device selection (GPU disabled)."""
+    # Hard-disable CUDA visibility to avoid accidental GPU usage
+    os.environ.setdefault('CUDA_VISIBLE_DEVICES', '')
+    device = torch.device('cpu')
+    print("🖥️  Using CPU (CPU-optimized)")
     return device
 
 def setup_logging(config=None):
@@ -497,7 +498,11 @@ class GraphTransformerNetwork(nn.Module):
         return routes, combined_log_probs, combined_entropy
 
 class GraphTransformerGreedy(nn.Module):
-    """Pipeline 3: Graph Transformer with Greedy Selection (No RL)"""
+    """Pipeline 3: Pure Greedy Attention Baseline (No RL training)
+    Greedy routing using attention-style scores: from current node, pick the most
+    important unmasked next node by dot-product attention over embeddings, until
+    capacity is exhausted; then go back to depot. Repeat until all customers are visited.
+    """
     
     def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config):
         super().__init__()
@@ -507,7 +512,7 @@ class GraphTransformerGreedy(nn.Module):
         # Node embedding
         self.node_embedding = nn.Linear(input_dim, hidden_dim)
         
-        # Multi-head self-attention layers  
+        # Transformer encoder stack for building node embeddings
         self.transformer_layers = nn.ModuleList([
             nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
@@ -518,163 +523,136 @@ class GraphTransformerGreedy(nn.Module):
             ) for _ in range(num_layers)
         ])
         
-        # Graph-level aggregation
-        self.graph_attention = nn.MultiheadAttention(hidden_dim, num_heads, batch_first=True)
+        # Simple attention projection heads (query/key) for greedy selection
+        self.attn_q = nn.Linear(hidden_dim, hidden_dim)
+        self.attn_k = nn.Linear(hidden_dim, hidden_dim)
         
-        # Pointer network for greedy selection with configurable context multiplier
-        context_multiplier = config['model']['pointer_network']['context_multiplier']
-        self.pointer = nn.Sequential(
-            nn.Linear(hidden_dim * context_multiplier, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
-        )
-        
-    def forward(self, instances, max_steps=None, temperature=None, greedy=True, config=None):  # Always greedy
-        # Same as GraphTransformerNetwork but always uses greedy=True
+    def forward(self, instances, max_steps=None, temperature=None, greedy=True, config=None):  # Greedy baseline ignores temperature
         batch_size = len(instances)
+        if batch_size == 0:
+            return [], torch.tensor([]), torch.tensor([])
         if max_steps is None:
             max_steps = len(instances[0]['coords']) * config['inference']['max_steps_multiplier']
-        if temperature is None:
-            temperature = config['inference']['default_temperature']
         
         # Convert to tensor format
         max_nodes = max(len(inst['coords']) for inst in instances)
-        node_features = torch.zeros(batch_size, max_nodes, 3)
-        demands_batch = torch.zeros(batch_size, max_nodes)
-        capacities = torch.zeros(batch_size)
+        device = next(self.parameters()).device
+        node_features = torch.zeros(batch_size, max_nodes, 3, device=device)
+        demands_batch = torch.zeros(batch_size, max_nodes, device=device)
+        capacities = torch.zeros(batch_size, device=device)
         
         for i, inst in enumerate(instances):
             n_nodes = len(inst['coords'])
-            node_features[i, :n_nodes, :2] = torch.tensor(inst['coords'], dtype=torch.float32)
-            node_features[i, :n_nodes, 2] = torch.tensor(inst['demands'], dtype=torch.float32)
-            demands_batch[i, :n_nodes] = torch.tensor(inst['demands'], dtype=torch.float32)
+            node_features[i, :n_nodes, :2] = torch.tensor(inst['coords'], dtype=torch.float32, device=device)
+            node_features[i, :n_nodes, 2] = torch.tensor(inst['demands'], dtype=torch.float32, device=device)
+            demands_batch[i, :n_nodes] = torch.tensor(inst['demands'], dtype=torch.float32, device=device)
             capacities[i] = inst['capacity']
         
-        # Embed nodes
-        embedded = self.node_embedding(node_features)  # [B, N, H]
-        
-        # Apply transformer layers
-        x = embedded
+        # Build embeddings with transformer encoder
+        x = self.node_embedding(node_features)  # [B, N, H]
         for layer in self.transformer_layers:
             x = layer(x)
         
-        # Graph-level attention for global context
-        graph_context, _ = self.graph_attention(x, x, x)
-        enhanced_embeddings = x + graph_context  # Residual connection
-        
-        return self._generate_routes(enhanced_embeddings, node_features, demands_batch, capacities, max_steps, temperature, True, instances, config)  # Force greedy
+        routes, logp, ent = self._greedy_routes(x, demands_batch, capacities, max_steps, instances)
+        return routes, logp, ent
     
-    def _generate_routes(self, node_embeddings, node_features, demands_batch, capacities, max_steps, temperature, greedy, instances, config):
-        # Same routing logic as GraphTransformerNetwork but always greedy
+    def _greedy_routes(self, node_embeddings, demands_batch, capacities, max_steps, instances):
         batch_size, max_nodes, hidden_dim = node_embeddings.shape
+        device = node_embeddings.device
         routes = [[] for _ in range(batch_size)]
-        all_log_probs = []
-        all_entropies = []
         
         remaining_capacity = capacities.clone()
-        visited = torch.zeros(batch_size, max_nodes, dtype=torch.bool)
+        visited = torch.zeros(batch_size, max_nodes, dtype=torch.bool, device=device)
+        current_nodes = torch.zeros(batch_size, dtype=torch.long, device=device)  # start at depot 0
         
-        # ALWAYS START AT DEPOT
+        # Initialize routes at depot
         for b in range(batch_size):
             routes[b].append(0)
         
-        # Track which batches are done to avoid processing them
-        batch_done = torch.zeros(batch_size, dtype=torch.bool)
+        # Precompute keys for all nodes
+        K_all = self.attn_k(node_embeddings)  # [B, N, H]
+        scale = float(self.hidden_dim) ** 0.5
         
         for step in range(max_steps):
-            # Check which batches are done (all customers visited AND at depot)
+            # Check completion per batch: all customers visited and currently at depot
+            done_mask = torch.zeros(batch_size, dtype=torch.bool, device=device)
             for b in range(batch_size):
-                if not batch_done[b]:  # Only check if not already done
-                    customers_visited = visited[b, 1:len(instances[b]['coords'])].all()
-                    currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                    if customers_visited and currently_at_depot:
-                        batch_done[b] = True
-            
-            # If all batches are done, break
-            if batch_done.all():
-                break
-            
-            # Dynamic context based on current state
-            context = node_embeddings.mean(dim=1, keepdim=True).expand(-1, max_nodes, -1)
-            
-            # Compute pointer scores with enhanced embeddings
-            pointer_input = torch.cat([node_embeddings, context], dim=-1)
-            scores = self.pointer(pointer_input).squeeze(-1)
-            
-            # Apply mask: visited nodes + capacity constraints + pad beyond actual nodes
-            mask = visited.clone()
-            for b in range(batch_size):
-                for n in range(max_nodes):
-                    if demands_batch[b, n] > remaining_capacity[b]:
-                        mask[b, n] = True
-                # Don't allow staying at depot if already at depot
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if currently_at_depot:
-                    mask[b, 0] = True
-                # Pad beyond actual nodes (except depot)
                 actual_nodes = len(instances[b]['coords'])
-                if actual_nodes < max_nodes:
-                    mask[b, actual_nodes:] = True
-                mask[b, 0] = mask[b, 0]
-                
-                # Safety: if all nodes masked and we're not at depot, allow depot
-                if mask[b].all() and not currently_at_depot:
-                    mask[b, 0] = False
-                # If we're at depot and all customers visited, we should have terminated above
-                elif mask[b].all() and currently_at_depot:
-                    # Mark this batch as done to avoid further processing
-                    batch_done[b] = True
-            
-            # Stable logits/probs to avoid NaNs
-            masked_score_value = config['inference']['masked_score_value']
-            scores = scores.masked_fill(mask, masked_score_value)
-            logits = scores / temperature
-            probs = torch.softmax(logits, dim=-1)
-            log_prob_epsilon = config['inference']['log_prob_epsilon']
-            log_probs = torch.log(probs + log_prob_epsilon)
-
-            # Entropy per batch at this step (robust to zeros)
-            step_entropy = -(probs * log_probs).nan_to_num(0.0).sum(dim=-1)
-            
-            # Always greedy selection among feasible
-            actions = probs.argmax(dim=-1)
-            selected_log_probs = torch.gather(log_probs, 1, actions.unsqueeze(1)).squeeze(1)
-            
-            all_log_probs.append(selected_log_probs)
-            all_entropies.append(step_entropy)
-            
-            # Update state only for batches that aren't done
-            for b in range(batch_size):
-                if not batch_done[b]:
-                    action = actions[b].item()
-                    routes[b].append(action)
-                    
-                    if action == 0:  # Return to depot
-                        remaining_capacity[b] = capacities[b]
-                    else:
-                        visited[b, action] = True
-                        remaining_capacity[b] -= demands_batch[b, action]
-            
-            # Check termination: all customers visited AND currently at depot
-            all_done = True
-            for b in range(batch_size):
-                customers_visited = visited[b, 1:len(instances[b]['coords'])].all()
-                currently_at_depot = len(routes[b]) > 0 and routes[b][-1] == 0
-                if not (customers_visited and currently_at_depot):
-                    all_done = False
-                    break
-            
-            if all_done:
+                customers_visited = visited[b, 1:actual_nodes].all() if actual_nodes > 1 else True
+                at_depot = (routes[b][-1] == 0)
+                if customers_visited and at_depot:
+                    done_mask[b] = True
+            if done_mask.all():
                 break
+            
+            # For each active batch, compute attention scores from current node to all nodes
+            actions = torch.zeros(batch_size, dtype=torch.long, device=device)
+            for b in range(batch_size):
+                if done_mask[b]:
+                    actions[b] = 0
+                    continue
+                actual_nodes = len(instances[b]['coords'])
+                # Build mask: visited customers, capacity infeasible customers, padded nodes
+                mask = torch.zeros(max_nodes, dtype=torch.bool, device=device)
+                # mask visited
+                mask |= visited[b]
+                # mask beyond actual nodes
+                if actual_nodes < max_nodes:
+                    mask[actual_nodes:] = True
+                # capacity infeasible (customers only; depot is always allowed unless no feasible customers exist)
+                infeasible = demands_batch[b] > remaining_capacity[b]
+                infeasible[0] = False  # depot never infeasible
+                mask |= infeasible
+                
+                # Enforce: if any feasible unvisited customer exists, depot must be masked
+                # Feasible unvisited customers are those not masked in indices [1:actual_nodes)
+                feasible_unvisited_exists = (~mask[1:actual_nodes]).any() if actual_nodes > 1 else False
+                if feasible_unvisited_exists:
+                    mask[0] = True
+                else:
+                    mask[0] = False  # no feasible customer: allow returning to depot
+                
+                # If all masked (can happen due to padding/visited), ensure we can still return to depot
+                currently_at_depot = (routes[b][-1] == 0)
+                if mask.all() and not currently_at_depot:
+                    mask[0] = False
+                # If still all masked (e.g., nothing to do), pick depot
+                if mask.all():
+                    actions[b] = 0
+                    continue
+                
+                curr = routes[b][-1]
+                q = self.attn_q(node_embeddings[b, curr:curr+1, :])  # [1, H]
+                k = K_all[b, :, :]  # [N, H]
+                scores = (q @ k.t()).squeeze(0) / scale  # [N]
+                scores = scores.masked_fill(mask, -1e9)
+                next_node = int(torch.argmax(scores).item())
+                actions[b] = next_node
+            
+            # Update state
+            for b in range(batch_size):
+                if done_mask[b]:
+                    continue
+                a = int(actions[b].item())
+                routes[b].append(a)
+                if a == 0:
+                    remaining_capacity[b] = capacities[b]
+                else:
+                    visited[b, a] = True
+                    remaining_capacity[b] -= demands_batch[b, a]
+                    if remaining_capacity[b] < 0:
+                        remaining_capacity[b] = torch.tensor(0.0, device=device)
+                current_nodes[b] = a
         
-        # Routes should already end at depot due to termination condition
+        # Ensure non-empty
         for b in range(batch_size):
             if len(routes[b]) == 0:
                 routes[b].append(0)
         
-        combined_log_probs = torch.stack(all_log_probs, dim=1).sum(dim=1) if all_log_probs else torch.zeros(batch_size)
-        combined_entropy = torch.stack(all_entropies, dim=1).sum(dim=1) if all_entropies else torch.zeros(batch_size)
-        return routes, combined_log_probs, combined_entropy
+        # No RL: return zero log-probs and entropies (no gradients)
+        logp = torch.zeros(batch_size, dtype=torch.float32, device=device)
+        ent = torch.zeros(batch_size, dtype=torch.float32, device=device)
+        return routes, logp, ent
 
 class DynamicGraphTransformerNetwork(nn.Module):
     """Pipeline 4: Dynamic Graph Transformer with adaptive updates"""
@@ -1118,28 +1096,45 @@ def naive_baseline_solution(instance):
     return route
 
 def compute_route_cost(route, distances):
-    """Compute total cost of a route"""
+    """Compute total Euclidean cost of a route (no penalty)"""
     if len(route) <= 1:
         return 0.0
-    
     cost = 0.0
     for i in range(len(route) - 1):
         cost += distances[route[i], route[i + 1]]
     return cost
+
+def count_internal_depot_visits(route):
+    """Count depot visits excluding the starting and ending depot nodes"""
+    if not route or len(route) < 3:
+        return 0
+    return sum(1 for node in route[1:-1] if node == 0)
+
+def compute_route_cost_with_penalty(route, distances, penalty_per_visit=0.0):
+    base = compute_route_cost(route, distances)
+    if penalty_per_visit and penalty_per_visit != 0.0:
+        base += penalty_per_visit * count_internal_depot_visits(route)
+    return base
 
 def compute_normalized_cost(route, distances, n_customers):
     """Compute cost per customer (normalized cost)"""
     total_cost = compute_route_cost(route, distances)
     return total_cost / n_customers if n_customers > 0 else 0.0
 
-def compute_naive_baseline_cost(instance):
-    """Compute cost of naive solution: depot->node->depot for each customer"""
+def compute_naive_baseline_cost(instance, depot_penalty_per_visit: float = 0.0):
+    """Compute cost of naive solution: depot->customer->depot for each customer
+    Includes optional depot penalty per internal return when configured.
+    """
     distances = instance['distances']
     n_customers = len(instance['coords']) - 1  # excluding depot
     naive_cost = 0.0
     
     for customer_idx in range(1, n_customers + 1):  # customers are indexed 1 to n
         naive_cost += distances[0, customer_idx] * 2  # depot->customer->depot
+    
+    # Internal depot visits in naive route: n_customers - 1 (exclude first start and final end)
+    if depot_penalty_per_visit and depot_penalty_per_visit != 0.0 and n_customers > 0:
+        naive_cost += depot_penalty_per_visit * (n_customers - 1)
     
     return naive_cost
 
@@ -1329,14 +1324,15 @@ def train_model(model, instances, config, model_name, logger):
     
     logger.info(f"🏋️ Training {model_name}...")
     
-    for epoch in range(config['num_epochs']):
+    for epoch in range(config['num_epochs'] + 1):
         # Training
         model.train()
         epoch_losses = []
         epoch_costs = []
         
         batch_size = config['batch_size']
-        num_batches = len(train_instances) // batch_size
+        # Ensure we always run at least one batch to avoid empty means/NaNs
+        num_batches = max(1, math.ceil(len(train_instances) / batch_size))
         
         # Temperature schedule: cosine from temp_start -> temp_min
         temp_start = float(config['temp_start'])
@@ -1372,8 +1368,9 @@ def train_model(model, instances, config, model_name, logger):
                 # VALIDATE ROUTE - This will exit with error if route is invalid
                 validate_route(route, n_customers, f"{model_name}-TRAIN", instance)
 
-                total_cost = compute_route_cost(route, instance['distances'])
-                normalized_cost = compute_normalized_cost(route, instance['distances'], n_customers)
+                penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                total_cost = compute_route_cost_with_penalty(route, instance['distances'], penalty)
+                normalized_cost = total_cost / n_customers
                 costs.append(total_cost)
                 normalized_costs.append(normalized_cost)
             
@@ -1408,11 +1405,12 @@ def train_model(model, instances, config, model_name, logger):
             pg['lr'] = base_lr * factor
         
         train_losses.append(np.mean(epoch_losses))
-        train_costs.append(np.mean(epoch_costs))
+        # Store training cost normalized per customer
+        train_costs.append(np.mean(normalized_costs) if len(normalized_costs) > 0 else float('nan'))
         
-        # Validation using config frequency
+        # Validation using config frequency, and ALWAYS at the final epoch
         validation_frequency = config.get('training', {}).get('validation_frequency', 3)
-        if epoch % validation_frequency == 0:
+        if (epoch % validation_frequency == 0) or (epoch == int(config['num_epochs'])):
             model.eval()
             val_batch_costs = []
             val_batch_normalized = []
@@ -1438,18 +1436,20 @@ def train_model(model, instances, config, model_name, logger):
                         # VALIDATE ROUTE - This will exit with error if route is invalid
                         validate_route(route, n_customers, f"{model_name}-VAL", instance)
 
-                        total_cost = compute_route_cost(route, instance['distances'])
-                        normalized_cost = compute_normalized_cost(route, instance['distances'], n_customers)
+                        penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                        total_cost = compute_route_cost_with_penalty(route, instance['distances'], penalty)
+                        normalized_cost = total_cost / n_customers
                         val_batch_costs.append(total_cost)
                         val_batch_normalized.append(normalized_cost)
             
             val_cost = np.mean(val_batch_costs)
             val_normalized = np.mean(val_batch_normalized)
-            val_costs.append(val_cost)
+            # Store validation cost normalized per customer
+            val_costs.append(val_normalized)
             
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust, Val={val_normalized:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(normalized_costs):.3f}/cust, Val={val_normalized:.3f}/cust")
         else:
-            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(epoch_costs) / config['num_customers']:.3f}/cust")
+            logger.info(f"   Epoch {epoch:2d}: Loss={train_losses[-1]:.3f}, Train={np.mean(normalized_costs):.3f}/cust")
     
     return {
         'train_losses': train_losses,
@@ -1469,6 +1469,20 @@ def load_config(config_path):
         config = yaml.safe_load(f)
     
     return config
+
+# Unified naming for artifacts (CSV and model files)
+def model_key(name: str) -> str:
+    mapping = {
+        'Pointer+RL': 'pointer_rl',
+        'GT+RL': 'gt_rl',
+        'DGT+RL': 'dgt_rl',
+        'GAT+RL': 'gat_rl',
+        'GT-Greedy': 'gt_greedy',
+        'GAT+RL (legacy)': 'gat_rl_legacy',
+    }
+    if name in mapping:
+        return mapping[name]
+    return name.lower().replace(' ', '_').replace('+', '_').replace('-', '_').replace('/', '_')
 
 def parse_args():
     parser = argparse.ArgumentParser(description='CPU Comparative Study')
@@ -1490,6 +1504,15 @@ def parse_args():
     parser.add_argument('--only_dgt', action='store_true', help='Train only the DGT+RL model to avoid extra deps')
     parser.add_argument('--exclude_dgt', action='store_true', help='Train all models except DGT+RL and reuse prior DGT results')
     parser.add_argument('--reuse_dgt_path', type=str, default=None, help='Path to prior DGT results file to reuse when --exclude_dgt is set')
+    parser.add_argument('--only_greedy', action='store_true', help='Run only the GT-Greedy model (no training)')
+    parser.add_argument('--only_gat_rl_legacy', action='store_true', help='Run only the legacy GAT+RL model (requires torch_geometric)')
+
+    # New fine-grained single-model selectors
+    parser.add_argument('--only_pointer', action='store_true', help='Run only Pointer+RL')
+    parser.add_argument('--only_gt_rl', action='store_true', help='Run only GT+RL')
+    parser.add_argument('--only_dgt_rl', action='store_true', help='Run only DGT+RL')
+    parser.add_argument('--only_gat_rl', action='store_true', help='Run only GAT+RL (non-legacy)')
+    parser.add_argument('--only_gt_greedy', action='store_true', help='Run only GT-Greedy (no RL training)')
     return parser.parse_args()
 
 
@@ -1508,7 +1531,47 @@ def build_pyg_data_from_instance(instance):
     return Data(x=coords, edge_index=edge_index, edge_attr=edge_attr, demand=demand, capacity=capacity)
 
 
-def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
+def evaluate_greedy_model(model, instances, config, model_name, logger):
+    """Evaluate the greedy (non-RL) model on the validation set only.
+    No training/validation loops are executed. Returns an object mimicking the
+    structure of training results so downstream code can persist and plot.
+    """
+    # Split data using config value
+    train_val_split = config.get('training', {}).get('train_val_split', 0.8)
+    split_idx = int(train_val_split * len(instances))
+    val_instances = instances[split_idx:]
+
+    logger.info(f"🧪 Evaluating {model_name} (greedy inference only; no training)...")
+
+    batch_size = int(config['batch_size'])
+    val_batch_costs = []
+    with torch.no_grad():
+        for i in range(0, len(val_instances), batch_size):
+            batch_val = val_instances[i:i + batch_size]
+            if not batch_val:
+                continue
+            routes, _, _ = model(batch_val, max_steps=None, temperature=None, greedy=True, config=config)
+            for route, instance in zip(routes, batch_val):
+                n_customers = len(instance['coords']) - 1
+                # Validate and compute cost with optional depot penalty
+                validate_route(route, n_customers, f"{model_name}-EVAL", instance)
+                penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                total_cost = compute_route_cost_with_penalty(route, instance['distances'], penalty)
+                val_batch_costs.append(total_cost)
+
+    final_val_cost = float(np.mean(val_batch_costs)) if val_batch_costs else float('nan')
+    logger.info(f"   Final greedy evaluation cost: {final_val_cost:.3f} ({final_val_cost / config['num_customers']:.3f}/cust)")
+
+    # Return minimal history (no epochs)
+    return {
+        'train_losses': [],
+        'train_costs': [],
+        # Store per-customer validation cost for consistency
+        'val_costs': [final_val_cost / float(config['num_customers'])],
+        'final_val_cost': final_val_cost / float(config['num_customers'])
+    }
+
+def train_legacy_gat_rl(model, instances, config, model_name, logger, base_dir):
     """Train the legacy GAT_RL model using its original training loop (unchanged algorithms),
     then evaluate on the validation set to report final metrics. Additionally, extract
     per-epoch training metrics and per-3-epochs validation costs so plots show curves.
@@ -1538,16 +1601,45 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
     n_steps = config['num_customers'] * legacy_training.get('max_steps_multiplier', config['inference']['max_steps_multiplier'])
     T = legacy_training.get('temperature', config['inference']['default_temperature'])
     lr = legacy_training.get('learning_rate', config['learning_rate'])
-    num_epochs = config['num_epochs']
+    num_epochs = int(config['num_epochs'])
+    total_epochs = num_epochs + 1  # inclusive 0..num_epochs
 
     # Run the legacy training loop (kept intact)
     logger.info(f"🏋️ Training {model_name} (legacy RL training)...")
     logger.info(f"   Legacy training config: lr={lr}, n_steps={n_steps}, num_epochs={num_epochs}, T={T}")
-    ckpt_folder = f'results/{scale}/checkpoints/legacy_checkpoints'
+    ckpt_folder = os.path.join(base_dir, 'checkpoints', 'legacy_checkpoints')
     os.makedirs(ckpt_folder, exist_ok=True)
-    # Capture time to find latest CSV emitted by legacy loop
-    before_csv = set(glob.glob('logs/training/*.csv'))
-    legacy_train(model, train_loader, val_loader, ckpt_folder, 'actor.pt', lr, n_steps, num_epochs, T)
+    # Ensure legacy log dir exists inside working dir
+    legacy_log_dir = os.path.join(base_dir, 'logs', 'training')
+    os.makedirs(legacy_log_dir, exist_ok=True)
+    # Capture time to find latest CSV emitted by legacy loop (both default and working-dir locations)
+    before_csv = set(glob.glob(os.path.join(legacy_log_dir, '*.csv'))) | set(glob.glob('logs/training/*.csv'))
+
+    # Capture stdout from legacy training to parse per-epoch metrics printed on screen
+    import io, re
+    class _Tee:
+        def __init__(self, *streams):
+            self.streams = streams
+        def write(self, data):
+            for s in self.streams:
+                try:
+                    s.write(data)
+                except Exception:
+                    pass
+        def flush(self):
+            for s in self.streams:
+                try:
+                    s.flush()
+                except Exception:
+                    pass
+    stdout_buffer = io.StringIO()
+    orig_stdout = sys.stdout
+    sys.stdout = _Tee(orig_stdout, stdout_buffer)
+    try:
+        legacy_train(model, train_loader, val_loader, ckpt_folder, 'actor.pt', lr, n_steps, num_epochs, T)
+    finally:
+        sys.stdout = orig_stdout
+    legacy_stdout = stdout_buffer.getvalue()
 
     # After training, evaluate on validation with greedy to get final cost
     model.eval()
@@ -1575,16 +1667,51 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
                     pa = coords[a]
                     pb = coords[c]
                     cost += float(((pa[0] - pb[0])**2 + (pa[1] - pb[1])**2) ** 0.5)
+                # Apply depot penalty if configured
+                penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                if penalty and penalty != 0.0:
+                    internal_zeros = sum(1 for node in route[1:-1] if node == 0)
+                    cost += penalty * internal_zeros
                 val_epoch_costs.append(cost)
-    final_val_cost = float(np.mean(val_epoch_costs) if val_epoch_costs else 0.0)
+    # Normalize per customer for consistency
+    final_val_cost = float(np.mean([c / float(config['num_customers']) for c in val_epoch_costs]) if val_epoch_costs else 0.0)
+
+    # Extract training curves first from captured stdout (authoritative), then from CSV as fallback
+    train_losses = [float('nan')] * total_epochs
+    train_costs = [float('nan')] * total_epochs
+
+    # Parse lines like: "Epoch 1, mean loss: 88.400, mean reward: 12.060, time: 3.75"
+    try:
+        # Match positive or negative floats for loss/reward; be tolerant to extra text between fields
+        pattern = re.compile(r"Epoch\s+(\d+)\s*,\s*mean\s+loss:\s*([-+]?\d*\.?\d+)\s*,\s*mean\s+reward:\s*([-+]?\d*\.?\d+)")
+        epoch_lines = pattern.findall(legacy_stdout)
+        for ep_str, loss_str, reward_str in epoch_lines:
+            ep = int(ep_str)
+            if 0 <= ep <= num_epochs:
+                train_losses[ep] = float(loss_str)
+                # reward is total cost; normalize per customer
+                train_costs[ep] = float(reward_str) / float(config['num_customers'])
+    except Exception:
+        pass
 
     # Extract training curves from the legacy CSV if available
-    train_losses = []
-    train_costs = []
     try:
-        after_csv = set(glob.glob('logs/training/*.csv'))
+        # Look for CSVs in working-dir legacy log path first, then fallback to default
+        legacy_log_dir = os.path.join(base_dir, 'logs', 'training')
+        after_csv = set(glob.glob(os.path.join(legacy_log_dir, '*.csv'))) | set(glob.glob('logs/training/*.csv'))
         new_csvs = sorted(list(after_csv - before_csv), key=lambda p: os.path.getmtime(p))
-        csv_path = new_csvs[-1] if new_csvs else sorted(list(after_csv), key=lambda p: os.path.getmtime(p))[-1]
+        csv_path = new_csvs[-1] if new_csvs else (sorted(list(after_csv), key=lambda p: os.path.getmtime(p))[-1] if after_csv else None)
+        if csv_path is None:
+            raise FileNotFoundError("No legacy CSV logs found after training")
+        # If CSV is outside working dir, copy it in for persistence under working_dir_path
+        try:
+            if not os.path.commonpath([os.path.abspath(csv_path), os.path.abspath(legacy_log_dir)]) == os.path.abspath(legacy_log_dir):
+                import shutil
+                dest_path = os.path.join(legacy_log_dir, os.path.basename(csv_path))
+                shutil.copy2(csv_path, dest_path)
+                csv_path = dest_path
+        except Exception:
+            pass
         logger.info(f"   📄 Using legacy CSV: {csv_path}")
         df = pd.read_csv(csv_path)
         logger.info(f"   📊 CSV shape: {df.shape}, columns: {list(df.columns)}")
@@ -1598,26 +1725,91 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
         if 'mean_loss' in df.columns:
             legacy_losses = [float(x) for x in df['mean_loss'].tolist()][:num_epochs]
             logger.info(f"   🔢 Extracted {len(legacy_losses)} loss values (requested {num_epochs})")
-            # STANDARDIZE: Legacy uses advantage * log_prob (positive sign)
-            # Our models use -advantage * log_prob (negative sign)
-            # Convert legacy to our convention by negating
-            train_losses = [-loss for loss in legacy_losses]
+            for i, v in enumerate(legacy_losses):
+                if i < num_epochs and (np.isnan(train_losses[i]) or train_losses[i] is None):
+                    train_losses[i] = v
         if 'mean_reward' in df.columns:
-            train_costs = [float(x) for x in df['mean_reward'].tolist()][:num_epochs]
-            logger.info(f"   💰 Extracted {len(train_costs)} cost values (requested {num_epochs})")
+            # Legacy CSV stores mean_reward as total cost; convert to per-customer cost
+            legacy_costs = [float(x) / float(config['num_customers']) for x in df['mean_reward'].tolist()][:num_epochs]
+            logger.info(f"   💰 Extracted {len(legacy_costs)} cost values (requested {num_epochs}) [normalized per customer]")
+            for i, v in enumerate(legacy_costs):
+                if i < num_epochs and (np.isnan(train_costs[i]) or train_costs[i] is None):
+                    train_costs[i] = v
     except Exception as e:
         # CRITICAL: Legacy CSV extraction failure indicates training data corruption or missing files
         raise RuntimeError(f"❌ CRITICAL: Failed to extract legacy training CSV data for {model_name}. This indicates corrupted training logs or missing CSV files. Error: {e}")
 
-    # Ensure lengths match expected plotting length
-    if len(train_losses) < num_epochs:
-        train_losses += [float('nan')] * (num_epochs - len(train_losses))
-    if len(train_costs) < num_epochs:
-        train_costs += [float('nan')] * (num_epochs - len(train_costs))
+    # Ensure we have lists of length total_epochs (0..num_epochs inclusive)
+    train_losses = (train_losses + [float('nan')] * max(0, total_epochs - len(train_losses)))[:total_epochs]
+    train_costs = (train_costs + [float('nan')] * max(0, total_epochs - len(train_costs)))[:total_epochs]
+
+    # Compute per-epoch training cost by evaluating each checkpoint on the training set (greedy, per-customer) only if missing
+    # This fills in epochs that the legacy CSV didn't record
+    try:
+        # Short-circuit if we already have all epochs filled
+        if all([not np.isnan(x) for x in train_costs]):
+            train_costs_full = train_costs
+        else:
+            train_costs_full = [float('nan')] * total_epochs
+        with torch.no_grad():
+            for e in range(total_epochs):
+                ckpt_path = os.path.join(ckpt_folder, f'{e}', 'actor.pt')
+                if not os.path.exists(ckpt_path):
+                    continue
+                # Load checkpoint
+                try:
+                    state = torch.load(ckpt_path, map_location='cpu')
+                    if isinstance(state, dict) and 'model_state_dict' in state:
+                        model.load_state_dict(state['model_state_dict'])
+                    else:
+                        model.load_state_dict(state)
+                except Exception:
+                    pass
+                # Evaluate on training set for this epoch
+                epoch_costs = []
+                for batch in train_loader:
+                    actions, tour_logp = model(batch, n_steps=n_steps, greedy=True, T=T)
+                    depot = torch.zeros(actions.size(0), 1, dtype=torch.long)
+                    actions_with_depot = torch.cat([depot, actions, depot], dim=1)
+                    ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                    for b in range(actions_with_depot.size(0)):
+                        route = actions_with_depot[b].cpu().tolist()
+                        if ptr is not None:
+                            start = int(ptr[b].item())
+                            end = int(ptr[b + 1].item())
+                            coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                        else:
+                            coords = batch.x.view(-1, 2).cpu().numpy()
+                        # Compute Euclidean route length
+                        csum = 0.0
+                        for i in range(len(route) - 1):
+                            a = route[i]
+                            c = route[i + 1]
+                            pa = coords[a]
+                            pb = coords[c]
+                            csum += float(((pa[0] - pb[0])**2 + (pa[1] - pb[1])**2) ** 0.5)
+                        # Apply depot penalty if configured
+                        penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                        if penalty and penalty != 0.0:
+                            internal_zeros = sum(1 for node in route[1:-1] if node == 0)
+                            csum += penalty * internal_zeros
+                        epoch_costs.append(csum)
+                # Normalize per customer
+                if epoch_costs:
+                    train_costs_full[e] = float(np.mean([c / float(config['num_customers']) for c in epoch_costs]))
+        # Prefer computed full series; fallback to CSV where computed is NaN
+        if not train_costs:
+            train_costs = train_costs_full
+        else:
+            train_costs = [train_costs[i] if i < len(train_costs) and not np.isnan(train_costs[i]) else train_costs_full[i] for i in range(total_epochs)]
+    except Exception:
+        # If any issue, keep CSV-derived costs and pad
+        if len(train_costs) < total_epochs:
+            train_costs += [float('nan')] * (total_epochs - len(train_costs))
 
     # Build validation curve by evaluating checkpoints at epochs [0, 4, 8, ...]
-    val_costs = []
-    eval_epochs = list(range(0, num_epochs, 4))
+    val_costs = [float('nan')] * total_epochs
+    eval_epochs = sorted(set(list(range(0, total_epochs, 4)) + [num_epochs]))
     with torch.no_grad():
         for e in eval_epochs:
             ckpt_path = os.path.join(ckpt_folder, f'{e}', 'actor.pt')
@@ -1654,10 +1846,16 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
                             pa = coords[a]
                             pb = coords[c]
                             cost += float(((pa[0] - pb[0])**2 + (pa[1] - pb[1])**2) ** 0.5)
+                        penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                        if penalty and penalty != 0.0:
+                            internal_zeros = sum(1 for node in route[1:-1] if node == 0)
+                            cost += penalty * internal_zeros
                         epoch_costs.append(cost)
-                val_costs.append(float(np.mean(epoch_costs) if epoch_costs else float('nan')))
+                # Normalize per customer for validation as well
+                val_costs[e] = float(np.mean([c / float(config['num_customers']) for c in epoch_costs]) if epoch_costs else float('nan'))
             else:
-                val_costs.append(float('nan'))
+                # leave as NaN for epochs without checkpoints
+                pass
 
     # Restore final trained weights if available (last epoch)
     final_ckpt = os.path.join(ckpt_folder, f'{num_epochs-1}', 'actor.pt')
@@ -1671,10 +1869,61 @@ def train_legacy_gat_rl(model, instances, config, model_name, logger, scale):
         except Exception:
             pass
 
+    # Ensure terminal validation point is included at epoch=num_epochs
+    if np.isfinite(final_val_cost):
+        val_costs[num_epochs] = float(final_val_cost)
+
+    # Backfill final epoch training metrics if missing
+    try:
+        import math as _math
+        # train_cost at final epoch (compute from final model on training set)
+        if num_epochs < len(train_costs) and (np.isnan(train_costs[num_epochs]) or train_costs[num_epochs] is None):
+            epoch_costs = []
+            with torch.no_grad():
+                for batch in train_loader:
+                    actions, tour_logp = model(batch, n_steps=n_steps, greedy=True, T=T)
+                    depot = torch.zeros(actions.size(0), 1, dtype=torch.long)
+                    actions_with_depot = torch.cat([depot, actions, depot], dim=1)
+                    ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                    for b in range(actions_with_depot.size(0)):
+                        route = actions_with_depot[b].cpu().tolist()
+                        if ptr is not None:
+                            start = int(ptr[b].item())
+                            end = int(ptr[b + 1].item())
+                            coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                        else:
+                            coords = batch.x.view(-1, 2).cpu().numpy()
+                        csum = 0.0
+                        for i in range(len(route) - 1):
+                            a = route[i]
+                            c = route[i + 1]
+                            pa = coords[a]
+                            pb = coords[c]
+                            csum += float(((pa[0] - pb[0])**2 + (pa[1] - pb[1])**2) ** 0.5)
+                        penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+                        if penalty and penalty != 0.0:
+                            internal_zeros = sum(1 for node in route[1:-1] if node == 0)
+                            csum += penalty * internal_zeros
+                        epoch_costs.append(csum)
+            if epoch_costs:
+                train_costs[num_epochs] = float(np.mean([c / float(config['num_customers']) for c in epoch_costs]))
+        # train_loss at final epoch: copy last available epoch loss if missing
+        if num_epochs < len(train_losses) and (np.isnan(train_losses[num_epochs]) or train_losses[num_epochs] is None):
+            if num_epochs - 1 >= 0 and not np.isnan(train_losses[num_epochs - 1]):
+                train_losses[num_epochs] = float(train_losses[num_epochs - 1])
+    except Exception:
+        pass
+    
+    # Log explicit final epoch validation line for legacy model
+    try:
+        logger.info(f"   Epoch {int(num_epochs)}: Val={final_val_cost:.3f}/cust")
+    except Exception:
+        pass
+
     return {
         'train_losses': train_losses,
         'train_costs': train_costs,
-        'val_costs': val_costs if val_costs else [final_val_cost],
+        'val_costs': val_costs,  # length total_epochs with NaNs except evaluated epochs
         'final_val_cost': final_val_cost
     }
 
@@ -1697,13 +1946,9 @@ def run_comparative_study():
     
     logger.info(f"🚀 Starting Comparative Study: 6 Pipeline Architectures ({device.type.upper()})")
     
-    # Extract scale from config filename (no more threshold guessing!)
-    config_filename = Path(args.config).stem  # 'small', 'medium', 'production'
-    if config_filename in ['small', 'medium', 'production']:
-        scale = config_filename
-    else:
-        # Fallback for custom config files
-        scale = 'custom'
+    # Base working directory for all artifacts
+    base_dir = str(Path(config.get('working_dir_path', 'results')).as_posix())
+    Path(base_dir).mkdir(parents=True, exist_ok=True)
     
     # STRICT CONFIG VALIDATION: Extract nested config values with mandatory checks
     # Problem settings - REQUIRED
@@ -1869,11 +2114,15 @@ def run_comparative_study():
             config['coord_range'], config['demand_range'], seed=i
         )
         instances.append(instance)
-        naive_costs.append(compute_naive_baseline_cost(instance))
+        penalty_cfg = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+        naive_costs.append(compute_naive_baseline_cost(instance, penalty_cfg))
     
     naive_avg_cost = np.mean(naive_costs)
     naive_normalized = naive_avg_cost / config['num_customers']
-    logger.info(f"📍 Naive baseline (depot->customer->depot): {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust)")
+    if config.get('cost', {}).get('depot_penalty_per_visit', 0.0):
+        logger.info(f"📍 Naive baseline (with depot penalty): {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust)")
+    else:
+        logger.info(f"📍 Naive baseline (depot->customer->depot): {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust)")
     
     # Initialize models with config-based parameters
     input_dim = config.get('model', {}).get('input_dim', 3)
@@ -1913,17 +2162,32 @@ def run_comparative_study():
     results = {}
     training_times = {}
     
-    # If only DGT is requested, filter the models dict
-    if args.only_dgt:
-        models = {'DGT+RL': models['DGT+RL']}
+    # Unified single-model selection handling (new flags + existing ones)
+    single_flags = {
+        'only_pointer': 'Pointer+RL',
+        'only_gt_rl': 'GT+RL',
+        'only_dgt_rl': 'DGT+RL',
+        'only_gat_rl': 'GAT+RL',
+        'only_gt_greedy': 'GT-Greedy',
+        'only_gat_rl_legacy': 'GAT+RL (legacy)',
+        'only_greedy': 'GT-Greedy',  # backward-compatible alias
+        'only_dgt': 'DGT+RL',        # backward-compatible alias
+    }
+    selected = [name for name in single_flags if getattr(args, name, False)]
+    # If multiple are specified, raise to avoid ambiguity
+    if len(selected) > 1:
+        raise RuntimeError(f"Multiple --only_* flags specified: {selected}. Please specify exactly one.")
+    if len(selected) == 1:
+        target_model = single_flags[selected[0]]
+        if target_model not in models:
+            raise RuntimeError(f"{selected[0]} was requested, but '{target_model}' is unavailable (missing deps or excluded).")
+        models = {target_model: models[target_model]}
+    else:
+        # No single selector provided — apply optional exclusion
+        if args.exclude_dgt and 'DGT+RL' in models:
+            models.pop('DGT+RL')
     
-    # If DGT is excluded, remove it from training set
-    if args.exclude_dgt and 'DGT+RL' in models:
-        models.pop('DGT+RL')
-    
-    # Helper to sanitize model names for filenames
-    def _sanitize(name: str):
-        return name.lower().replace(' ', '_').replace('+', 'plus').replace('/', '_')
+    # Use global model_key() for naming artifacts consistently
 
     # Train each model
     for model_name, model in models.items():
@@ -1932,7 +2196,10 @@ def run_comparative_study():
         
         start_time = time.time()
         if model_name == 'GAT+RL (legacy)':
-            result = train_legacy_gat_rl(model, instances, config, model_name, logger, scale)
+            result = train_legacy_gat_rl(model, instances, config, model_name, logger, base_dir)
+        elif model_name == 'GT-Greedy':
+            # Greedy model has no RL; skip training/validation loops and only evaluate on validation set
+            result = evaluate_greedy_model(model, instances, config, model_name, logger)
         else:
             result = train_model(model, instances, config, model_name, logger)
         training_time = time.time() - start_time
@@ -1942,29 +2209,47 @@ def run_comparative_study():
         
         # Immediately dump per-model training history to CSV (epochs-aligned)
         try:
-            epochs = len(result.get('train_costs', []))
+            # Target number of epochs from config
+            num_epochs = int(config['num_epochs'])
             train_losses = result.get('train_losses', [])
             train_costs = result.get('train_costs', [])
-            # Align validation costs to epoch indices (fill others with NaN)
-            val_costs_sparse = [float('nan')] * epochs
             vc = result.get('val_costs', [])
-            for i, ep in enumerate(range(0, epochs, 3)):
-                if i < len(vc):
-                    val_costs_sparse[ep] = vc[i]
-            df_hist = pd.DataFrame({
-                'epoch': list(range(epochs)),
-                'train_loss': train_losses + [float('nan')] * max(0, epochs - len(train_losses)),
-                'train_cost': train_costs + [float('nan')] * max(0, epochs - len(train_costs)),
-                'val_cost': val_costs_sparse
-            })
-            # Use scale determined from config filename (passed from main function)
-            # Note: scale variable is available in this scope from the main function
+            val_freq = int(config.get('training', {}).get('validation_frequency', 3))
+
+            if model_name == 'GAT+RL (legacy)':
+                # Legacy: now write epochs 0..num_epochs inclusive with sparse val_cost series already aligned
+                total_epochs = num_epochs + 1
+                # vc in result is a per-epoch list already aligned (length total_epochs)
+                val_costs_aligned = (vc + [float('nan')] * max(0, total_epochs - len(vc)))[:total_epochs]
+                df_hist = pd.DataFrame({
+                    'epoch': list(range(total_epochs)),
+                    'train_loss': (train_losses + [float('nan')] * max(0, total_epochs - len(train_losses)))[:total_epochs],
+                    'train_cost': (train_costs + [float('nan')] * max(0, total_epochs - len(train_costs)))[:total_epochs],
+                    'val_cost': val_costs_aligned
+                })
+            else:
+                # Non-legacy: epochs 0..num_epochs inclusive with full metrics
+                total_epochs = num_epochs + 1
+                # Map validation costs to epochs assuming frequency and forced final epoch
+                val_costs_sparse = [float('nan')] * total_epochs
+                idx = 0
+                for ep in range(0, num_epochs + 1):
+                    should_val = (ep % max(1, val_freq) == 0) or (ep == num_epochs)
+                    if should_val and idx < len(vc):
+                        val_costs_sparse[ep] = vc[idx]
+                        idx += 1
+                df_hist = pd.DataFrame({
+                    'epoch': list(range(total_epochs)),
+                    'train_loss': (train_losses + [float('nan')] * max(0, total_epochs - len(train_losses)))[:total_epochs],
+                    'train_cost': (train_costs + [float('nan')] * max(0, total_epochs - len(train_costs)))[:total_epochs],
+                    'val_cost': val_costs_sparse
+                })
             
             # Ensure CSV directory exists
-            csv_dir = f"results/{scale}/csv"
+            csv_dir = os.path.join(base_dir, "csv")
             os.makedirs(csv_dir, exist_ok=True)
             
-            out_hist = f"{csv_dir}/history_{_sanitize(model_name)}.csv"
+            out_hist = os.path.join(csv_dir, f"history_{model_key(model_name)}.csv")
             df_hist.to_csv(out_hist, index=False)
             logger.info(f"   🧾 Saved history CSV: {out_hist}")
         except Exception as e:
@@ -1972,13 +2257,19 @@ def run_comparative_study():
             raise RuntimeError(f"❌ CRITICAL: Failed to save training history CSV for {model_name}. This indicates file system issues or data corruption. Error: {e}")
         
         logger.info(f"   ✅ {model_name} completed in {training_time:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.3f} ({result['final_val_cost'] / config['num_customers']:.3f}/cust)")
+        logger.info(f"   Final validation cost: {result['final_val_cost']:.3f}/cust")
+        # For legacy, also log last available training entries for epoch=num_epochs
+        if model_name == 'GAT+RL (legacy)':
+            try:
+                logger.info(f"   Epoch {num_epochs}: train_loss={train_losses[min(num_epochs,len(train_losses)-1)]}, train_cost={train_costs[min(num_epochs,len(train_costs)-1)]}, val_cost={vc[min(num_epochs,len(vc)-1)] if vc else float('nan')}")
+            except Exception:
+                pass
     
     # If we excluded DGT, try to reuse prior DGT results for comparison
     if args.exclude_dgt:
         try:
             # Use scale-aware path if no explicit path provided
-            reuse_path = args.reuse_dgt_path or f'results/{scale}/analysis/comparative_study_complete.pt'
+            reuse_path = args.reuse_dgt_path or os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt')
             prior = torch.load(reuse_path, map_location='cpu')
             prior_results = prior.get('results', {})
             prior_times = prior.get('training_times', {})
@@ -1992,7 +2283,7 @@ def run_comparative_study():
         
         # For parameter count in plots, estimate from saved state_dict if available
         try:
-            sd = torch.load(f'results/{scale}/pytorch/model_dgtplus_rl.pt', map_location='cpu')
+            sd = torch.load(os.path.join(base_dir, 'pytorch', 'model_dgtplus_rl.pt'), map_location='cpu')
             state = sd.get('model_state_dict', sd)
             dgt_params = int(sum(t.numel() for t in state.values() if hasattr(t, 'numel')))
             # Create a dummy module to report params for plotting
@@ -2008,10 +2299,7 @@ def run_comparative_study():
             logger.warning(f"Failed to infer DGT+RL parameter count: {e}")
     
     # Save results
-    save_results(results, training_times, models, config, scale=scale)
-    
-    # Persist artifacts regardless of validation outcome
-    save_results(results, training_times, models, config, scale=scale)
+    save_results(results, training_times, models, config, base_dir=base_dir)
 
     # Now run strict validation, but log failures without preventing saved outputs
     try:
@@ -2028,12 +2316,15 @@ def run_comparative_study():
         logger.info(f"{model_name}:")
         logger.info(f"   Parameters: {params:,}")
         logger.info(f"   Training time: {training_times[model_name]:.1f}s")
-        logger.info(f"   Final validation cost: {result['final_val_cost']:.2f}")
-        logger.info(f"   Final training cost: {result['train_costs'][-1]:.2f}")
+        logger.info(f"   Final validation cost: {result['final_val_cost']:.2f}/cust")
+        # Safe handling for models without training history (e.g., Greedy)
+        train_costs_list = result.get('train_costs') or []
+        last_train_cost = train_costs_list[-1] if len(train_costs_list) > 0 else float('nan')
+        logger.info(f"   Final training cost: {last_train_cost:.2f}")
         logger.info("")
     
     # Save results
-    save_results(results, training_times, models, config, scale=scale)
+    save_results(results, training_times, models, config, base_dir=base_dir)
     
     return results
 
@@ -2045,19 +2336,25 @@ def validate_naive_baseline_correctness(results, naive_avg_cost, config, logger,
     split_idx = int(0.8 * len(instances))
     val_instances = instances[split_idx:]
     
-    val_naive_costs = [compute_naive_baseline_cost(inst) for inst in val_instances]
+    penalty_cfg = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+    val_naive_costs = [compute_naive_baseline_cost(inst, penalty_cfg) for inst in val_instances]
     val_naive_avg = np.mean(val_naive_costs)
     val_naive_normalized = val_naive_avg / config['num_customers']
     
     logger.info("\n🔍 STRICT VALIDATION: Checking naive baseline correctness...")
-    logger.info(f"📊 Training set naive baseline: {naive_avg_cost / config['num_customers']:.4f} cost/customer")
-    logger.info(f"📊 Validation set naive baseline (used for comparison): {val_naive_normalized:.4f} cost/customer")
+    if penalty_cfg:
+        logger.info(f"📊 Training set naive baseline (with depot penalty): {naive_avg_cost / config['num_customers']:.4f} cost/customer")
+        logger.info(f"📊 Validation set naive baseline (with depot penalty, used for comparison): {val_naive_normalized:.4f} cost/customer")
+    else:
+        logger.info(f"📊 Training set naive baseline: {naive_avg_cost / config['num_customers']:.4f} cost/customer")
+        logger.info(f"📊 Validation set naive baseline (used for comparison): {val_naive_normalized:.4f} cost/customer")
     
     validation_passed = True
     violations = []
     
     for model_name, result in results.items():
-        final_cost_normalized = result['final_val_cost'] / config['num_customers']
+        # final_val_cost is already normalized per customer
+        final_cost_normalized = result['final_val_cost']
         
         if final_cost_normalized > val_naive_normalized:
             # STRICT: ANY violation is an error
@@ -2104,22 +2401,20 @@ def validate_naive_baseline_correctness(results, naive_avg_cost, config, logger,
     else:
         logger.info("✅✅✅ STRICT VALIDATION PASSED: All models ≤ naive baseline! ✅✅✅")
 
-def save_results(results, training_times, models, config, scale='small'):
-    """Save all results and models to organized results structure"""
-    
-    # Scale is determined by the config file name, not problem size
+def save_results(results, training_times, models, config, base_dir: str):
+    """Save all results and models to organized results structure under working_dir_path"""
     
     # Create organized directories
-    pytorch_dir = f"results/{scale}/pytorch"
-    analysis_dir = f"results/{scale}/analysis"
-    logs_dir = f"results/{scale}/logs"
+    pytorch_dir = os.path.join(base_dir, 'pytorch')
+    analysis_dir = os.path.join(base_dir, 'analysis')
+    logs_dir = os.path.join(base_dir, 'logs')
     os.makedirs(pytorch_dir, exist_ok=True)
     os.makedirs(analysis_dir, exist_ok=True)
     os.makedirs(logs_dir, exist_ok=True)
     
     # Save individual models to pytorch directory
     for model_name, model in models.items():
-        filename = f"{pytorch_dir}/model_{model_name.lower().replace(' ', '_').replace('+', 'plus')}.pt"
+        filename = os.path.join(pytorch_dir, f"model_{model_key(model_name)}.pt")
         torch.save({
             'model_state_dict': model.state_dict(),
             'model_name': model_name,
@@ -2132,9 +2427,8 @@ def save_results(results, training_times, models, config, scale='small'):
     torch.save({
         'results': results,
         'training_times': training_times,
-        'config': config,
-        'experiment_scale': scale
-    }, f'{analysis_dir}/comparative_study_complete.pt')
+        'config': config
+    }, os.path.join(analysis_dir, 'comparative_study_complete.pt'))
 
 if __name__ == "__main__":
     results = run_comparative_study()

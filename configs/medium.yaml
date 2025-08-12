@@ -1,6 +1,9 @@
 # Medium-scale configuration for quick testing and development
 # Optimized for fast iteration and debugging
 
+# Working directory where ALL artifacts are saved (models, analysis, logs, plots, csv, checkpoints)
+working_dir_path: "results/medium"
+
 # =====================================================================
 # CRITICAL PARAMETERS - FREQUENTLY CHANGED (Business Logic)
 # =====================================================================
@@ -19,12 +22,12 @@ training:
   num_epochs: 32             # Number of training epochs
   learning_rate: 1e-3       # Base learning rate
   train_val_split: 0.8      # Training/validation split ratio
-  validation_frequency: 3   # Run validation every N epochs
+  validation_frequency: 4   # Run validation every N epochs
   
 # Experimental Control - Critical for reproducibility
 experiment:
   random_seed: 42           # Random seed for reproducible results
-  device: "cpu"             # Device to use ("cpu" or "cuda")
+  device: "cpu"             # Device to use (cpu only)
   
 # =====================================================================
 # MODERATE PARAMETERS - MODEL ARCHITECTURE & ADVANCED TRAINING
@@ -120,6 +123,10 @@ inference:
   # Numerical stability
   log_prob_epsilon: 1e-12       # Small epsilon for log probability computation
   masked_score_value: -1e9      # Large negative value for masked scores
+
+# Cost settings (applied uniformly to training/validation if non-zero)
+cost:
+  depot_penalty_per_visit: 0.3  # Penalty added per internal return to depot (set 0.3 to match legacy)
 
 # Output and Logging Configuration
 output:

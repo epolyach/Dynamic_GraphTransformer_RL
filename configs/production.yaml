@@ -1,6 +1,9 @@
 # Production-scale configuration for publication-ready results
 # Comprehensive evaluation with large datasets and thorough analysis
 
+# Working directory where ALL artifacts are saved (models, analysis, logs, plots, csv, checkpoints)
+working_dir_path: "results/production"
+
 # =====================================================================
 # CRITICAL PARAMETERS - FREQUENTLY CHANGED (Business Logic)
 # =====================================================================
@@ -24,7 +27,7 @@ training:
 # Experimental Control - Critical for reproducibility
 experiment:
   random_seed: 42           # Random seed for reproducible results
-  device: "cpu"             # Device to use ("cpu" or "cuda")
+  device: "cpu"             # Device to use (cpu only)
   
 # =====================================================================
 # MODERATE PARAMETERS - MODEL ARCHITECTURE & ADVANCED TRAINING
@@ -119,6 +122,10 @@ inference:
   # Numerical stability
   log_prob_epsilon: 1e-12       # Small epsilon for log probability computation
   masked_score_value: -1e9      # Large negative value for masked scores
+
+# Cost settings (applied uniformly to training/validation if non-zero)
+cost:
+  depot_penalty_per_visit: 0.0  # Penalty added per internal return to depot (set 0.3 to match legacy)
 
 # Output and Logging Configuration
 output:

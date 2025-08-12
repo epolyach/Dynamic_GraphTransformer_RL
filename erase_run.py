@@ -35,24 +35,13 @@ def load_config(config_path: str) -> dict:
     return config
 
 
-def get_scale_from_config(config_path: str) -> str:
-    """Extract scale from config filename"""
-    config_filename = Path(config_path).stem  # 'small', 'medium', 'production'
-    if config_filename in ['small', 'medium', 'production']:
-        return config_filename
-    else:
-        # Fallback: try to infer from config content
-        try:
-            config = load_config(config_path)
-            num_customers = config.get('problem', {}).get('num_customers', 15)
-            if num_customers <= 20:
-                return 'small'
-            elif num_customers <= 50:
-                return 'medium'
-            else:
-                return 'production'
-        except Exception:
-            return 'custom'
+def get_working_dir_from_config(config_path: str) -> str:
+    """Read working_dir_path from config file"""
+    config = load_config(config_path)
+    wd = config.get('working_dir_path')
+    if not wd:
+        raise ValueError("working_dir_path is not defined in the provided config")
+    return wd
 
 
 def get_files_to_remove(results_dir: str) -> List[str]:
@@ -161,19 +150,17 @@ def clean_empty_subdirectories(results_dir: str, preserve_main_structure: bool =
     return removed_dirs
 
 
-def erase_results_folder(scale: str, dry_run: bool = False, clean_empty_dirs: bool = True) -> bool:
+def erase_results_folder_path(results_dir: str, dry_run: bool = False, clean_empty_dirs: bool = True) -> bool:
     """
-    Erase contents of results folder for given scale
+    Erase contents of results folder for the provided working directory path
     
     Returns:
         True if successful, False otherwise
     """
-    results_dir = f"results/{scale}"
-    
     print(f"🎯 Target: {results_dir}/")
     
     if not os.path.exists(results_dir):
-        print(f"   ℹ️  No results directory found for scale '{scale}'")
+        print(f"   ℹ️  Results directory does not exist: {results_dir}")
         return True
     
     # Show what would be affected
@@ -221,9 +208,7 @@ Examples:
     
     # Main options
     parser.add_argument('--config', type=str, help='Path to configuration file (determines scale)')
-    parser.add_argument('--scale', type=str, choices=['small', 'medium', 'production'], 
-                       help='Directly specify scale to clean')
-    parser.add_argument('--all', action='store_true', help='Clean all scales (small, medium, production)')
+    parser.add_argument('--path', type=str, help='Directly specify working directory path to clean (overrides --config)')
     
     # Control options
     parser.add_argument('--dry-run', action='store_true', help='Show what would be removed without actually removing')
@@ -233,22 +218,20 @@ Examples:
     args = parser.parse_args()
     
     # Determine what to clean
-    scales_to_clean = []
+    targets_to_clean: List[str] = []
     
-    if args.all:
-        scales_to_clean = ['small', 'medium', 'production']
-    elif args.scale:
-        scales_to_clean = [args.scale]
+    if args.path:
+        targets_to_clean = [args.path]
     elif args.config:
-        scale = get_scale_from_config(args.config)
-        scales_to_clean = [scale]
+        wd = get_working_dir_from_config(args.config)
+        targets_to_clean = [wd]
     else:
-        parser.error("Must specify --config, --scale, or --all")
+        parser.error("Must specify --config or --path")
     
     # Show summary
     print("🧹 RESULTS FOLDER CLEANUP")
     print("=" * 50)
-    print(f"📋 Scales to clean: {', '.join(scales_to_clean)}")
+    print(f"📋 Targets to clean: {', '.join(targets_to_clean)}")
     if args.dry_run:
         print("🔍 Mode: DRY RUN (no files will be removed)")
     else:
@@ -264,30 +247,30 @@ Examples:
     
     # Clean each scale
     success_count = 0
-    for scale in scales_to_clean:
-        print(f"\n🎯 Cleaning scale: {scale}")
+    for target in targets_to_clean:
+        print(f"\n🎯 Cleaning: {target}")
         print("-" * 30)
         
         try:
-            success = erase_results_folder(
-                scale, 
+            success = erase_results_folder_path(
+                target, 
                 dry_run=args.dry_run,
                 clean_empty_dirs=not args.no_clean_empty
             )
             if success:
                 success_count += 1
-                print(f"   ✅ {scale}: Complete")
+                print(f"   ✅ {target}: Complete")
             else:
-                print(f"   ❌ {scale}: Failed")
+                print(f"   ❌ {target}: Failed")
         except Exception as e:
-            print(f"   ❌ {scale}: Error - {e}")
+            print(f"   ❌ {target}: Error - {e}")
     
     # Summary
     print(f"\n📊 SUMMARY")
     print("=" * 20)
-    print(f"✅ Successfully cleaned: {success_count}/{len(scales_to_clean)} scales")
+    print(f"✅ Successfully cleaned: {success_count}/{len(targets_to_clean)} targets")
     
-    if success_count == len(scales_to_clean):
+    if success_count == len(targets_to_clean):
         if args.dry_run:
             print("🔍 Dry run completed - no files were actually removed")
         else:

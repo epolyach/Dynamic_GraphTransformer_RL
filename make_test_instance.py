@@ -295,11 +295,11 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=Non
     validation_costs = {}
     try:
         # Try to load the comparative study results to get validation costs
-        # Use scale parameter passed from calling function
-        if scale is None:
-            # Fallback scale determination if not provided
-            scale = 'small' if config['num_customers'] <= 20 else 'medium' if config['num_customers'] <= 50 else 'production'
-        comparative_results = torch.load(f'results/{scale}/analysis/comparative_study_complete.pt', map_location='cpu', weights_only=False)
+        # Use working directory from config
+        base_dir = config.get('working_dir_path') if isinstance(config, dict) else None
+        if base_dir is None:
+            raise ValueError('working_dir_path must be set in config')
+        comparative_results = torch.load(os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt'), map_location='cpu', weights_only=False)
         results = comparative_results.get('results', {})
         for model_name in model_results.keys():
             if model_name in results:
@@ -417,22 +417,22 @@ def load_config(config_path):
     
     return config
 
-def load_trained_models(scale_dir, config, logger):
+def load_trained_models(models_dir, config, logger):
     """Load all trained models from saved files"""
     models = {}
     model_files = {
-        'Pointer+RL': f'{scale_dir}/model_pointerplusrl.pt',
-        'GT-Greedy': f'{scale_dir}/model_gt-greedy.pt', 
-        'GT+RL': f'{scale_dir}/model_gtplusrl.pt',
-        'DGT+RL': f'{scale_dir}/model_dgtplusrl.pt',
-        'GAT+RL': f'{scale_dir}/model_gatplusrl.pt'
+        'Pointer+RL': os.path.join(models_dir, 'model_pointerplusrl.pt'),
+        'GT-Greedy': os.path.join(models_dir, 'model_gt-greedy.pt'), 
+        'GT+RL': os.path.join(models_dir, 'model_gtplusrl.pt'),
+        'DGT+RL': os.path.join(models_dir, 'model_dgtplusrl.pt'),
+        'GAT+RL': os.path.join(models_dir, 'model_gatplusrl.pt')
     }
     
     # Try to load legacy GAT model
     try:
         from src_batch.model.Model import Model as LegacyGATModel
         legacy_model = LegacyGATModel(node_input_dim=3, edge_input_dim=1, hidden_dim=128, edge_dim=16, layers=4, negative_slope=0.2, dropout=0.6)
-        legacy_path = f'{scale_dir}/model_gatplusrl_(legacy).pt'
+        legacy_path = os.path.join(models_dir, 'model_gatplusrl_(legacy).pt')
         if os.path.exists(legacy_path):
             state_dict = torch.load(legacy_path, map_location=device, weights_only=False)
             if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
@@ -483,15 +483,15 @@ def load_trained_models(scale_dir, config, logger):
     
     return models
 
-def create_and_solve_test_instance(models, config, logger, scale):
+def create_and_solve_test_instance(models, config, logger, base_dir):
     """Create a test CVRP instance and solve it with each trained model for detailed analysis
     
     This is an exact copy from run_comparative_study.py create_and_solve_test_instance function.
     """
     logger.info("\n🧪 Creating and solving a new test instance...")
     
-    # Use scale passed from main function
-    test_dir = f"results/{scale}/plots"
+    # Use working directory from config
+    test_dir = os.path.join(base_dir, 'plots')
     os.makedirs(test_dir, exist_ok=True)
     
     # Create a representative test instance
@@ -661,8 +661,8 @@ def create_and_solve_test_instance(models, config, logger, scale):
     
     # Create route visualizations - now using integrated functions
     try:
-        plots_dir = f"results/{scale}/plots"
-        plot_test_instance_routes(test_analysis, config, logger, plots_dir, scale)
+        plots_dir = os.path.join(base_dir, 'plots')
+        plot_test_instance_routes(test_analysis, config, logger, plots_dir, Path(base_dir).name)
     except Exception as e:
         logger.warning(f"   ⚠️ Failed to create route visualizations: {e}")
     
@@ -697,30 +697,21 @@ def main():
             'demand_range': demand_range
         })
     
-    # Determine scale from config file path instead of num_customers
-    # This ensures consistency with how models were trained and saved
-    config_filename = os.path.basename(args.config)
-    if 'small' in config_filename:
-        scale = 'small'
-    elif 'medium' in config_filename:
-        scale = 'medium'
-    elif 'production' in config_filename:
-        scale = 'production'
-    else:
-        raise ValueError(f"Cannot determine scale from config filename: {config_filename}. Expected 'small', 'medium', or 'production' in filename.")
+    # Working directory for artifacts
+    base_dir = str(Path(config.get('working_dir_path', 'results')).as_posix())
     
     # Load models
-    scale_dir = f'results/{scale}/pytorch'
-    models = load_trained_models(scale_dir, config, logger)
+    models_dir = os.path.join(base_dir, 'pytorch')
+    models = load_trained_models(models_dir, config, logger)
     
     if not models:
         logger.error(f"No trained models found in {scale_dir}")
         return
     
     # Create and solve test instance (exact copy from run_comparative_study.py)
-    test_results = create_and_solve_test_instance(models, config, logger, scale)
+    test_results = create_and_solve_test_instance(models, config, logger, base_dir)
     
-    logger.info(f"\n💾 Generated plots and JSON files in results/{scale}/plots")
+    logger.info(f"\n💾 Generated plots and JSON files in {base_dir}/plots")
 
 if __name__ == '__main__':
     main()

@@ -35,13 +35,16 @@ def setup_logging():
     )
     return logging.getLogger(__name__)
 
-def load_results(scale):
-    """Load saved training results and model information"""
+def load_results(base_dir):
+    """Load saved training results and model information from working_dir_path.
+    If some models are not in the main analysis file, attempt to recover them from
+    individual model_*.pt files in the pytorch directory so we can plot all available models.
+    """
     logger = setup_logging()
     
     # Paths to saved data
-    analysis_path = f"results/{scale}/analysis/comparative_study_complete.pt"
-    pytorch_dir = f"results/{scale}/pytorch"
+    analysis_path = os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt')
+    pytorch_dir = os.path.join(base_dir, 'pytorch')
     
     if not os.path.exists(analysis_path):
         raise FileNotFoundError(f"Analysis results not found at {analysis_path}")
@@ -53,49 +56,56 @@ def load_results(scale):
     logger.info(f"📊 Loading results from {analysis_path}")
     data = torch.load(analysis_path, map_location='cpu', weights_only=False)
     
-    results = data['results']
-    training_times = data['training_times'] 
-    config = data['config']
+    results = dict(data.get('results', {}))
+    training_times = dict(data.get('training_times', {}))
+    config = data.get('config', {})
     
-    # Load model parameter counts from saved models
+    # Scan pytorch_dir for any saved model files to augment results
+    logger.info(f"📁 Scanning models in {pytorch_dir}")
     model_params = {}
-    model_files = {
-        'Pointer+RL': 'model_pointerplusrl.pt',
-        'GT-Greedy': 'model_gt-greedy.pt', 
-        'GT+RL': 'model_gtplusrl.pt',
-        'DGT+RL': 'model_dgtplusrl.pt',
-        'GAT+RL': 'model_gatplusrl.pt',
-        'GAT+RL (legacy)': 'model_gatplusrl_(legacy).pt'
-    }
+    recovered = 0
+    for fname in os.listdir(pytorch_dir):
+        if not fname.startswith('model_') or not fname.endswith('.pt'):
+            continue
+        fpath = os.path.join(pytorch_dir, fname)
+        try:
+            m = torch.load(fpath, map_location='cpu', weights_only=False)
+        except Exception as e:
+            logger.warning(f"   ⚠️ Failed to load model file {fname}: {e}")
+            continue
+        # Determine model name
+        mname = m.get('model_name')
+        if not mname:
+            # Derive from filename: model_<slug>.pt -> slug
+            mname = fname[len('model_'):-len('.pt')]
+            # Map common slugs back to display names if needed
+            mname = mname.replace('plus', '+').replace('_', ' ')
+        # Parameter count
+        state_dict = m.get('model_state_dict', m)
+        try:
+            pcount = sum(t.numel() for t in state_dict.values() if hasattr(t, 'numel'))
+        except Exception:
+            pcount = 0
+        model_params[mname] = pcount
+        logger.info(f"   📋 {mname}: {pcount:,} parameters from {fname}")
+        # Recover results/training_time when missing in main analysis
+        if mname not in results and 'results' in m:
+            results[mname] = m['results']
+            recovered += 1
+        if mname not in training_times and 'training_time' in m:
+            training_times[mname] = m['training_time']
+    if recovered:
+        logger.info(f"🔎 Recovered {recovered} model(s) from saved model files to include in plots")
     
-    for model_name, filename in model_files.items():
-        model_path = os.path.join(pytorch_dir, filename)
-        if os.path.exists(model_path):
-            try:
-                model_data = torch.load(model_path, map_location='cpu', weights_only=False)
-                state_dict = model_data.get('model_state_dict', model_data)
-                param_count = sum(tensor.numel() for tensor in state_dict.values() if hasattr(tensor, 'numel'))
-                model_params[model_name] = param_count
-                logger.info(f"   📋 {model_name}: {param_count:,} parameters")
-            except Exception as e:
-                logger.warning(f"   ⚠️ Failed to load {model_name} parameters: {e}")
-                model_params[model_name] = 0
-        else:
-            logger.warning(f"   ⚠️ Model file not found: {model_path}")
-            model_params[model_name] = 0
+    # Keep only models for which we have parameters (i.e., present in pytorch_dir)
+    available_models = [name for name in results.keys() if model_params.get(name, 0) > 0]
+    missing = [name for name in results.keys() if name not in available_models]
+    for name in missing:
+        logger.warning(f"   ⚠️ Skipping {name} (no model file / parameters found)")
     
-    # Filter out models with no results or parameters
-    available_models = []
-    for model_name in results.keys():
-        if model_name in model_params and model_params[model_name] > 0:
-            available_models.append(model_name)
-        else:
-            logger.warning(f"   ⚠️ Skipping {model_name} (missing data)")
-    
-    # Filter results and parameters to only include available models
     filtered_results = {name: results[name] for name in available_models}
     filtered_params = {name: model_params[name] for name in available_models}
-    filtered_times = {name: training_times[name] for name in available_models}
+    filtered_times = {name: training_times.get(name, 0.0) for name in available_models}
     
     logger.info(f"✅ Loaded data for {len(available_models)} models: {list(available_models)}")
     
@@ -127,14 +137,20 @@ def generate_cvrp_instance(num_customers, capacity, coord_range, demand_range, s
         'capacity': int(capacity)  # Ensure capacity is integer
     }
 
-def compute_naive_baseline_cost(instance):
-    """Compute cost of naive solution: depot->node->depot for each customer (same as training script)"""
+def compute_naive_baseline_cost(instance, depot_penalty_per_visit: float = 0.0):
+    """Compute cost of naive solution: depot->customer->depot for each customer.
+    Includes optional depot penalty per internal return when configured.
+    """
     distances = instance['distances']
     n_customers = len(instance['coords']) - 1  # excluding depot
     naive_cost = 0.0
     
     for customer_idx in range(1, n_customers + 1):  # customers are indexed 1 to n
         naive_cost += distances[0, customer_idx] * 2  # depot->customer->depot
+    
+    # Internal depot visits in naive route: n_customers - 1 (exclude first start and final end)
+    if depot_penalty_per_visit and depot_penalty_per_visit != 0.0 and n_customers > 0:
+        naive_cost += depot_penalty_per_visit * (n_customers - 1)
     
     return naive_cost
 
@@ -163,24 +179,33 @@ def compute_naive_baseline_cost_per_customer(config):
     else:
         num_instances = config['num_instances']
     
+    depot_penalty = 0.0
+    if isinstance(config, dict):
+        depot_penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+    
     # Generate the same instances as training (using same seeds)
     naive_costs = []
     for i in range(num_instances):
         instance = generate_cvrp_instance(
             num_customers, capacity, coord_range, demand_range, seed=i
         )
-        naive_cost = compute_naive_baseline_cost(instance)
+        naive_cost = compute_naive_baseline_cost(instance, depot_penalty)
         naive_costs.append(naive_cost)
     
     naive_avg_cost = np.mean(naive_costs)
     naive_normalized = naive_avg_cost / num_customers
     
-    logger.info(f"   📍 Computed naive baseline: {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust) from {num_instances} instances")
+    if depot_penalty:
+        logger.info(f"   📍 Computed naive baseline (with depot penalty): {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust) from {num_instances} instances")
+    else:
+        logger.info(f"   📍 Computed naive baseline: {naive_avg_cost:.3f} ({naive_normalized:.3f}/cust) from {num_instances} instances")
     
     return naive_normalized
 
 def create_comparison_plots(results, training_times, model_params, config, scale, suffix=''):
-    """Create comprehensive comparison plots with normalized costs (per customer)"""
+    """Create comprehensive comparison plots with normalized costs (per customer)
+    Now reads per-epoch series (loss, train_cost, val_cost) directly from CSV history files.
+    """
     logger = setup_logging()
     
     # Set up the plotting style
@@ -198,13 +223,63 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     logger.info(f"🎨 Creating plots for {len(model_names)} models")
     logger.info(f"   Models: {model_names}")
 
+    # CSV dir
+    csv_dir = os.path.join(config.get('working_dir_path', 'results'), 'csv') if isinstance(config, dict) else os.path.join('results', scale, 'csv')
+
+    # Map display names to CSV keys
+    name_to_key = {
+        'Pointer+RL': 'pointer_rl',
+        'GT+RL': 'gt_rl',
+        'DGT+RL': 'dgt_rl',
+        'GAT+RL': 'gat_rl',
+        'GT-Greedy': 'gt_greedy',
+        'GAT+RL (legacy)': 'gat_rl_legacy',
+    }
+
+    def load_csv_series_for_model(model_name):
+        key = name_to_key.get(model_name)
+        if not key:
+            return None
+        fpath = os.path.join(csv_dir, f"history_{key}.csv")
+        if not os.path.exists(fpath):
+            return None
+        try:
+            df = pd.read_csv(fpath)
+        except Exception as e:
+            logger.warning(f"   ⚠️ Failed to read CSV for {model_name}: {e}")
+            return None
+        # Ensure required columns exist
+        for col in ['epoch', 'train_loss', 'train_cost', 'val_cost']:
+            if col not in df.columns:
+                logger.warning(f"   ⚠️ CSV for {model_name} missing column '{col}'")
+        # Build series using exact CSV rows
+        epochs = df['epoch'].tolist() if 'epoch' in df.columns else list(range(len(df)))
+        train_loss = df['train_loss'].tolist() if 'train_loss' in df.columns else []
+        train_cost = df['train_cost'].tolist() if 'train_cost' in df.columns else []
+        val_mask = df['val_cost'].notna() if 'val_cost' in df.columns else pd.Series([False]*len(df))
+        val_epochs = df.loc[val_mask, 'epoch'].tolist() if 'epoch' in df.columns else [i for i, m in enumerate(val_mask) if m]
+        val_costs = df.loc[val_mask, 'val_cost'].tolist() if 'val_cost' in df.columns else []
+        return {
+            'epochs': epochs,
+            'train_loss': train_loss,
+            'train_cost': train_cost,
+            'val_epochs': val_epochs,
+            'val_costs': val_costs,
+        }
+
+    csv_series = {name: load_csv_series_for_model(name) for name in model_names}
+
     # 1. Training Loss Comparison (standardized REINFORCE loss for all models)
     plt.subplot(2, 4, 1)
-    for model_name, result in results.items():
-        train_losses = result.get('train_losses', [])
-        if train_losses and not all(np.isnan(train_losses)):
-            plt.plot(train_losses, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-    plt.title('Training Loss Evolution\\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
+    for model_name in model_names:
+        series = csv_series.get(model_name)
+        if series and series['train_loss']:
+            xs = series['epochs'][:len(series['train_loss'])]
+            ys = [v for v in series['train_loss'] if pd.notna(v)]
+            xs = [series['epochs'][i] for i, v in enumerate(series['train_loss']) if pd.notna(v)]
+            if ys:
+                plt.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
+    plt.title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('REINFORCE Loss')
     plt.legend()
@@ -212,13 +287,13 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 2. Training Cost Comparison (NORMALIZED)
     plt.subplot(2, 4, 2)
-    for model_name, result in results.items():
-        train_costs = result.get('train_costs', [])
-        if train_costs:
-            # Normalize training costs by dividing by number of customers
-            num_customers = config.get('problem', {}).get('num_customers', config.get('num_customers', 1))
-            normalized_train_costs = [cost / num_customers for cost in train_costs]
-            plt.plot(normalized_train_costs, label=model_name, linewidth=2, marker='s', markersize=3, color=color_map[model_name])
+    for model_name in model_names:
+        series = csv_series.get(model_name)
+        if series and series['train_cost']:
+            xs = [series['epochs'][i] for i, v in enumerate(series['train_cost']) if pd.notna(v)]
+            ys = [v for v in series['train_cost'] if pd.notna(v)]
+            if ys:
+                plt.plot(xs, ys, label=model_name, linewidth=2, marker='s', markersize=3, color=color_map[model_name])
     plt.title('Training Cost Evolution (Per Customer)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('Average Cost per Customer')
@@ -229,18 +304,17 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     plt.subplot(2, 4, 3)
     # Plot naive baseline as background reference line
     num_epochs = config['training']['num_epochs']
-    num_customers = config['problem']['num_customers']
-    val_epochs_full = list(range(0, num_epochs, 3))
-    if len(val_epochs_full) == 0:
-        val_epochs_full = [0]
-    plt.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label='Naive Baseline')
+    # Annotate if depot penalty is active
+    penalty_active = isinstance(config, dict) and config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
+    baseline_label = 'Naive Baseline (with penalty)' if penalty_active else 'Naive Baseline'
+    plt.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
     
-    for model_name, result in results.items():
-        val_costs = result.get('val_costs', [])
-        if val_costs:
-            val_epochs = list(range(0, num_epochs, 3))[:len(val_costs)]
-            normalized_val_costs = [cost / num_customers for cost in val_costs][:len(val_epochs)]
-            plt.plot(val_epochs, normalized_val_costs, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
+    for model_name in model_names:
+        series = csv_series.get(model_name)
+        if series and series['val_costs']:
+            xs = series['val_epochs']
+            ys = series['val_costs']
+            plt.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
     plt.title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('Average Cost per Customer')
@@ -249,8 +323,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 4. Final Performance Bar Chart with Naive Baseline (NORMALIZED)
     plt.subplot(2, 4, 4)
-    # Normalize final costs by dividing by number of customers
-    final_costs_normalized = [results[name]['final_val_cost'] / num_customers for name in model_names]
+    # Final costs are already per customer in saved results
+    final_costs_normalized = [results[name]['final_val_cost'] for name in model_names]
     # Colors consistent with lines
     colors = [color_map[name] for name in model_names]
     
@@ -306,18 +380,17 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     plt.subplot(2, 4, 7)
     improvements = []
     for model_name in model_names:
-        result = results[model_name]
-        train_costs = result.get('train_costs', [])
-        if len(train_costs) >= 2:
-            initial_cost = train_costs[0]
-            final_cost = train_costs[-1]
-            if initial_cost > 0:
-                improvement = ((initial_cost - final_cost) / initial_cost) * 100
+        series = csv_series.get(model_name)
+        if series and series['train_cost'] and len(series['train_cost']) >= 2:
+            # use first and last non-NaN costs
+            train_cost_values = [v for v in series['train_cost'] if pd.notna(v)]
+            if len(train_cost_values) >= 2 and train_cost_values[0] > 0:
+                imp = ((train_cost_values[0] - train_cost_values[-1]) / train_cost_values[0]) * 100
             else:
-                improvement = 0
+                imp = 0
         else:
-            improvement = 0
-        improvements.append(improvement)
+            imp = 0
+        improvements.append(imp)
     
     bars = plt.bar(range(len(model_names)), improvements, color=[color_map[n] for n in model_names], alpha=0.8)
     plt.title('Learning Efficiency', fontsize=12, fontweight='bold')
@@ -333,6 +406,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 8. Performance vs Complexity Scatter (NORMALIZED)
     plt.subplot(2, 4, 8)
+    final_costs_normalized = [results[name]['final_val_cost'] for name in model_names]
     for i, model_name in enumerate(model_names):
         plt.scatter(param_counts[i], final_costs_normalized[i], 
                    s=100, color=color_map[model_name], alpha=0.8, label=model_name)
@@ -348,7 +422,10 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     plt.tight_layout()
     
     # Ensure plots directory exists
-    plots_dir = f"results/{scale}/plots"
+    plots_dir = f"results/{scale}/plots" if os.path.isabs(scale) else os.path.join(f"results/{scale}", 'plots')
+    # If scale is actually a base_dir label, recompute plots_dir using working_dir_path when available
+    if isinstance(config, dict) and 'working_dir_path' in config:
+        plots_dir = os.path.join(config['working_dir_path'], 'plots')
     os.makedirs(plots_dir, exist_ok=True)
     
     # Save plot
@@ -364,19 +441,22 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # plt.show()
 
 def create_performance_summary(results, training_times, model_params, config, naive_baseline_per_customer, scale, suffix=''):
-    """Create a detailed performance summary table and save to CSV"""
+    """Create a detailed performance summary table and save to CSV
+    All costs are reported per customer for consistency across models (including legacy).
+    """
     logger = setup_logging()
     
     data = []
     model_names = list(results.keys())
+    num_customers = config['problem']['num_customers']
     
     for model_name in model_names:
         result = results[model_name]
-        num_customers = config['problem']['num_customers']
-        final_val_cost_per_customer = result['final_val_cost'] / num_customers
+        # final_val_cost is already per customer
+        final_val_cost_per_customer = result['final_val_cost']
         improvement_vs_naive = ((naive_baseline_per_customer - final_val_cost_per_customer) / naive_baseline_per_customer) * 100
         
-        # Calculate learning efficiency
+        # Calculate learning efficiency (percent change unaffected by normalization)
         train_costs = result.get('train_costs', [])
         if len(train_costs) >= 2:
             initial_cost = train_costs[0]
@@ -385,17 +465,21 @@ def create_performance_summary(results, training_times, model_params, config, na
         else:
             learning_efficiency = 0
         
+        # Train and validation costs are already per customer in saved results
+        final_train_cost_per_customer = (result['train_costs'][-1]) if result.get('train_costs') else 0.0
+        best_val_cost_per_customer = (min(result.get('val_costs', [result['final_val_cost']])) )
+        val_cost_std_per_customer = (np.std(result.get('val_costs', [result['final_val_cost']])) )
+        
         data.append({
             'Model': model_name,
             'Parameters': model_params[model_name],
             'Training Time (s)': training_times[model_name],
-            'Final Train Cost': result['train_costs'][-1] if result.get('train_costs') else 0,
-            'Final Val Cost': result['final_val_cost'],
+            'Final Train Cost/Customer': final_train_cost_per_customer,
             'Final Val Cost/Customer': final_val_cost_per_customer,
             'Improvement vs Naive (%)': improvement_vs_naive,
             'Learning Efficiency (%)': learning_efficiency,
-            'Best Val Cost': min(result.get('val_costs', [result['final_val_cost']])),
-            'Val Cost Std': np.std(result.get('val_costs', [result['final_val_cost']]))
+            'Best Val Cost/Customer': best_val_cost_per_customer,
+            'Val Cost Std/Customer': val_cost_std_per_customer
         })
     
     df = pd.DataFrame(data)
@@ -411,7 +495,7 @@ def create_performance_summary(results, training_times, model_params, config, na
     logger.info(f"📋 Performance summary saved to {csv_path}")
     
     # Print formatted table to console
-    logger.info("\\n📊 DETAILED PERFORMANCE COMPARISON")
+    logger.info("\n📊 DETAILED PERFORMANCE COMPARISON")
     logger.info("=" * 100)
     
     # Create nicely formatted table
@@ -466,7 +550,7 @@ def determine_scale_from_config_path(config_path):
 def parse_args():
     parser = argparse.ArgumentParser(description='Generate comparative study plots from saved results')
     parser.add_argument('--config', type=str, default='configs/small.yaml',
-                       help='Path to YAML configuration file (determines scale from num_customers)')
+                       help='Path to YAML configuration file (reads working_dir_path)')
     parser.add_argument('--suffix', type=str, default='', 
                        help='Suffix to add to output filename')
     return parser.parse_args()
@@ -480,19 +564,22 @@ def main():
     logger.info(f"📂 Loading config from: {args.config}")
     
     try:
-        # Determine scale from config filename
-        scale = determine_scale_from_config_path(args.config)
-        logger.info(f"📏 Determined scale: {scale} (from config filename)")
+        # Load config to get working_dir_path
+        cfg = load_config(args.config)
+        base_dir = str(Path(cfg.get('working_dir_path', 'results')).as_posix())
+        logger.info(f"📁 Working directory: {base_dir}")
         
         # Load saved results
-        results, training_times, model_params, loaded_config = load_results(scale)
+        results, training_times, model_params, loaded_config = load_results(base_dir)
         
         # Create plots
         suffix = f"_{args.suffix}" if args.suffix else ""
-        create_comparison_plots(results, training_times, model_params, loaded_config, scale, suffix)
+        # Derive a label (for file locations only) from working_dir_path leaf
+        label = Path(base_dir).name
+        create_comparison_plots(results, training_times, model_params, loaded_config, label, suffix)
         
         logger.info("✅ Comparative plots generated successfully!")
-        logger.info(f"📊 Output: results/{scale}/plots/comparative_study_results{suffix}.png")
+        logger.info(f"📊 Output: {base_dir}/plots/comparative_study_results{suffix}.png")
         
     except Exception as e:
         logger.error(f"❌ Failed to generate plots: {e}")

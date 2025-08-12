@@ -7,7 +7,7 @@ A comprehensive comparative study implementing and comparing 6 different neural 
 ### Prerequisites
 - Python 3.8+
 - PyTorch
-- CPU-optimized (GPU dependencies removed)
+- CPU-only
 
 ### Installation
 ```bash
@@ -204,6 +204,27 @@ results/
     └── test_instances/ # Test CVRP instances (.npz) for detailed analysis
 ```
 
+### 📑 History CSV files and keys
+
+Training/validation histories for each model are saved under `<working_dir_path>/csv/` using a fixed naming scheme. The plotting script now reads training/validation curves directly from these CSV files.
+
+- Pointer+RL → key: `pointer_rl` → `history_pointer_rl.csv`
+- GT+RL → key: `gt_rl` → `history_gt_rl.csv`
+- DGT+RL → key: `dgt_rl` → `history_dgt_rl.csv`
+- GAT+RL → key: `gat_rl` → `history_gat_rl.csv`
+- GT-Greedy → key: `gt_greedy` → `history_gt_greedy.csv`
+- GAT+RL (legacy) → key: `gat_rl_legacy` → `history_gat_rl_legacy.csv`
+
+CSV columns:
+- `epoch` — integer epoch index
+- `train_loss` — REINFORCE loss (may be NaN for non-RL models like GT-Greedy)
+- `train_cost` — training cost per customer
+- `val_cost` — validation cost per customer (NaN except for epochs when validation was run)
+
+Notes:
+- The final CSV row includes `epoch = num_epochs` with `val_cost = final_val_cost`; for legacy GAT+RL, missing final metrics are backfilled where possible.
+- The plotting script uses exactly the non-NaN rows from these CSVs (no cadence assumptions), so curves match recorded epochs.
+
 ### 🧪 **Test Instance Analysis** - Standalone Script
 
 The `make_test_instance.py` script runs as a **separate stage** after training and provides:
@@ -292,11 +313,12 @@ This study implements and compares 6 different neural network architectures:
 - **Performance**: Good baseline, fast training
 - **Use case**: Quick prototyping, baseline comparisons
 
-### 2. **Graph Transformer (Greedy)**  
+### 2. **Graph Transformer (Greedy Attention Baseline)**  
 - **Parameters**: ~92K
-- **Architecture**: Multi-head self-attention on graph nodes
-- **Selection**: Always greedy (argmax)
-- **Performance**: Deterministic, good for benchmarking
+- **Architecture**: Multi-head self-attention encodes nodes; routing uses dot-product attention from current node to all nodes
+- **Selection**: Pure greedy, deterministic argmax over attention scores (capacity-aware masking, returns to depot when needed)
+- **Training**: Evaluation-only baseline (no REINFORCE updates applied)
+- **Performance**: Deterministic, good for benchmarking without learning
 
 ### 3. **Graph Transformer + RL**
 - **Parameters**: ~92K  
@@ -396,7 +418,8 @@ For **CVRP specifically**, raw tensor batching is superior because:
 
 ### Core Features
 - **Sequential Route Generation**: All models generate complete routes through iterative decision-making
-- **REINFORCE Learning**: Proper policy gradient implementation with baseline
+- **REINFORCE Learning**: Proper policy gradient implementation with baseline (applied to RL models)
+- **Greedy Baseline (No RL)**: GT-Greedy uses attention-only deterministic routing with capacity-aware masking; no policy updates
 - **Rigorous Constraint Validation**: Real-time capacity and coverage constraint checking
 - **CPU Optimization**: Efficient batching and tensor operations optimized for CPU
 - **Scientific Validation**: Every training and validation route verified against CVRP constraints
@@ -435,7 +458,7 @@ The system is now fully CPU-optimized with:
 - Multi-threaded CPU execution using all available cores
 - Optimized tensor operations for CPU
 - Memory-efficient batching
-- No GPU dependencies or CUDA requirements
+- Works out of the box on standard CPUs
 
 ## 🧪 Experimental Features
 
@@ -445,6 +468,7 @@ The system is now fully CPU-optimized with:
 - **🚨 Rigorous Scientific Validation**: Comprehensive CVRP constraint validation with detailed error reporting
 - **🧹 Reorganized Project Structure**: Clean separation of current vs legacy code, removed unused directories
 - **✅ Fixed REINFORCE Implementation**: Correct advantage calculation and policy gradients
+- **🧭 Pure Greedy Attention Baseline**: GT-Greedy now performs attention-based deterministic routing without RL training
 - **🛣️ Proper Route Generation**: Sequential decision-making matching CVRP requirements  
 - **⚡ CPU Optimization**: Full CPU-only operation with optimized multi-threading
 - **🔍 Enhanced Route Validation**: Capacity constraints, trip analysis, and constraint verification
@@ -561,7 +585,7 @@ python run_train_validation.py --config configs/small.yaml --batch 4 --customers
 ### Key Milestones
 1. **Initial Implementation**: Basic pointer network with single-step decisions
 2. **Architecture Expansion**: Added 5 additional model architectures
-3. **GPU Optimization**: Created GPU-optimized version with batching
+3. **Batching Optimization**: Created an optimized version with efficient batching
 4. **Critical Fixes**: Fixed REINFORCE advantages and route generation
 5. **CPU Migration**: Full transition to CPU-only optimized implementation
 6. **Scientific Validation**: Added rigorous CVRP constraint validation
