@@ -303,7 +303,8 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=Non
         results = comparative_results.get('results', {})
         for model_name in model_results.keys():
             if model_name in results:
-                validation_costs[model_name] = results[model_name]['final_val_cost'] / n_customers
+                # final_val_cost is already per-customer in comparative results; do not divide again
+                validation_costs[model_name] = results[model_name]['final_val_cost']
     except Exception as e:
         logger.warning(f"Could not load validation costs: {e}")
     
@@ -421,18 +422,18 @@ def load_trained_models(models_dir, config, logger):
     """Load all trained models from saved files"""
     models = {}
     model_files = {
-        'Pointer+RL': os.path.join(models_dir, 'model_pointerplusrl.pt'),
-        'GT-Greedy': os.path.join(models_dir, 'model_gt-greedy.pt'), 
-        'GT+RL': os.path.join(models_dir, 'model_gtplusrl.pt'),
-        'DGT+RL': os.path.join(models_dir, 'model_dgtplusrl.pt'),
-        'GAT+RL': os.path.join(models_dir, 'model_gatplusrl.pt')
+        'Pointer+RL': os.path.join(models_dir, 'model_pointer_rl.pt'),
+        'GT-Greedy': os.path.join(models_dir, 'model_gt_greedy.pt'), 
+        'GT+RL': os.path.join(models_dir, 'model_gt_rl.pt'),
+        'DGT+RL': os.path.join(models_dir, 'model_dgt_rl.pt'),
+        'GAT+RL': os.path.join(models_dir, 'model_gat_rl.pt')
     }
     
     # Try to load legacy GAT model
     try:
         from src_batch.model.Model import Model as LegacyGATModel
         legacy_model = LegacyGATModel(node_input_dim=3, edge_input_dim=1, hidden_dim=128, edge_dim=16, layers=4, negative_slope=0.2, dropout=0.6)
-        legacy_path = os.path.join(models_dir, 'model_gatplusrl_(legacy).pt')
+        legacy_path = os.path.join(models_dir, 'model_gat_rl_legacy.pt')
         if os.path.exists(legacy_path):
             state_dict = torch.load(legacy_path, map_location=device, weights_only=False)
             if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
@@ -705,7 +706,7 @@ def main():
     models = load_trained_models(models_dir, config, logger)
     
     if not models:
-        logger.error(f"No trained models found in {scale_dir}")
+        logger.error(f"No trained models found in {models_dir}")
         return
     
     # Create and solve test instance (exact copy from run_comparative_study.py)
