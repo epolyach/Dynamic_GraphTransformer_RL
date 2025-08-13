@@ -25,7 +25,7 @@ from run_train_validation import (
     generate_cvrp_instance, compute_route_cost, validate_route, naive_baseline_solution,
     BaselinePointerNetwork, GraphTransformerGreedy, GraphTransformerNetwork, 
     DynamicGraphTransformerNetwork, GraphAttentionTransformer, compute_naive_baseline_cost,
-    build_pyg_data_from_instance, setup_logging
+    build_pyg_data_from_instance, setup_logging, model_key
 )
 
 device = torch.device("cpu")
@@ -158,17 +158,16 @@ def create_model_route_plot(coords, demands, sizes, route, cost_per_customer, mo
     
     plt.tight_layout()
     
-    # Use consistent filename sanitization for both PNG and JSON
-    def sanitize_filename(name):
-        return name.lower().replace(' ', '_').replace('+', 'plus').replace('(', '').replace(')', '').replace('/', '_')
+    # Build filename using unified model key
+    key = model_key(model_name)
     
     # Save plot
-    filename = f"test_route_{sanitize_filename(model_name)}.png"
+    filename = f"test_route_{key}.png"
     plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
     plt.close()
     
     # Save route as JSON
-    json_filename = f"test_route_{sanitize_filename(model_name)}.json"
+    json_filename = f"test_route_{key}.json"
     with open(os.path.join(save_dir, json_filename), 'w') as f:
         json.dump({
             'model_name': model_name,
@@ -652,10 +651,8 @@ def create_and_solve_test_instance(models, config, logger, base_dir):
     
     # Save JSON files for each model
     for model_name, result in test_results.items():
-        def sanitize_name(name):
-            return name.lower().replace(' ', '_').replace('+', 'plus').replace('(', '').replace(')', '').replace('/', '_')
-        
-        filename = f"test_route_{sanitize_name(model_name)}.json"
+        key = model_key(model_name)
+        filename = f"test_route_{key}.json"
         filepath = os.path.join(test_dir, filename)
         
         model_data = {
