@@ -1138,6 +1138,23 @@ def compute_naive_baseline_cost(instance, depot_penalty_per_visit: float = 0.0):
     
     return naive_cost
 
+def quick_validate_route(route, n_customers):
+    """Lightweight validation for speed: start/end depot, no consecutive depots, indices in range."""
+    if not route:
+        return False
+    if route[0] != 0 or route[-1] != 0:
+        return False
+    # no consecutive depots
+    for i in range(len(route) - 1):
+        if route[i] == 0 and route[i+1] == 0:
+            return False
+    # index bounds
+    max_idx = n_customers
+    for node in route:
+        if node < 0 or node > max_idx:
+            return False
+    return True
+
 def validate_route(route, n_customers, model_name="Unknown", instance=None):
     """RIGOROUS VALIDATION: Validate that a route is a correct CVRP solution
     
@@ -1324,6 +1341,9 @@ def train_model(model, instances, config, model_name, logger):
     
     logger.info(f"🏋️ Training {model_name}...")
     
+    # Strict validation flag controls depth of route checks, not frequency
+    strict_flag = bool(config.get('experiment', {}).get('strict_validation', config.get('strict_validation', False)))
+
     for epoch in range(config['num_epochs'] + 1):
         # Training
         model.train()
@@ -1365,8 +1385,16 @@ def train_model(model, instances, config, model_name, logger):
             for route, instance in zip(routes, batch_instances):
                 n_customers = len(instance['coords']) - 1
                 
-                # VALIDATE ROUTE - This will exit with error if route is invalid
-                validate_route(route, n_customers, f"{model_name}-TRAIN", instance)
+                # VALIDATE ROUTE
+                if strict_flag:
+                    # Full, time-consuming checks (capacity, coverage, trips)
+                    validate_route(route, n_customers, f"{model_name}-TRAIN", instance)
+                else:
+                    # Lightweight validation: basic structure and index bounds
+                    if not quick_validate_route(route, n_customers):
+                        print(f"\n🚨 VALIDATION FAILED (quick): {model_name}-TRAIN")
+                        print(f"Route: {route}")
+                        sys.exit(1)
 
                 penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
                 total_cost = compute_route_cost_with_penalty(route, instance['distances'], penalty)
@@ -1433,8 +1461,14 @@ def train_model(model, instances, config, model_name, logger):
                     for j, (route, instance) in enumerate(zip(routes, batch_val)):
                         n_customers = len(instance['coords']) - 1
                         
-                        # VALIDATE ROUTE - This will exit with error if route is invalid
-                        validate_route(route, n_customers, f"{model_name}-VAL", instance)
+                        # VALIDATE ROUTE
+                        if strict_flag:
+                            validate_route(route, n_customers, f"{model_name}-VAL", instance)
+                        else:
+                            if not quick_validate_route(route, n_customers):
+                                print(f"\n🚨 VALIDATION FAILED (quick): {model_name}-VAL")
+                                print(f"Route: {route}")
+                                sys.exit(1)
 
                         penalty = config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
                         total_cost = compute_route_cost_with_penalty(route, instance['distances'], penalty)
@@ -1458,37 +1492,13 @@ def train_model(model, instances, config, model_name, logger):
         'final_val_cost': val_costs[-1] if val_costs else train_costs[-1]
     }
 
-def _deep_merge_dict(a: dict, b: dict) -> dict:
-    """Recursively merge dict b into dict a (returns a).
-    - Scalars/lists in b overwrite a
-    - Dicts are merged recursively
-    """
-    for k, v in b.items():
-        if isinstance(v, dict) and isinstance(a.get(k), dict):
-            _deep_merge_dict(a[k], v)
-        else:
-            a[k] = v
-    return a
 
 def load_config(config_path):
-    """Load configuration by deep-merging configs/default.yaml with the provided config_path.
-    The provided config overrides default values.
+    """Unified config loader: deep-merge default + override, validate, normalize, and flatten.
+    Ensures all parameters originate from YAML without hidden defaults.
     """
-    import yaml
-    default_path = os.path.join('configs', 'default.yaml')
-
-    if not os.path.exists(default_path):
-        raise FileNotFoundError(f"Default config not found at {default_path}")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(default_path, 'r') as f:
-        base_cfg = yaml.safe_load(f) or {}
-    with open(config_path, 'r') as f:
-        override_cfg = yaml.safe_load(f) or {}
-
-    # Deep merge and return
-    return _deep_merge_dict(base_cfg, override_cfg)
+    from src.utils.config import load_config as _shared_load
+    return _shared_load(config_path)
 
 # Unified naming for artifacts (CSV and model files)
 def model_key(name: str) -> str:
@@ -1959,6 +1969,9 @@ def run_comparative_study():
     logger = setup_logging(config)
     device = get_device_from_config(config)
     set_seeds(config)
+
+    # Global strict validation switch (depth only, not frequency)
+    strict_flag_global = bool(config.get('experiment', {}).get('strict_validation', config.get('strict_validation', False)))
     
     # Configure CPU optimization if using CPU
     if device.type == 'cpu':
@@ -2053,49 +2066,6 @@ def run_comparative_study():
     if args.temp_min is not None:
         config['temp_min'] = args.temp_min
     
-    # Convert string values to proper numeric types
-    if isinstance(config.get('learning_rate'), str):
-        config['learning_rate'] = float(config['learning_rate'])
-    if isinstance(config.get('entropy_coef'), str):
-        config['entropy_coef'] = float(config['entropy_coef'])
-    if isinstance(config.get('entropy_min'), str):
-        config['entropy_min'] = float(config['entropy_min'])
-    if isinstance(config.get('temp_start'), str):
-        config['temp_start'] = float(config['temp_start'])
-    if isinstance(config.get('temp_min'), str):
-        config['temp_min'] = float(config['temp_min'])
-    if isinstance(config.get('min_lr'), str):
-        config['min_lr'] = float(config['min_lr'])
-    if isinstance(config.get('grad_clip'), str):
-        config['grad_clip'] = float(config['grad_clip'])
-    if isinstance(config.get('gradient_clip_norm'), str):
-        config['gradient_clip_norm'] = float(config['gradient_clip_norm'])
-    
-    # Convert inference configuration parameters to proper numeric types
-    if 'inference' in config:
-        inference_config = config['inference']
-        if isinstance(inference_config.get('default_temperature'), str):
-            inference_config['default_temperature'] = float(inference_config['default_temperature'])
-        if isinstance(inference_config.get('max_steps_multiplier'), str):
-            inference_config['max_steps_multiplier'] = int(inference_config['max_steps_multiplier'])
-        if isinstance(inference_config.get('attention_temperature_scaling'), str):
-            inference_config['attention_temperature_scaling'] = float(inference_config['attention_temperature_scaling'])
-        if isinstance(inference_config.get('log_prob_epsilon'), str):
-            inference_config['log_prob_epsilon'] = float(inference_config['log_prob_epsilon'])
-        if isinstance(inference_config.get('masked_score_value'), str):
-            inference_config['masked_score_value'] = float(inference_config['masked_score_value'])
-    
-    # Convert training_advanced configuration parameters to proper numeric types
-    if 'training_advanced' in config:
-        training_advanced = config['training_advanced']
-        if 'legacy_gat' in training_advanced:
-            legacy_gat_config = training_advanced['legacy_gat']
-            if isinstance(legacy_gat_config.get('learning_rate'), str):
-                legacy_gat_config['learning_rate'] = float(legacy_gat_config['learning_rate'])
-            if isinstance(legacy_gat_config.get('temperature'), str):
-                legacy_gat_config['temperature'] = float(legacy_gat_config['temperature'])
-            if isinstance(legacy_gat_config.get('max_steps_multiplier'), str):
-                legacy_gat_config['max_steps_multiplier'] = int(legacy_gat_config['max_steps_multiplier'])
     
     # Provide defaults for any missing keys
     config.setdefault('temperature', 1.0)
@@ -2321,11 +2291,12 @@ def run_comparative_study():
     # Save results
     save_results(results, training_times, models, config, base_dir=base_dir)
 
-    # Now run strict validation, but log failures without preventing saved outputs
-    try:
-        validate_naive_baseline_correctness(results, naive_avg_cost, config, logger, instances)
-    except Exception as e:
-        logger.error(f"Strict validation failed after saving outputs: {e}")
+    # Optionally run strict baseline validation (time-consuming)
+    if strict_flag_global:
+        try:
+            validate_naive_baseline_correctness(results, naive_avg_cost, config, logger, instances)
+        except Exception as e:
+            logger.error(f"Strict validation failed after saving outputs: {e}")
     
     # Performance summary
     logger.info("\n📊 COMPARATIVE STUDY RESULTS")

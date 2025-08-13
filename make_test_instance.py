@@ -378,60 +378,9 @@ def _deep_merge_dict(a: dict, b: dict) -> dict:
     return a
 
 def load_config(config_path):
-    """Load configuration by deep-merging configs/default.yaml with the provided config_path,
-    then apply proper type conversions."""
-    import yaml
-    default_path = os.path.join('configs', 'default.yaml')
-
-    if not os.path.exists(default_path):
-        raise FileNotFoundError(f"Default config not found at {default_path}")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(default_path, 'r') as f:
-        base_cfg = yaml.safe_load(f) or {}
-    with open(config_path, 'r') as f:
-        override_cfg = yaml.safe_load(f) or {}
-
-    config = _deep_merge_dict(base_cfg, override_cfg)
-
-    # Fix type conversions for numerical parameters that might be read as strings
-    
-    # Convert inference parameters
-    if 'inference' in config:
-        inf_config = config['inference']
-        if 'log_prob_epsilon' in inf_config:
-            inf_config['log_prob_epsilon'] = float(inf_config['log_prob_epsilon'])
-        if 'masked_score_value' in inf_config:
-            inf_config['masked_score_value'] = float(inf_config['masked_score_value'])
-        if 'default_temperature' in inf_config:
-            inf_config['default_temperature'] = float(inf_config['default_temperature'])
-        if 'max_steps_multiplier' in inf_config:
-            inf_config['max_steps_multiplier'] = int(inf_config['max_steps_multiplier'])
-        if 'attention_temperature_scaling' in inf_config:
-            inf_config['attention_temperature_scaling'] = float(inf_config['attention_temperature_scaling'])
-    
-    # Convert training_advanced parameters
-    if 'training_advanced' in config:
-        ta_config = config['training_advanced']
-        # Convert legacy_gat sub-parameters
-        if 'legacy_gat' in ta_config:
-            lg_config = ta_config['legacy_gat']
-            if 'learning_rate' in lg_config:
-                lg_config['learning_rate'] = float(lg_config['learning_rate'])
-            if 'temperature' in lg_config:
-                lg_config['temperature'] = float(lg_config['temperature'])
-    
-    # Convert model parameters
-    if 'model' in config:
-        model_config = config['model']
-        # Convert dynamic_graph_transformer sub-parameters
-        if 'dynamic_graph_transformer' in model_config:
-            dgt_config = model_config['dynamic_graph_transformer']
-            if 'residual_gate_init' in dgt_config:
-                dgt_config['residual_gate_init'] = float(dgt_config['residual_gate_init'])
-    
-    return config
+    """Unified config loader (shared)"""
+    from src.utils.config import load_config as _shared_load
+    return _shared_load(config_path)
 
 def load_trained_models(models_dir, config, logger):
     """Load all trained models from saved files"""

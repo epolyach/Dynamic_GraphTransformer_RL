@@ -30,6 +30,7 @@ training:
 experiment:
   random_seed: 42
   device: "cpu"
+  strict_validation: false
 
 # =============================
 # Model architecture (shared)

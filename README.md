@@ -155,6 +155,12 @@ If you need any experimental models or training modules, they can be easily rest
 
 ## ⚙️ Configuration System
 
+Single source of truth configuration (no hidden defaults):
+- All parameters live in configs/default.yaml.
+- Scale configs (configs/small.yaml, configs/medium.yaml, configs/production.yaml) only override selected fields.
+- A shared loader (src/utils/config.py) deep-merges default + override, validates required sections, normalizes types, and exposes flattened convenience keys (num_customers, capacity, num_instances, batch_size, num_epochs, learning_rate, hidden_dim, num_heads, num_layers).
+- All entry points (run_train_validation.py, make_comparative_plot.py, make_test_instance.py) use the shared loader.
+
 The project uses a three-tier configuration system for different experimental scales:
 
 ### 🔬 Small Scale (`configs/small.yaml`) - Quick Testing & Development

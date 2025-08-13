@@ -552,18 +552,9 @@ def _deep_merge_dict(a: dict, b: dict) -> dict:
     return a
 
 def load_config(config_path):
-    """Load configuration by deep-merging configs/default.yaml with the provided config_path."""
-    import yaml
-    default_path = os.path.join('configs', 'default.yaml')
-    if not os.path.exists(default_path):
-        raise FileNotFoundError(f"Default config not found at {default_path}")
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    with open(default_path, 'r') as f:
-        base_cfg = yaml.safe_load(f) or {}
-    with open(config_path, 'r') as f:
-        override_cfg = yaml.safe_load(f) or {}
-    return _deep_merge_dict(base_cfg, override_cfg)
+    """Unified config loader (shared)"""
+    from src.utils.config import load_config as _shared_load
+    return _shared_load(config_path)
 
 def determine_scale_from_config_path(config_path):
     """Determine scale directly from config filename"""

@@ -7,7 +7,7 @@ problem:
 training:
   num_instances: 1024
   batch_size: 128
-  num_epochs: 12
+  num_epochs: 32
 
 # Keep default cost penalty modest to speed learning signal; override if studying penalties
 cost:
