@@ -20,15 +20,68 @@ logging.getLogger('matplotlib').setLevel(logging.WARNING)
 logging.getLogger('matplotlib.font_manager').setLevel(logging.WARNING)
 logging.getLogger('matplotlib.pyplot').setLevel(logging.WARNING)
 
-# Import from run_train_validation.py  
-from run_train_validation import (
-    generate_cvrp_instance, compute_route_cost, validate_route, naive_baseline_solution,
-    BaselinePointerNetwork, GraphTransformerGreedy, GraphTransformerNetwork, 
-    DynamicGraphTransformerNetwork, GraphAttentionTransformer, compute_naive_baseline_cost,
-    build_pyg_data_from_instance, setup_logging, model_key
-)
+# Import required utilities and models from src/ modules (avoid orchestrator imports)
+from src.pipelines.train import generate_cvrp_instance
+from src.metrics.costs import compute_route_cost, compute_naive_baseline_cost
+from src.eval.validation import validate_route
+from src.models.pointer import BaselinePointerNetwork
+from src.models.greedy_gt import GraphTransformerGreedy
+from src.models.gt import GraphTransformerNetwork
+from src.models.dgt import DynamicGraphTransformerNetwork
+from src.models.gat import GraphAttentionTransformer
 
 device = torch.device("cpu")
+
+# Minimal logger setup (avoid importing from orchestrator)
+def setup_logging(config: dict | None = None):
+    level = logging.INFO
+    format_str = '%(message)s'
+    if isinstance(config, dict) and 'logging' in config:
+        try:
+            level_str = config['logging'].get('level', 'INFO')
+            format_str = config['logging'].get('format', '%(message)s')
+            level = getattr(logging, level_str.upper(), logging.INFO)
+        except Exception:
+            pass
+    logging.basicConfig(level=level, format=format_str)
+    return logging.getLogger(__name__)
+
+# Unified model key mapping (kept consistent with training orchestrator)
+def model_key(name: str) -> str:
+    mapping = {
+        'Pointer+RL': 'pointer_rl',
+        'GT+RL': 'gt_rl',
+        'DGT+RL': 'dgt_rl',
+        'GAT+RL': 'gat_rl',
+        'GT-Greedy': 'gt_greedy',
+        'GAT+RL (legacy)': 'gat_rl_legacy',
+    }
+    return mapping.get(name, name.lower().replace(' ', '_').replace('+', '_').replace('-', '_'))
+
+# Simple naive baseline route: 0 -> i -> 0 for all customers in order
+def naive_baseline_solution(instance: dict):
+    n_customers = len(instance['coords']) - 1
+    route = [0]
+    for i in range(1, n_customers + 1):
+        route.append(i)
+        route.append(0)
+    return route
+
+# Build a PyG Data object from an instance (used only if legacy model is present)
+def build_pyg_data_from_instance(inst: dict):
+    try:
+        import torch as _torch
+        from torch_geometric.data import Data
+    except Exception as e:
+        raise ImportError(f"torch-geometric is required for legacy model evaluation: {e}")
+    coords = _torch.tensor(inst['coords'], dtype=_torch.float32)
+    n = coords.size(0)
+    ii, jj = _torch.meshgrid(_torch.arange(n), _torch.arange(n), indexing='ij')
+    edge_index = _torch.stack([ii.reshape(-1), jj.reshape(-1)], dim=0)
+    edge_attr = _torch.tensor(inst['distances'].reshape(-1, 1), dtype=_torch.float32)
+    demand = _torch.tensor(inst['demands'], dtype=_torch.float32).unsqueeze(1)
+    capacity_t = _torch.tensor([inst['capacity']], dtype=_torch.float32)
+    return Data(x=coords, edge_index=edge_index, edge_attr=edge_attr, demand=demand, capacity=capacity_t)
 
 # =============================================================================
 # INTEGRATED VISUALIZATION FUNCTIONS (from visualize_test_routes.py)
