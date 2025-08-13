@@ -59,7 +59,7 @@ def train_one_model(model: nn.Module, model_name: str, config: Dict[str, Any], l
 
     start_time = time.time()
 
-    for epoch in range(1, num_epochs + 1):
+    for epoch in range(0, num_epochs + 1):
         # Generate a batch of instances (simple iid generation by seed)
         instances: List[Dict[str, Any]] = []
         for i in range(batch_size):

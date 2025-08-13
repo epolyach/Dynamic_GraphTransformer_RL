@@ -107,12 +107,18 @@ def load_config(config_path: str) -> Dict[str, Any]:
     # training_advanced
     ta = cfg.get('training_advanced', {})
     if ta:
+        if 'weight_decay' in ta:
+            ta['weight_decay'] = _to_float(ta['weight_decay'])
         if 'gradient_clip_norm' in ta:
             ta['gradient_clip_norm'] = _to_float(ta['gradient_clip_norm'])
         if 'warmup_epochs' in ta:
             ta['warmup_epochs'] = _to_int(ta['warmup_epochs'])
         if 'min_lr' in ta:
             ta['min_lr'] = _to_float(ta['min_lr'])
+        if 'early_stopping_delta' in ta:
+            ta['early_stopping_delta'] = _to_float(ta['early_stopping_delta'])
+        if 'early_stopping_patience' in ta:
+            ta['early_stopping_patience'] = _to_int(ta['early_stopping_patience'])
         if 'entropy_coef' in ta:
             ta['entropy_coef'] = _to_float(ta['entropy_coef'])
         if 'entropy_min' in ta:

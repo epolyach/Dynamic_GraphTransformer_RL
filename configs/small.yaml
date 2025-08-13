@@ -12,3 +12,28 @@ training:
 # Keep default cost penalty modest to speed learning signal; override if studying penalties
 cost:
   depot_penalty_per_visit: 0.0
+
+# === NEW ENHANCED FEATURES ===
+training_advanced:
+  # Better optimizer
+  optimizer: "AdamW"
+  weight_decay: 0.0001
+  gradient_clip_norm: 2.0
+  
+  # Learning rate scheduling  
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  min_lr: 0.000001
+  
+  # Early stopping
+  use_early_stopping: true
+  early_stopping_patience: 10
+  early_stopping_delta: 0.0001
+  
+  # Better entropy scheduling
+  entropy_coef: 0.02
+  entropy_min: 0.001
+
+# Enhanced experiment control
+experiment:
+  use_advanced_features: true
