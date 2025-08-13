@@ -1,0 +1,148 @@
+# Default configuration loaded first and deep-merged with any provided config
+# Put all stable/tuning parameters here. Per-experiment configs override only what they study.
+
+# Working directory (will usually be overridden by scale-specific config)
+working_dir_path: "results/default"
+
+# =============================
+# Core CVRP problem parameters
+# =============================
+problem:
+  num_customers: 20        # Default customers (excluding depot)
+  vehicle_capacity: 20     # Integer capacity
+  demand_range: [1, 10]    # Integer demands [min, max]
+  coord_range: 100         # Coordinates 0..coord_range, then normalized to [0,1]
+
+# =============================
+# Training parameters
+# =============================
+training:
+  num_instances: 4096      # Default dataset size
+  batch_size: 128          # Default batch size
+  num_epochs: 32           # Default number of epochs
+  learning_rate: 1e-3      # Base LR
+  train_val_split: 0.8     # Train/val split
+  validation_frequency: 4  # Run validation every N epochs
+
+# =============================
+# Experiment control
+# =============================
+experiment:
+  random_seed: 42
+  device: "cpu"
+
+# =============================
+# Model architecture (shared)
+# =============================
+model:
+  input_dim: 3
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 4
+  transformer_dropout: 0.1
+  feedforward_multiplier: 2
+  edge_embedding_divisor: 4
+
+  pointer_network:
+    input_multiplier: 2
+    context_multiplier: 2
+    output_dim: 1
+
+  dynamic_graph_transformer:
+    state_features: 4
+    residual_gate_init: -2.19722458
+    update_input_multiplier: 2
+    update_activation: "relu"
+
+  graph_transformer:
+    input_multiplier: 2
+    output_dim: 1
+
+  graph_attention_transformer:
+    input_multiplier: 2
+    output_dim: 1
+
+  legacy_gat:
+    node_input_dim: 3
+    edge_input_dim: 1
+    hidden_dim: 128
+    edge_dim: 16
+    num_layers: 4
+    negative_slope: 0.2
+    dropout: 0.6
+
+# =============================
+# Advanced training
+# =============================
+training_advanced:
+  optimizer: "Adam"
+  gradient_clip_norm: 1.0
+  warmup_epochs: 5
+  min_lr: 1e-4
+
+  # RL
+  entropy_coef: 0.01
+  entropy_min: 0.0
+  temp_start: 1.5
+  temp_min: 0.2
+
+  # Legacy GAT training
+  legacy_gat:
+    learning_rate: 1e-4
+    temperature: 2.0
+    max_steps_multiplier: 2
+
+# =============================
+# System / CPU optimization
+# =============================
+system:
+  cpu_optimization:
+    auto_detect_threads: true
+    max_threads: null
+    inter_op_threads_divisor: 4
+  openmp_settings:
+    kmp_blocktime: "0"
+    kmp_settings: "0"
+    kmp_affinity: "granularity=fine,compact,1,0"
+
+# =============================
+# Inference and evaluation
+# =============================
+inference:
+  default_temperature: 1.0
+  greedy_evaluation: true
+  max_steps_multiplier: 2
+  attention_temperature_scaling: 0.5
+  log_prob_epsilon: 1e-12
+  masked_score_value: -1e9
+
+# =============================
+# Cost settings
+# =============================
+cost:
+  depot_penalty_per_visit: 0.0
+
+# =============================
+# Output paths
+# =============================
+output:
+  results_base_dir: "results"
+  subdirectories:
+    pytorch: "pytorch"
+    analysis: "analysis"
+    logs: "logs"
+    csv: "csv"
+    checkpoints: "checkpoints"
+  legacy_paths:
+    checkpoints: "legacy_checkpoints"
+    training_logs: "logs/training"
+    checkpoint_name: "actor.pt"
+
+# =============================
+# Logging
+# =============================
+logging:
+  level: "INFO"
+  format: "%(message)s"
+  progress_bars: true
+

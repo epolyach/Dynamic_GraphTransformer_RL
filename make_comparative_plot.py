@@ -308,13 +308,25 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     penalty_active = isinstance(config, dict) and config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
     baseline_label = 'Naive Baseline (with penalty)' if penalty_active else 'Naive Baseline'
     plt.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
-    
+
+    # Plot model validation series; handle GT-Greedy specially (no training/validation curve)
     for model_name in model_names:
+        if model_name == 'GT-Greedy':
+            continue  # handle after loop
         series = csv_series.get(model_name)
         if series and series['val_costs']:
             xs = series['val_epochs']
             ys = series['val_costs']
             plt.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
+
+    # GT-Greedy: draw a dashed horizontal line at its final validation cost and a single point
+    if 'GT-Greedy' in results:
+        gg_val = results['GT-Greedy'].get('final_val_cost', None)
+        if gg_val is not None:
+            plt.plot([0, num_epochs], [gg_val, gg_val], linestyle='--', linewidth=2, color=color_map['GT-Greedy'], label='GT-Greedy')
+            # Single marker at final epoch
+            plt.plot([num_epochs], [gg_val], marker='o', markersize=6, color=color_map['GT-Greedy'])
+
     plt.title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
     plt.xlabel('Epoch')
     plt.ylabel('Average Cost per Customer')
@@ -346,18 +358,20 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     plt.grid(True, alpha=0.3, axis='y')
     
-    # 5. Training Time Comparison
+    # 5. Training Time Comparison (exclude GT-Greedy which has no training loop)
     plt.subplot(2, 4, 5)
-    times = [training_times[name] for name in model_names]
-    bars = plt.bar(range(len(model_names)), times, color=[color_map[n] for n in model_names], alpha=0.8)
+    time_models = [n for n in model_names if n != 'GT-Greedy']
+    times = [training_times[name] for name in time_models]
+    bars = plt.bar(range(len(time_models)), times, color=[color_map[n] for n in time_models], alpha=0.8)
     plt.title('Training Time', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Time (seconds)')
-    plt.xticks(range(len(model_names)), [name.replace(' ', '\\n') for name in model_names], rotation=45, ha='right')
+    plt.xticks(range(len(time_models)), [name.replace(' ', '\\n') for name in time_models], rotation=45, ha='right')
     
-    for bar, time_val in zip(bars, times):
-        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(times)*0.01,
-                f'{time_val:.1f}s', ha='center', va='bottom', fontweight='bold', fontsize=9)
+    if times:
+        for bar, time_val in zip(bars, times):
+            plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(times)*0.01,
+                    f'{time_val:.1f}s', ha='center', va='bottom', fontweight='bold', fontsize=9)
     
     plt.grid(True, alpha=0.3, axis='y')
     
@@ -376,10 +390,11 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     plt.grid(True, alpha=0.3, axis='y')
     
-    # 7. Learning Efficiency (Cost Improvement)
+    # 7. Learning Efficiency (Cost Improvement) - exclude GT-Greedy
     plt.subplot(2, 4, 7)
+    eff_models = [n for n in model_names if n != 'GT-Greedy']
     improvements = []
-    for model_name in model_names:
+    for model_name in eff_models:
         series = csv_series.get(model_name)
         if series and series['train_cost'] and len(series['train_cost']) >= 2:
             # use first and last non-NaN costs
@@ -392,15 +407,16 @@ def create_comparison_plots(results, training_times, model_params, config, scale
             imp = 0
         improvements.append(imp)
     
-    bars = plt.bar(range(len(model_names)), improvements, color=[color_map[n] for n in model_names], alpha=0.8)
+    bars = plt.bar(range(len(eff_models)), improvements, color=[color_map[n] for n in eff_models], alpha=0.8)
     plt.title('Learning Efficiency', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Cost Improvement (%)')
-    plt.xticks(range(len(model_names)), [name.replace(' ', '\\n') for name in model_names], rotation=45, ha='right')
+    plt.xticks(range(len(eff_models)), [name.replace(' ', '\\n') for name in eff_models], rotation=45, ha='right')
     
-    for bar, imp in zip(bars, improvements):
-        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(max(improvements), 1)*0.02,
-                f'{imp:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=9)
+    if improvements:
+        for bar, imp in zip(bars, improvements):
+            plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(max(improvements), 1)*0.02,
+                    f'{imp:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=9)
     
     plt.grid(True, alpha=0.3, axis='y')
     
@@ -527,17 +543,27 @@ def create_performance_summary(results, training_times, model_params, config, na
     print("=" * 100)
     print(f"🏆 Best model: {df.iloc[0]['Model']} ({df.iloc[0]['Final Val Cost/Customer']:.4f}/customer, {df.iloc[0]['Improvement vs Naive (%)']:+.1f}% vs naive)")
     
+def _deep_merge_dict(a: dict, b: dict) -> dict:
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(a.get(k), dict):
+            _deep_merge_dict(a[k], v)
+        else:
+            a[k] = v
+    return a
+
 def load_config(config_path):
-    """Load configuration from YAML file"""
+    """Load configuration by deep-merging configs/default.yaml with the provided config_path."""
     import yaml
-    
+    default_path = os.path.join('configs', 'default.yaml')
+    if not os.path.exists(default_path):
+        raise FileNotFoundError(f"Default config not found at {default_path}")
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
-    
+    with open(default_path, 'r') as f:
+        base_cfg = yaml.safe_load(f) or {}
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    return config
+        override_cfg = yaml.safe_load(f) or {}
+    return _deep_merge_dict(base_cfg, override_cfg)
 
 def determine_scale_from_config_path(config_path):
     """Determine scale directly from config filename"""

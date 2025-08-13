@@ -1458,17 +1458,37 @@ def train_model(model, instances, config, model_name, logger):
         'final_val_cost': val_costs[-1] if val_costs else train_costs[-1]
     }
 
+def _deep_merge_dict(a: dict, b: dict) -> dict:
+    """Recursively merge dict b into dict a (returns a).
+    - Scalars/lists in b overwrite a
+    - Dicts are merged recursively
+    """
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(a.get(k), dict):
+            _deep_merge_dict(a[k], v)
+        else:
+            a[k] = v
+    return a
+
 def load_config(config_path):
-    """Load configuration from YAML file"""
+    """Load configuration by deep-merging configs/default.yaml with the provided config_path.
+    The provided config overrides default values.
+    """
     import yaml
-    
+    default_path = os.path.join('configs', 'default.yaml')
+
+    if not os.path.exists(default_path):
+        raise FileNotFoundError(f"Default config not found at {default_path}")
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found: {config_path}")
-    
+
+    with open(default_path, 'r') as f:
+        base_cfg = yaml.safe_load(f) or {}
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    return config
+        override_cfg = yaml.safe_load(f) or {}
+
+    # Deep merge and return
+    return _deep_merge_dict(base_cfg, override_cfg)
 
 # Unified naming for artifacts (CSV and model files)
 def model_key(name: str) -> str:
