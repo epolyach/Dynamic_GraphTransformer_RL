@@ -489,7 +489,7 @@ The system is now fully CPU-optimized with:
 - **🚨 Rigorous Scientific Validation**: Comprehensive CVRP constraint validation with detailed error reporting
 - **🧹 Modular Refactor**: Training orchestrator + modular models/pipeline/utilities for clarity and testability
 - **⏭️ Skip-Retrain Logic**: Automatically skip models with existing checkpoint + history CSV; use --force-retrain to override
-- **🎯 Targeted Cleanup**: Per-model erase via `erase_run.py --model-key <key>`
+- **🎯 Targeted Cleanup**: Per-model erase via training-style flags (e.g., `--only_gt_rl`, `--only_gat_rl`)
 - **✅ Fixed REINFORCE Implementation**: Correct advantage calculation and policy gradients
 - **🧭 Pure Greedy Attention Baseline**: GT-Greedy now performs attention-based deterministic routing without RL training
 - **🛣️ Proper Route Generation**: Sequential decision-making matching CVRP requirements  
