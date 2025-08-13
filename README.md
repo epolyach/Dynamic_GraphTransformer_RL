@@ -30,14 +30,20 @@ The project uses a three-stage pipeline for comprehensive CVRP analysis:
 
 #### 1. Training and Validation
 ```bash
-# Train all models and save results
+# Train all models and save results (skips models with existing artifacts)
 python run_train_validation.py --config configs/small.yaml
 python run_train_validation.py --config configs/medium.yaml
 python run_train_validation.py --config configs/production.yaml
 
-# With custom parameters (overrides config)
-python run_train_validation.py --config configs/small.yaml --customers 20 --epochs 25
+# Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
+python run_train_validation.py --config configs/small.yaml --include-legacy
+
+# Force retraining even if checkpoints/CSVs already exist
+python run_train_validation.py --config configs/small.yaml --force-retrain
 ```
+
+Notes:
+- The orchestrator now skips retraining a model if both its checkpoint and history CSV already exist. Use --force-retrain to override.
 
 #### 2. Generate Comparative Plots
 ```bash
@@ -60,49 +66,61 @@ python make_test_instance.py --config configs/small.yaml --seed 42 --visualize
 
 #### 4. Results Cleanup (Optional)
 ```bash
-# Clean results folder for a specific scale while preserving directory structure
+# Clean results for a specific config's working_dir_path (preserves directory structure)
 python erase_run.py --config configs/small.yaml
-python erase_run.py --scale medium --dry-run
 
-# Clean all scales (with confirmation)
-python erase_run.py --all
+# Dry run (preview what would be removed)
+python erase_run.py --config configs/medium.yaml --dry-run
 
 # Force cleanup without confirmation
-python erase_run.py --scale production --force
+python erase_run.py --config configs/production.yaml --force
+
+# Clean only a single model's artifacts (checkpoint/CSV/plots)
+python erase_run.py --config configs/small.yaml --only_gt_rl
+
+# Clean by explicit path instead of config
+python erase_run.py --path results/small --force
 ```
 
 ## 📋 Project Structure
 
 ```
 .
-├── run_train_validation.py        # Main training and validation pipeline
-├── make_comparative_plot.py        # Generate performance comparison plots
-├── make_test_instance.py           # Create test instances and route visualizations
-├── erase_run.py                    # Results cleanup utility (preserves directory structure)
-├── src/                            # Source code modules
-│   ├── models/                     # Essential models (cleaned up)
-│   ├── models_backup/              # Experimental/unused models (moved here)
-│   ├── training/                   # Training utilities (cleaned up)
-│   ├── training_backup/            # Legacy training modules (moved here)
-│   └── utils/                      # Helper functions and RL utilities
-├── src_batch/                      # Legacy compatibility layer (see below)
-├── configs/                        # Configuration system
-│   ├── small.yaml                 # Quick testing config
-│   ├── medium.yaml                # Research experiments config
-│   ├── production.yaml            # Publication-ready config
-│   └── default_config.yaml        # Default CPU configuration
-├── results/                        # Organized experimental results by scale
-│   ├── small/                      # Quick testing results (≤20 customers)
-│   ├── medium/                     # Research experiment results (21-50 customers)
-│   └── production/                 # Publication-ready results (>50 customers)
-├── plots/                          # Generated visualization outputs
-│   ├── comparative_study_results.png # Training curves and model comparison
-│   ├── test_route_*.png           # Individual test route visualizations
-│   └── test_route_*.json          # Route data for each model
-├── logs/                           # All logging output
-│   ├── tensorboard/               # TensorBoard logs (moved from runs/)
-│   └── training/                  # CSV training logs (moved from instances/)
-└── venv/                          # Python virtual environment
+├── run_train_validation.py           # Thin orchestrator for training/validation
+├── make_comparative_plot.py          # Generate performance comparison plots
+├── make_test_instance.py             # Create test instances and route visualizations
+├── erase_run.py                      # Results cleanup utility (preserves directory structure)
+├── src/
+│   ├── pipelines/
+│   │   └── train.py                  # Training loop orchestration and data generation
+│   ├── models/
+│   │   ├── pointer.py                # Pointer Network (RL)
+│   │   ├── gt.py                     # Graph Transformer (RL)
+│   │   ├── greedy_gt.py              # Graph Transformer (Greedy baseline)
+│   │   ├── dgt.py                    # Dynamic Graph Transformer (RL)
+│   │   └── gat.py                    # Graph Attention Transformer (RL)
+│   ├── utils/
+│   │   ├── costs.py                  # Route cost utilities
+│   │   ├── validation.py             # Route validation and trip decomposition
+│   │   ├── artifacts.py              # Save/load helpers for artifacts
+│   │   └── config.py                 # Config loader and validation
+│   └── (tests/ optional)
+├── src_batch/                        # Legacy compatibility layer (see below)
+├── configs/
+│   ├── small.yaml                    # Quick testing config
+│   ├── medium.yaml                   # Research experiments config
+│   ├── production.yaml               # Publication-ready config
+│   └── default_config.yaml           # Default CPU configuration
+├── results/
+│   ├── small/
+│   ├── medium/
+│   └── production/
+├── plots/
+│   ├── comparative_study_results.png
+│   ├── test_route_*.png
+│   └── test_route_*.json
+├── logs/
+└── venv/
 ```
 
 ## 🔗 Legacy Compatibility (`src_batch/`)
@@ -144,8 +162,8 @@ This project has undergone a comprehensive cleanup to improve maintainability:
 
 ### **Current Active Structure:**
 - **Three-stage pipeline**: Training (`run_train_validation.py`) → Plotting (`make_comparative_plot.py`) → Testing (`make_test_instance.py`)
-- **All models are defined inline** in `run_train_validation.py` for better maintainability
-- **All training logic is inline** in the main script with optimized CPU performance
+- **Modular codebase**: Models in `src/models/`, training pipeline in `src/pipelines/train.py`, utilities in `src/utils/`
+- **Thin CLI orchestrator**: `run_train_validation.py` delegates to modular components
 - **Separated visualization logic** in dedicated plotting and test instance scripts
 - **Legacy GAT+RL comparison** works through `src_batch/` → `../GAT_RL/` (external dependency)
 - **Clean package directories** with only essential functionality
@@ -447,17 +465,14 @@ For **CVRP specifically**, raw tensor batching is superior because:
 
 ## 🔧 Configuration Options
 
-### Command Line Arguments:
+### Command Line Arguments (training orchestrator):
 ```bash
 --config <path>         # Configuration file (small/medium/production)
---customers 15          # Number of customers (default: 15)
---epochs 10             # Training epochs (default: 10) 
---instances 800         # Training instances (default: 800)
---batch 8               # Batch size (default: 8)
---max_distance 100      # Coordinate range (default: 100)
---max_demand 10         # Demand range (default: 10)
---capacity 3            # Vehicle capacity (default: 3)
+--include-legacy        # Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
+--force-retrain         # Retrain even if artifacts already exist
 ```
+
+To change problem size, epochs, instances, batch size, etc., edit the corresponding YAML in `configs/` (the loader deep-merges with `configs/default_config.yaml`).
 
 ### CPU-Optimized Configuration:
 The system is now fully CPU-optimized with:
@@ -472,7 +487,9 @@ The system is now fully CPU-optimized with:
 - **🧪 Test Instance Analysis**: Reproducible test instances with detailed model comparison
 - **📂 Organized Directory Structure**: Clean scale-based organization (small/medium/production)
 - **🚨 Rigorous Scientific Validation**: Comprehensive CVRP constraint validation with detailed error reporting
-- **🧹 Reorganized Project Structure**: Clean separation of current vs legacy code, removed unused directories
+- **🧹 Modular Refactor**: Training orchestrator + modular models/pipeline/utilities for clarity and testability
+- **⏭️ Skip-Retrain Logic**: Automatically skip models with existing checkpoint + history CSV; use --force-retrain to override
+- **🎯 Targeted Cleanup**: Per-model erase via `erase_run.py --model-key <key>`
 - **✅ Fixed REINFORCE Implementation**: Correct advantage calculation and policy gradients
 - **🧭 Pure Greedy Attention Baseline**: GT-Greedy now performs attention-based deterministic routing without RL training
 - **🛣️ Proper Route Generation**: Sequential decision-making matching CVRP requirements  
@@ -505,23 +522,20 @@ The `erase_run.py` script provides a safe and efficient way to clean up experime
 
 ### Usage Examples
 ```bash
-# Clean specific scale based on config file
+# Clean based on config's working_dir_path
 python erase_run.py --config configs/small.yaml
 
-# Clean specific scale directly
-python erase_run.py --scale medium
-
-# Preview what would be removed (dry-run mode)
-python erase_run.py --scale production --dry-run
-
-# Clean all scales with confirmation
-python erase_run.py --all
+# Preview (dry-run)
+python erase_run.py --config configs/medium.yaml --dry-run
 
 # Force cleanup without confirmation prompts
-python erase_run.py --all --force
+python erase_run.py --config configs/production.yaml --force
+
+# Remove only a single model's artifacts
+python erase_run.py --config configs/small.yaml --only_gat_rl
 
 # Preserve empty subdirectories
-python erase_run.py --scale small --no-clean-empty
+python erase_run.py --config configs/small.yaml --no-clean-empty
 ```
 
 ### What Gets Cleaned

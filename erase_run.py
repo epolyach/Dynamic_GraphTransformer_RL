@@ -203,12 +203,21 @@ Examples:
     python erase_run.py --scale medium --dry-run  
     python erase_run.py --all --force
     python erase_run.py --scale small --no-clean-empty
+    python erase_run.py --config configs/small.yaml --only_gt_rl
         """
     )
     
     # Main options
     parser.add_argument('--config', type=str, help='Path to configuration file (determines scale)')
     parser.add_argument('--path', type=str, help='Directly specify working directory path to clean (overrides --config)')
+
+    # Per-model selection (align with training-style flags)
+    parser.add_argument('--only_pointer_rl', action='store_true', help='Remove only Pointer+RL artifacts (pointer_rl)')
+    parser.add_argument('--only_gt_rl', action='store_true', help='Remove only Graph Transformer + RL artifacts (gt_rl)')
+    parser.add_argument('--only_dgt_rl', action='store_true', help='Remove only Dynamic Graph Transformer + RL artifacts (dgt_rl)')
+    parser.add_argument('--only_gat_rl', action='store_true', help='Remove only Graph Attention Transformer + RL artifacts (gat_rl)')
+    parser.add_argument('--only_gt_greedy', action='store_true', help='Remove only Graph Transformer Greedy artifacts (gt_greedy)')
+    parser.add_argument('--only_gat_rl_legacy', action='store_true', help='Remove only Legacy GAT+RL artifacts (gat_rl_legacy)')
     
     # Control options
     parser.add_argument('--dry-run', action='store_true', help='Show what would be removed without actually removing')
@@ -237,26 +246,89 @@ Examples:
     else:
         print("💥 Mode: ACTIVE CLEANUP")
     print("")
-    
+
+    # Determine selected model keys based on --only_* flags
+    selected_keys = []
+    if args.only_pointer_rl: selected_keys.append('pointer_rl')
+    if args.only_gt_rl: selected_keys.append('gt_rl')
+    if args.only_dgt_rl: selected_keys.append('dgt_rl')
+    if args.only_gat_rl: selected_keys.append('gat_rl')
+    if args.only_gt_greedy: selected_keys.append('gt_greedy')
+    if args.only_gat_rl_legacy: selected_keys.append('gat_rl_legacy')
+
+    # If model-specific cleanup is requested, show precise file list per target
+    if selected_keys:
+        total_files = 0
+        for target in targets_to_clean:
+            print(f"Planned deletions under: {target}")
+            csv_dir = os.path.join(target, 'csv')
+            pytorch_dir = os.path.join(target, 'pytorch')
+            plots_dir = os.path.join(target, 'plots')
+            for key in selected_keys:
+                files = [
+                    os.path.join(csv_dir, f"history_{key}.csv"),
+                    os.path.join(pytorch_dir, f"model_{key}.pt"),
+                    os.path.join(plots_dir, f"test_route_{key}.png"),
+                    os.path.join(plots_dir, f"test_route_{key}.json"),
+                ]
+                existing = [p for p in files if os.path.exists(p)]
+                if existing:
+                    print(f"  - {key}:")
+                    for p in existing:
+                        print(f"     • {p}")
+                    total_files += len(existing)
+                else:
+                    print(f"  - {key}: (no matching files)")
+        print(f"Total files to remove (existing): {total_files}")
+
     # Confirmation (unless forced or dry run)
     if not args.force and not args.dry_run:
-        response = input("⚠️  This will permanently delete files. Continue? [y/N]: ")
+        if selected_keys:
+            response = input(f"⚠️  This will permanently delete files for models: {', '.join(selected_keys)}. Continue? [y/N]: ")
+        else:
+            response = input("⚠️  This will permanently delete files. Continue? [y/N]: ")
         if response.lower() not in ['y', 'yes']:
             print("❌ Cancelled by user")
             return
     
-    # Clean each scale
+    # Clean each target
     success_count = 0
     for target in targets_to_clean:
         print(f"\n🎯 Cleaning: {target}")
         print("-" * 30)
         
         try:
-            success = erase_results_folder_path(
-                target, 
-                dry_run=args.dry_run,
-                clean_empty_dirs=not args.no_clean_empty
-            )
+            if selected_keys:
+                csv_dir = os.path.join(target, 'csv')
+                pytorch_dir = os.path.join(target, 'pytorch')
+                plots_dir = os.path.join(target, 'plots')
+                total_removed = 0
+                for key in selected_keys:
+                    patterns = [
+                        os.path.join(csv_dir, f"history_{key}.csv"),
+                        os.path.join(pytorch_dir, f"model_{key}.pt"),
+                        os.path.join(plots_dir, f"test_route_{key}.png"),
+                        os.path.join(plots_dir, f"test_route_{key}.json"),
+                    ]
+                    removed = 0
+                    for p in patterns:
+                        if os.path.exists(p):
+                            if args.dry_run:
+                                print(f"   [DRY RUN] Would remove: {p}")
+                            else:
+                                os.remove(p)
+                                print(f"   🗑️  Removed: {p}")
+                                removed += 1
+                    print(f"   📄 Files removed for model '{key}': {removed}")
+                    total_removed += removed
+                # Do not alter analysis blobs here; regenerate via training if needed
+                success = True
+            else:
+                success = erase_results_folder_path(
+                    target, 
+                    dry_run=args.dry_run,
+                    clean_empty_dirs=not args.no_clean_empty
+                )
             if success:
                 success_count += 1
                 print(f"   ✅ {target}: Complete")
