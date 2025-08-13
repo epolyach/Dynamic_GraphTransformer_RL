@@ -66,10 +66,9 @@ def train_one_model(model: nn.Module, model_name: str, config: Dict[str, Any], l
             instance = generate_cvrp_instance(n_customers, capacity, coord_range, demand_range, seed=epoch * 1000 + i)
             instances.append(instance)
 
-        # Forward (sample)
-        with torch.no_grad():
-            routes, logp, ent = model(instances, max_steps=n_customers * config['inference']['max_steps_multiplier'],
-                                      temperature=config['inference']['default_temperature'], greedy=False, config=config)
+        # Forward (sample) with gradients enabled for policy (logp, ent)
+        routes, logp, ent = model(instances, max_steps=n_customers * config['inference']['max_steps_multiplier'],
+                                  temperature=config['inference']['default_temperature'], greedy=False, config=config)
         # Compute average cost per customer over batch
         batch_costs = []
         for b in range(len(instances)):
@@ -80,12 +79,25 @@ def train_one_model(model: nn.Module, model_name: str, config: Dict[str, Any], l
         train_cost = float(np.mean(batch_costs)) if batch_costs else 0.0
         train_costs.append(train_cost)
 
-        # (Optional) RL update placeholder — retained for parity; actual RL mechanics were inline
+        # Real REINFORCE-style update (aligned with legacy snapshot)
         if optimizer is not None and model_name != 'GT-Greedy':
             optimizer.zero_grad()
-            # Dummy loss: use train_cost as proxy (to retain structure). Real REINFORCE stays inline for now.
-            loss = torch.tensor(train_cost, requires_grad=True)
+            # Build per-sample cost tensor (per-customer already)
+            costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
+            baseline = costs_tensor.mean().detach()
+            advantages = baseline - costs_tensor  # lower cost -> positive advantage
+            # Entropy regularization schedule (cosine decay)
+            start_c = float(config.get('training_advanced', {}).get('entropy_coef', 0.0))
+            end_c = float(config.get('training_advanced', {}).get('entropy_min', 0.0))
+            if num_epochs > 1:
+                cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (num_epochs - 1)))
+            else:
+                cosine_factor = 0.0
+            entropy_coef = end_c + (start_c - end_c) * cosine_factor
+            # logp and ent come per-sample from model forward
+            loss = (-(advantages) * logp).mean() - entropy_coef * ent.mean()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), float(config.get('training_advanced', {}).get('gradient_clip_norm', 1.0)))
             optimizer.step()
             train_losses.append(float(loss.detach().cpu().numpy()))
         else:

@@ -207,7 +207,12 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     Now reads per-epoch series (loss, train_cost, val_cost) directly from CSV history files.
     """
     logger = setup_logging()
-    
+
+    def _safe_legend(ax):
+        handles, labels = ax.get_legend_handles_labels()
+        if len(handles) > 0:
+            ax.legend()
+
     # Set up the plotting style
     plt.style.use('seaborn-v0_8')
     fig = plt.figure(figsize=(20, 12))
@@ -225,7 +230,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
 
     # CSV dir
     csv_dir = os.path.join(config.get('working_dir_path', 'results'), 'csv') if isinstance(config, dict) else os.path.join('results', scale, 'csv')
-
+    
     # Map display names to CSV keys
     name_to_key = {
         'Pointer+RL': 'pointer_rl',
@@ -269,8 +274,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
 
     csv_series = {name: load_csv_series_for_model(name) for name in model_names}
 
-    # 1. Training Loss Comparison (standardized REINFORCE loss for all models)
-    plt.subplot(2, 4, 1)
+# 1. Training Loss Comparison (standardized REINFORCE loss for all models)
+    ax1 = plt.subplot(2, 4, 1)
     for model_name in model_names:
         series = csv_series.get(model_name)
         if series and series['train_loss']:
@@ -278,36 +283,36 @@ def create_comparison_plots(results, training_times, model_params, config, scale
             ys = [v for v in series['train_loss'] if pd.notna(v)]
             xs = [series['epochs'][i] for i, v in enumerate(series['train_loss']) if pd.notna(v)]
             if ys:
-                plt.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-    plt.title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
-    plt.xlabel('Epoch')
-    plt.ylabel('REINFORCE Loss')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+                ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
+    ax1.set_title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('REINFORCE Loss')
+    _safe_legend(ax1)
+    ax1.grid(True, alpha=0.3)
     
-    # 2. Training Cost Comparison (NORMALIZED)
-    plt.subplot(2, 4, 2)
+# 2. Training Cost Comparison (NORMALIZED)
+    ax2 = plt.subplot(2, 4, 2)
     for model_name in model_names:
         series = csv_series.get(model_name)
         if series and series['train_cost']:
             xs = [series['epochs'][i] for i, v in enumerate(series['train_cost']) if pd.notna(v)]
             ys = [v for v in series['train_cost'] if pd.notna(v)]
             if ys:
-                plt.plot(xs, ys, label=model_name, linewidth=2, marker='s', markersize=3, color=color_map[model_name])
-    plt.title('Training Cost Evolution (Per Customer)', fontsize=12, fontweight='bold')
-    plt.xlabel('Epoch')
-    plt.ylabel('Average Cost per Customer')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+                ax2.plot(xs, ys, label=model_name, linewidth=2, marker='s', markersize=3, color=color_map[model_name])
+    ax2.set_title('Training Cost Evolution (Per Customer)', fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Average Cost per Customer')
+    _safe_legend(ax2)
+    ax2.grid(True, alpha=0.3)
     
-    # 3. Validation Cost vs Naive (NORMALIZED)
-    plt.subplot(2, 4, 3)
+# 3. Validation Cost vs Naive (NORMALIZED)
+    ax3 = plt.subplot(2, 4, 3)
     # Plot naive baseline as background reference line
     num_epochs = config['training']['num_epochs']
     # Annotate if depot penalty is active
     penalty_active = isinstance(config, dict) and config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
     baseline_label = 'Naive Baseline (with penalty)' if penalty_active else 'Naive Baseline'
-    plt.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
+    ax3.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
 
     # Plot model validation series; handle GT-Greedy specially (no training/validation curve)
     for model_name in model_names:
@@ -317,21 +322,21 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         if series and series['val_costs']:
             xs = series['val_epochs']
             ys = series['val_costs']
-            plt.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
+            ax3.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
 
     # GT-Greedy: draw a dashed horizontal line at its final validation cost and a single point
     if 'GT-Greedy' in results:
         gg_val = results['GT-Greedy'].get('final_val_cost', None)
         if gg_val is not None:
-            plt.plot([0, num_epochs], [gg_val, gg_val], linestyle='--', linewidth=2, color=color_map['GT-Greedy'], label='GT-Greedy')
+            ax3.plot([0, num_epochs], [gg_val, gg_val], linestyle='--', linewidth=2, color=color_map['GT-Greedy'], label='GT-Greedy')
             # Single marker at final epoch
-            plt.plot([num_epochs], [gg_val], marker='o', markersize=6, color=color_map['GT-Greedy'])
+            ax3.plot([num_epochs], [gg_val], marker='o', markersize=6, color=color_map['GT-Greedy'])
 
-    plt.title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
-    plt.xlabel('Epoch')
-    plt.ylabel('Average Cost per Customer')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    ax3.set_title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Average Cost per Customer')
+    _safe_legend(ax3)
+    ax3.grid(True, alpha=0.3)
     
     # 4. Final Performance Bar Chart with Naive Baseline (NORMALIZED)
     plt.subplot(2, 4, 4)
@@ -396,26 +401,28 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     improvements = []
     for model_name in eff_models:
         series = csv_series.get(model_name)
-        if series and series['train_cost'] and len(series['train_cost']) >= 2:
-            # use first and last non-NaN costs
-            train_cost_values = [v for v in series['train_cost'] if pd.notna(v)]
-            if len(train_cost_values) >= 2 and train_cost_values[0] > 0:
-                imp = ((train_cost_values[0] - train_cost_values[-1]) / train_cost_values[0]) * 100
+        imp = 0.0
+        if series:
+            # Prefer training cost series; fallback to validation series if training is unavailable (e.g., legacy)
+            train_vals = [v for v in (series.get('train_cost') or []) if pd.notna(v)]
+            if len(train_vals) >= 2 and train_vals[0] > 0:
+                imp = ((train_vals[0] - train_vals[-1]) / train_vals[0]) * 100
             else:
-                imp = 0
-        else:
-            imp = 0
+                val_vals = [v for v in (series.get('val_costs') or []) if pd.notna(v)]
+                if len(val_vals) >= 2 and val_vals[0] > 0:
+                    imp = ((val_vals[0] - val_vals[-1]) / val_vals[0]) * 100
         improvements.append(imp)
     
     bars = plt.bar(range(len(eff_models)), improvements, color=[color_map[n] for n in eff_models], alpha=0.8)
     plt.title('Learning Efficiency', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Cost Improvement (%)')
-    plt.xticks(range(len(eff_models)), [name.replace(' ', '\\n') for name in eff_models], rotation=45, ha='right')
+    plt.xticks(range(len(eff_models)), [name.replace(' ', '\n') for name in eff_models], rotation=45, ha='right')
     
     if improvements:
+        ymax = max(max(improvements), 1)
         for bar, imp in zip(bars, improvements):
-            plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(max(improvements), 1)*0.02,
+            plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + ymax*0.02,
                     f'{imp:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=9)
     
     plt.grid(True, alpha=0.3, axis='y')

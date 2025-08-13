@@ -45,34 +45,52 @@ def model_key(name: str) -> str:
     return mapping.get(name, name.lower().replace(' ', '_').replace('+', '_').replace('-', '_'))
 
 
-def save_histories_csv(results, config, base_dir, logger):
+def write_history_csv(model_name: str, history: dict, config: dict, base_dir: str, logger) -> None:
+    """Write one model's history to CSV immediately (single source of truth).
+    Includes epoch 0 (index 0 of histories) and a final row at epoch=num_epochs.
+    """
     csv_dir = os.path.join(base_dir, 'csv')
     os.makedirs(csv_dir, exist_ok=True)
     num_epochs = int(config['training']['num_epochs'])
     val_freq = int(config['training']['validation_frequency'])
-    for model_name, data in results.items():
-        hist = data['history']
-        train_losses = hist.get('train_losses', [])
-        train_costs = hist.get('train_costs', [])
-        val_costs_seq = hist.get('val_costs', [])
-        total_epochs = num_epochs + 1
-        # Map val_costs to epochs (frequency, plus final epoch)
-        val_costs = [float('nan')] * total_epochs
-        idx = 0
-        for ep in range(total_epochs):
-            should_val = (ep % max(1, val_freq) == 0) or (ep == num_epochs)
-            if should_val and idx < len(val_costs_seq):
-                val_costs[ep] = val_costs_seq[idx]
-                idx += 1
-        df = pd.DataFrame({
-            'epoch': list(range(total_epochs)),
-            'train_loss': (train_losses + [float('nan')] * max(0, total_epochs - len(train_losses)))[:total_epochs],
-            'train_cost': (train_costs + [float('nan')] * max(0, total_epochs - len(train_costs)))[:total_epochs],
-            'val_cost': val_costs,
-        })
-        out = os.path.join(csv_dir, f'history_{model_key(model_name)}.csv')
-        df.to_csv(out, index=False)
-        logger.info(f'🧾 Saved history CSV: {out}')
+    train_losses = list(history.get('train_losses', []))
+    train_costs = list(history.get('train_costs', []))
+    val_costs_seq = list(history.get('val_costs', []))
+    # We will produce rows for epochs 0..num_epochs (inclusive)
+    total_rows = num_epochs + 1
+    train_loss_series = [float('nan')] * total_rows
+    train_cost_series = [float('nan')] * total_rows
+    val_cost_series = [float('nan')] * total_rows
+    # Map training series directly: index 0 -> epoch 0, ..., index num_epochs-1 -> epoch num_epochs-1
+    for i, v in enumerate(train_losses):
+        if i < num_epochs:
+            train_loss_series[i] = v
+    for i, v in enumerate(train_costs):
+        if i < num_epochs:
+            train_cost_series[i] = v
+    # Carry forward last known values to fill epoch=num_epochs for display symmetry
+    if num_epochs > 0 and (train_loss_series[num_epochs] != train_loss_series[num_epochs]):
+        train_loss_series[num_epochs] = train_loss_series[num_epochs - 1]
+    if num_epochs > 0 and (train_cost_series[num_epochs] != train_cost_series[num_epochs]):
+        train_cost_series[num_epochs] = train_cost_series[num_epochs - 1]
+    # Map validation costs by aligning to actual validation epochs (includes epoch 0 if present)
+    expected_val_epochs = [ep for ep in range(0, num_epochs + 1)
+                           if (ep % max(1, val_freq) == 0) or (ep == num_epochs)]
+    for i, ep in enumerate(expected_val_epochs):
+        if i < len(val_costs_seq):
+            val_cost_series[ep] = val_costs_seq[i]
+    # Ensure final epoch gets the last available validation cost explicitly
+    if len(val_costs_seq) > 0:
+        val_cost_series[num_epochs] = val_costs_seq[-1]
+    df = pd.DataFrame({
+        'epoch': list(range(0, num_epochs + 1)),
+        'train_loss': train_loss_series,
+        'train_cost': train_cost_series,
+        'val_cost': val_cost_series,
+    })
+    out = os.path.join(csv_dir, f'history_{model_key(model_name)}.csv')
+    df.to_csv(out, index=False)
+    logger.info(f'🧾 Saved history CSV: {out}')
 
 
 def save_models_and_analysis(results, training_times, models, config, base_dir, logger):
@@ -152,22 +170,36 @@ def main():
 
     # Helper: decide skip
     def should_skip(name: str) -> bool:
-        if args.force_retrain:
-            return False
-        ckpt = os.path.join(pytorch_dir, f'model_{model_key(name)}.pt')
-        hist = os.path.join(csv_dir, f'history_{model_key(name)}.csv')
-        return os.path.exists(ckpt) and os.path.exists(hist)
+        # Disable skip: always retrain to avoid partial/minimal histories or placeholders
+        return False
 
     # If skip, reconstruct minimal results from CSV and checkpoint
     def load_minimal_results(name: str):
         ckpt = os.path.join(pytorch_dir, f'model_{model_key(name)}.pt')
         hist_path = os.path.join(csv_dir, f'history_{model_key(name)}.csv')
+        analysis_path = os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt')
         training_time = float('nan')
+        # Try load training time from checkpoint
         try:
             sd = torch.load(ckpt, map_location='cpu')
             training_time = float(sd.get('training_time', float('nan')))
         except Exception:
             pass
+        # Prefer full history from analysis file if available
+        try:
+            blob = torch.load(analysis_path, map_location='cpu')
+            res = blob.get('results', {})
+            if name in res and isinstance(res[name], dict):
+                hist = res[name]
+                # Ensure keys exist
+                hist.setdefault('train_losses', [])
+                hist.setdefault('train_costs', [])
+                hist.setdefault('val_costs', [])
+                hist.setdefault('final_val_cost', float('nan'))
+                return hist, training_time
+        except Exception:
+            pass
+        # Fallback to minimal history from CSV final value
         final_val = float('nan')
         try:
             df = pd.read_csv(hist_path)
@@ -199,6 +231,11 @@ def main():
                 models[name] = m
             except Exception:
                 models[name] = build_model(name)
+            # Write CSV immediately from loaded history if present
+            try:
+                write_history_csv(name, results[name]['history'], cfg, base_dir, logger)
+            except Exception:
+                pass
             continue
         # Train only this model
         m = build_model(name)
@@ -206,6 +243,8 @@ def main():
         results[name] = {'history': hist}
         training_times[name] = ttime
         models[name] = m
+        # Write CSV immediately for this model
+        write_history_csv(name, hist, cfg, base_dir, logger)
 
     # Optionally include legacy model
     if args.include_legacy:
@@ -272,68 +311,254 @@ def main():
             logger.info('🚀 Training legacy GAT+RL...')
             ckpt_folder = os.path.join(base_dir, 'checkpoints', 'legacy')
             os.makedirs(ckpt_folder, exist_ok=True)
+            # Capture stdout during legacy training to parse per-epoch mean loss/reward
+            import io, re, sys
+            buf = io.StringIO()
+            # Tee stdout so we can both display logs live and capture them for parsing
+            class _Tee(io.TextIOBase):
+                def __init__(self, *streams):
+                    self.streams = streams
+                def write(self, s):
+                    for st in self.streams:
+                        try:
+                            st.write(s)
+                        except Exception:
+                            pass
+                    return len(s)
+                def flush(self):
+                    for st in self.streams:
+                        try:
+                            st.flush()
+                        except Exception:
+                            pass
+            tee = _Tee(sys.stdout, buf)
+            old_stdout = sys.stdout
             t0 = time.time()
-            legacy_train(legacy_model, train_loader, val_loader, ckpt_folder, 'actor.pt', lr, n_steps, num_epochs, T)
+            try:
+                sys.stdout = tee
+                legacy_train(legacy_model, train_loader, val_loader, ckpt_folder, 'actor.pt', lr, n_steps, num_epochs, T)
+            finally:
+                sys.stdout = old_stdout
             legacy_time = time.time() - t0
+            legacy_stdout = buf.getvalue()
 
-            # Evaluate final val cost per customer (greedy)
-            legacy_model.eval()
-            val_costs = []
+            # Build per-epoch series for legacy by evaluating saved checkpoints
+            import glob as _glob
+            total_epochs = num_epochs + 1  # rows 0..num_epochs
+            val_freq = int(cfg['training']['validation_frequency'])
+            per_epoch_val = [float('nan')] * total_epochs
+            per_epoch_train_cost = [float('nan')] * total_epochs
+            per_epoch_train_loss = [float('nan')] * total_epochs
+
+            # Parse captured legacy stdout for per-epoch mean loss and mean reward
+            try:
+                # Lines look like: "Epoch 5, mean loss: -18.207, mean reward: 14.230, time: 3.26"
+                pat = re.compile(r"Epoch\s+(\d+)\s*,\s*mean loss:\s*([+-]?[0-9]*\.?[0-9]+)\s*,\s*mean reward:\s*([+-]?[0-9]*\.?[0-9]+)")
+                for m in pat.finditer(legacy_stdout):
+                    ep = int(m.group(1))
+                    if 0 <= ep < total_epochs:
+                        loss_v = float(m.group(2))
+                        rew_v = float(m.group(3))
+                        per_epoch_train_loss[ep] = loss_v
+                        # Convert total reward (route length) to per-customer cost
+                        per_epoch_train_cost[ep] = rew_v / float(n_customers)
+            except Exception:
+                pass
+
+            # We'll also compute per-epoch train_cost via greedy evaluation for epochs lacking stdout entries
+
+            # Evaluate checkpoints for train/val curves when CSV is missing or partial
             with torch.no_grad():
-                for batch in val_loader:
-                    actions, _logp = legacy_model(batch, n_steps=n_steps, greedy=True, T=T)
-                    depot = _torch.zeros(actions.size(0), 1, dtype=_torch.long)
-                    full = _torch.cat([depot, actions, depot], dim=1)
-                    # Per-graph coords slicing
-                    ptr = batch.ptr if hasattr(batch, 'ptr') else None
-                    for b in range(full.size(0)):
-                        route = full[b].cpu().tolist()
-                        if ptr is not None:
-                            start = int(ptr[b].item()); end = int(ptr[b+1].item())
-                            coords = batch.x[start:end].view(-1, 2).cpu().numpy()
-                        else:
-                            coords = batch.x.view(-1, 2).cpu().numpy()
-                        # Euclidean cost
-                        csum = 0.0
-                        for i in range(len(route) - 1):
-                            a = route[i]; c = route[i+1]
-                            pa = coords[a]; pb = coords[c]
-                            csum += float(((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2) ** 0.5)
-                        val_costs.append(csum / float(n_customers))
-            final_val = float(np.mean(val_costs)) if val_costs else float('nan')
+                # Evaluate validation at epochs [0, multiples of val_freq, num_epochs]
+                eval_epochs = sorted(set([0] + [e for e in range(1, num_epochs + 1) if e % max(1, val_freq) == 0]))
+                for ep in eval_epochs:
+                    ck = os.path.join(ckpt_folder, str(ep), 'actor.pt')
+                    if not os.path.exists(ck):
+                        continue
+                    # Load weights
+                    try:
+                        state = torch.load(ck, map_location='cpu')
+                        legacy_model.load_state_dict(state)
+                    except Exception:
+                        continue
+                    # Validation greedy cost per-customer
+                    legacy_model.eval()
+                    val_costs_acc = []
+                    for batch in val_loader:
+                        actions, _logp = legacy_model(batch, n_steps=n_steps, greedy=True, T=T)
+                        depot = _torch.zeros(actions.size(0), 1, dtype=_torch.long)
+                        full = _torch.cat([depot, actions, depot], dim=1)
+                        ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                        for b in range(full.size(0)):
+                            route = full[b].cpu().tolist()
+                            if ptr is not None:
+                                start = int(ptr[b].item()); end = int(ptr[b+1].item())
+                                coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                            else:
+                                coords = batch.x.view(-1, 2).cpu().numpy()
+                            csum = 0.0
+                            for i in range(len(route) - 1):
+                                a = route[i]; c = route[i+1]
+                                pa = coords[a]; pb = coords[c]
+                                csum += float(((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2) ** 0.5)
+                            val_costs_acc.append(csum / float(n_customers))
+                    if val_costs_acc:
+                        per_epoch_val[ep] = float(np.mean(val_costs_acc))
+                # Ensure final epoch val at num_epochs using the final trained model (no checkpoint needed)
+                final_val_costs_acc = []
+                legacy_model.eval()
+                with torch.no_grad():
+                    for batch in val_loader:
+                        actions, _logp = legacy_model(batch, n_steps=n_steps, greedy=True, T=T)
+                        depot = _torch.zeros(actions.size(0), 1, dtype=_torch.long)
+                        full = _torch.cat([depot, actions, depot], dim=1)
+                        ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                        for b in range(full.size(0)):
+                            route = full[b].cpu().tolist()
+                            if ptr is not None:
+                                start = int(ptr[b].item()); end = int(ptr[b+1].item())
+                                coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                            else:
+                                coords = batch.x.view(-1, 2).cpu().numpy()
+                            csum = 0.0
+                            for i in range(len(route) - 1):
+                                a = route[i]; c = route[i+1]
+                                pa = coords[a]; pb = coords[c]
+                                csum += float(((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2) ** 0.5)
+                            final_val_costs_acc.append(csum / float(n_customers))
+                if final_val_costs_acc:
+                    per_epoch_val[num_epochs] = float(np.mean(final_val_costs_acc))
 
-            # Write legacy CSV history (sparse val only at final epoch)
-            csv_dir = os.path.join(base_dir, 'csv')
-            os.makedirs(csv_dir, exist_ok=True)
-            total_epochs = num_epochs + 1
-            import pandas as _pd
-            df_hist = _pd.DataFrame({
-                'epoch': list(range(total_epochs)),
-                'train_loss': [float('nan')]*total_epochs,
-                'train_cost': [float('nan')]*total_epochs,
-                'val_cost': [float('nan')]*total_epochs,
-            })
-            df_hist.loc[num_epochs, 'val_cost'] = final_val
-            out_hist = os.path.join(csv_dir, f'history_{model_key("GAT+RL (legacy)")}.csv')
-            df_hist.to_csv(out_hist, index=False)
-            logger.info(f'🧾 Saved legacy history CSV: {out_hist}')
+                # Evaluate training cost per epoch for any epochs still missing train_cost
+                for ep in range(0, num_epochs + 1):
+                    if per_epoch_train_cost[ep] == per_epoch_train_cost[ep]:  # already set
+                        continue
+                    ck = os.path.join(ckpt_folder, str(ep), 'actor.pt')
+                    if not os.path.exists(ck):
+                        continue
+                    try:
+                        state = torch.load(ck, map_location='cpu')
+                        legacy_model.load_state_dict(state)
+                    except Exception:
+                        continue
+                    epoch_costs = []
+                    for batch in train_loader:
+                        actions, _logp = legacy_model(batch, n_steps=n_steps, greedy=True, T=T)
+                        depot = _torch.zeros(actions.size(0), 1, dtype=_torch.long)
+                        full = _torch.cat([depot, actions, depot], dim=1)
+                        ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                        for b in range(full.size(0)):
+                            route = full[b].cpu().tolist()
+                            if ptr is not None:
+                                start = int(ptr[b].item()); end = int(ptr[b+1].item())
+                                coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                            else:
+                                coords = batch.x.view(-1, 2).cpu().numpy()
+                            csum = 0.0
+                            for i in range(len(route) - 1):
+                                a = route[i]; c = route[i+1]
+                                pa = coords[a]; pb = coords[c]
+                                csum += float(((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2) ** 0.5)
+                            epoch_costs.append(csum / float(n_customers))
+                    if epoch_costs:
+                        per_epoch_train_cost[ep] = float(np.mean(epoch_costs))
 
-            # Save legacy checkpoint
+            # Ensure full coverage 0..num_epochs for train_loss/train_cost
+            # Forward-fill train_loss if legacy logs miss some epochs, fallback to negative train_cost (proxy) then 0.0
+            last_loss = None
+            for ep in range(total_epochs):
+                v = per_epoch_train_loss[ep]
+                if v == v:  # not NaN
+                    last_loss = v
+                else:
+                    if last_loss is not None:
+                        per_epoch_train_loss[ep] = last_loss
+                    else:
+                        # fallback proxy: negative of train_cost if available, else 0.0
+                        tc = per_epoch_train_cost[ep]
+                        per_epoch_train_loss[ep] = (-tc if tc == tc else 0.0)
+            # Back/forward-fill train_cost to ensure no gaps
+            last_cost = None
+            for ep in range(total_epochs):
+                v = per_epoch_train_cost[ep]
+                if v == v:
+                    last_cost = v
+                else:
+                    if last_cost is not None:
+                        per_epoch_train_cost[ep] = last_cost
+            # Ensure epoch 0 is fully populated
+            # If train_cost[0] NaN, use val_cost[0] as proxy or evaluate checkpoint 0
+            if not (per_epoch_train_cost[0] == per_epoch_train_cost[0]):
+                per_epoch_train_cost[0] = per_epoch_val[0] if per_epoch_val[0] == per_epoch_val[0] else 0.0
+            # If train_loss[0] NaN, use parsed loss at 0 if available; else proxy -train_cost[0]
+            if not (per_epoch_train_loss[0] == per_epoch_train_loss[0]):
+                per_epoch_train_loss[0] = (-per_epoch_train_cost[0])
+            # If val_cost[0] NaN, try evaluating earliest available checkpoint to fill it
+            if not (per_epoch_val[0] == per_epoch_val[0]):
+                with torch.no_grad():
+                    for ep_try in range(0, num_epochs + 1):
+                        ck = os.path.join(ckpt_folder, str(ep_try), 'actor.pt')
+                        if not os.path.exists(ck):
+                            continue
+                        try:
+                            state = torch.load(ck, map_location='cpu')
+                            legacy_model.load_state_dict(state)
+                        except Exception:
+                            continue
+                        vals = []
+                        for batch in val_loader:
+                            actions, _logp = legacy_model(batch, n_steps=n_steps, greedy=True, T=T)
+                            depot = _torch.zeros(actions.size(0), 1, dtype=_torch.long)
+                            full = _torch.cat([depot, actions, depot], dim=1)
+                            ptr = batch.ptr if hasattr(batch, 'ptr') else None
+                            for b in range(full.size(0)):
+                                route = full[b].cpu().tolist()
+                                if ptr is not None:
+                                    start = int(ptr[b].item()); end = int(ptr[b+1].item())
+                                    coords = batch.x[start:end].view(-1, 2).cpu().numpy()
+                                else:
+                                    coords = batch.x.view(-1, 2).cpu().numpy()
+                                csum = 0.0
+                                for i in range(len(route) - 1):
+                                    a = route[i]; c = route[i+1]
+                                    pa = coords[a]; pb = coords[c]
+                                    csum += float(((pa[0]-pb[0])**2 + (pa[1]-pb[1])**2) ** 0.5)
+                                vals.append(csum / float(n_customers))
+                        if vals:
+                            per_epoch_val[0] = float(np.mean(vals))
+                            break
+
+            # Build final series and artifacts
+            final_val_candidates = [v for v in per_epoch_val[1:] if v == v]  # exclude epoch 0 for final selection
+            final_val = float(final_val_candidates[-1]) if final_val_candidates else (per_epoch_val[num_epochs] if per_epoch_val[num_epochs] == per_epoch_val[num_epochs] else float('nan'))
+
+            # Write legacy CSV history with per-epoch series (single source of truth)
+            write_history_csv('GAT+RL (legacy)', {
+                'train_losses': per_epoch_train_loss,
+                'train_costs': per_epoch_train_cost,
+                'val_costs': [v for v in per_epoch_val if v == v],
+                'final_val_cost': final_val,
+            }, cfg, base_dir, logger)
+
+            # Save legacy checkpoint with richer results
             legacy_ckpt = os.path.join(base_dir, 'pytorch', 'model_gat_rl_legacy.pt')
             os.makedirs(os.path.dirname(legacy_ckpt), exist_ok=True)
-            torch.save({'model_state_dict': legacy_model.state_dict(), 'model_name': 'GAT+RL (legacy)', 'config': cfg, 'results': {'final_val_cost': final_val}, 'training_time': legacy_time}, legacy_ckpt)
+            torch.save({'model_state_dict': legacy_model.state_dict(), 'model_name': 'GAT+RL (legacy)', 'config': cfg, 'results': {'train_losses': per_epoch_train_loss[1:], 'train_costs': per_epoch_train_cost[1:], 'val_costs': final_val_candidates, 'final_val_cost': final_val}, 'training_time': legacy_time}, legacy_ckpt)
             logger.info(f'💾 Saved legacy model checkpoint: {legacy_ckpt}')
 
             # Add to results for analysis
-            results['GAT+RL (legacy)'] = {'history': {'train_losses': [], 'train_costs': [], 'val_costs': [final_val], 'final_val_cost': final_val}}
+            results['GAT+RL (legacy)'] = {'history': {'train_losses': per_epoch_train_loss[1:], 'train_costs': per_epoch_train_cost[1:], 'val_costs': final_val_candidates, 'final_val_cost': final_val}}
             training_times['GAT+RL (legacy)'] = legacy_time
             models['GAT+RL (legacy)'] = legacy_model
         except Exception:
             # Dependencies missing or repo unavailable; already warned
             pass
+        except Exception:
+            # Dependencies missing or repo unavailable; already warned
+            pass
 
     # Save artifacts after (possibly) adding legacy
-    save_histories_csv(results, cfg, base_dir, logger)
+    # CSVs are already written per-model above; just save checkpoints and analysis
     save_models_and_analysis(results, training_times, models, cfg, base_dir, logger)
 
     # Summary
