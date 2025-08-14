@@ -423,28 +423,32 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     baseline_label = 'Naive Baseline (with penalty)' if penalty_active else 'Naive Baseline'
     ax3.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
     
+    # Add GT-Greedy baseline (greedy attention without RL training)
+    if 'GT-Greedy' in results:
+        result = results['GT-Greedy']
+        if 'history' in result:
+            gg_val = result['history'].get('final_val_cost', None)
+        else:
+            gg_val = result.get('final_val_cost', None)
+        
+        if gg_val is not None:
+            ax3.axhline(y=gg_val, color='orange', linewidth=3, linestyle='-.', 
+                       label='GT-Greedy Baseline (no RL)', alpha=0.8)
+    
     # Add exact baseline if available
     if exact_normalized is not None:
         ax3.axhline(y=exact_normalized, color='red', linewidth=3, linestyle=':', 
                    label=f'Exact Baseline ({exact_baseline_stats["num_solved"]} samples)', alpha=0.8)
 
-    # Plot model validation series; handle GT-Greedy specially (no training/validation curve)
+    # Plot RL model validation series only
     for model_name in model_names:
         if model_name == 'GT-Greedy':
-            continue  # handle after loop
+            continue  # GT-Greedy now shown as baseline
         series = csv_series.get(model_name)
         if series and series['val_costs']:
             xs = series['val_epochs']
             ys = series['val_costs']
             ax3.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
-
-    # GT-Greedy: draw a dashed horizontal line at its final validation cost and a single point
-    if 'GT-Greedy' in results:
-        gg_val = results['GT-Greedy'].get('final_val_cost', None)
-        if gg_val is not None:
-            ax3.plot([0, num_epochs], [gg_val, gg_val], linestyle='--', linewidth=2, color=color_map['GT-Greedy'], label='GT-Greedy')
-            # Single marker at final epoch
-            ax3.plot([num_epochs], [gg_val], marker='o', markersize=6, color=color_map['GT-Greedy'])
 
     ax3.set_title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
     ax3.set_xlabel('Epoch')
