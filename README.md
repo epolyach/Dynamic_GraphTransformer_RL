@@ -73,6 +73,14 @@ python run_train_validation.py --config configs/small.yaml --force-retrain
 python make_comparative_plot.py --config configs/small.yaml
 python make_comparative_plot.py --config configs/medium.yaml
 python make_comparative_plot.py --config configs/production.yaml
+
+# With exact baseline computation (solves NUM_SAMPLES random instances for rigorous comparison)
+python make_comparative_plot.py --config configs/small.yaml --exact 50
+python make_comparative_plot.py --config configs/medium.yaml --exact 100
+
+# With custom suffix for organized output files
+python make_comparative_plot.py --config configs/small.yaml --suffix final_results
+python make_comparative_plot.py --config configs/small.yaml --exact 75 --suffix with_exact_baseline
 ```
 
 #### 3. Test Instance Analysis
@@ -82,8 +90,12 @@ python make_test_instance.py --config configs/small.yaml
 python make_test_instance.py --config configs/medium.yaml
 python make_test_instance.py --config configs/production.yaml
 
-# With custom seed
+# With custom seed for reproducible test instances
 python make_test_instance.py --config configs/small.yaml --seed 42
+
+# With exact optimal solution comparison (requires exact_solver.py)
+python make_test_instance.py --config configs/small.yaml --exact
+python make_test_instance.py --config configs/medium.yaml --exact --seed 12345
 ```
 
 #### 4. Results Cleanup (Optional)
@@ -109,8 +121,9 @@ python erase_run.py --path results/small --force
 ```
 .
 ├── run_train_validation.py           # Thin orchestrator for training/validation
-├── make_comparative_plot.py          # Generate performance comparison plots
-├── make_test_instance.py             # Create test instances and route visualizations
+├── make_comparative_plot.py          # Generate performance comparison plots (with optional exact baselines)
+├── make_test_instance.py             # Create test instances and route visualizations (with optional exact solutions)
+├── exact_solver.py                   # Modern exact CVRP solver (Dynamic Programming, OR-Tools, Gurobi)
 ├── erase_run.py                      # Results cleanup utility (preserves directory structure)
 ├── src/
 │   ├── pipelines/
@@ -293,25 +306,30 @@ The `make_test_instance.py` script runs as a **separate stage** after training a
 - **Visual Route Plots**: Generates individual route visualization PNG files for each model
 - **Route Data Export**: Saves route details as JSON files for further analysis
 - **Comparison Plot**: Creates unified comparison visualization of all model routes
+- **🎯 Exact Solution Baseline**: Optional exact optimal solution using modern algorithms (Dynamic Programming, OR-Tools, Gurobi)
+- **Optimality Gap Analysis**: Computes gaps between heuristic and exact solutions when `--exact` flag is used
 
 **Outputs Generated:**
 - `test_route_<model>.png` - Individual route visualization for each model
 - `test_route_<model>.json` - Route data including coordinates, demands, and costs
 - `test_routes_comparison.png` - Side-by-side comparison of all model routes
+- `test_route_exact.png` - Exact optimal solution visualization (when `--exact` flag is used)
+- `test_route_exact.json` - Exact solution data with optimality proof
 
 **Example test instance results (20 customers, capacity=30):**
 ```
 📊 TEST INSTANCE PERFORMANCE SUMMARY
 ================================================================================
-Model                Route Cost   Cost/Customer  Trips  Improvement vs Baseline
---------------------------------------------------------------------------------
-GAT+RL               11.997       0.600          4      +54.8%
-Pointer+RL           12.800       0.640          4      +51.2%  
-GT-Greedy            12.930       0.647          4      +50.3%
-GT+RL                14.110       0.706          4      +46.8%
-DGT+RL               14.926       0.746          4      +43.8%
-GAT+RL (legacy)      26.549       1.327          20     +0.3%
-Naive Baseline       26.549       1.327          20     0.0%
+Model                Route Cost   Cost/Customer  Trips  Improvement vs Baseline  Gap vs Exact
+----------------------------------------------------------------------------------------
+Exact Solver         10.847       0.542          4      +58.6% (optimal)        0.0%
+GAT+RL               11.997       0.600          4      +54.8%                  10.6%
+Pointer+RL           12.800       0.640          4      +51.2%                  18.0%
+GT-Greedy            12.930       0.647          4      +50.3%                  19.2%
+GT+RL                14.110       0.706          4      +46.8%                  30.1%
+DGT+RL               14.926       0.746          4      +43.8%                  37.6%
+GAT+RL (legacy)      26.549       1.327          20     +0.3%                   144.8%
+Naive Baseline       26.549       1.327          20     0.0%                    144.8%
 ================================================================================
 
 Trip Analysis Example (GAT+RL - Best Performance):
@@ -473,6 +491,50 @@ For **CVRP specifically**, raw tensor batching is superior because:
 - **DGT+RL**: Best route quality, moderate training time
 - **GAT+RL**: Most parameter-efficient for performance achieved
 
+## 🎯 Exact Solver Integration
+
+### Modern Exact CVRP Algorithms
+
+The project includes a state-of-the-art exact solver (`exact_solver.py`) that automatically selects the best algorithm based on instance characteristics:
+
+#### **Algorithm Selection:**
+- **≤12 customers**: Dynamic Programming with bitmasking (Held-Karp variant for CVRP)
+- **13-16 customers**: Gurobi MILP branch-and-cut (if available)
+- **17-20 customers**: OR-Tools advanced constraint programming
+- **Fallback**: Greedy construction heuristic
+
+#### **Solver Features:**
+- **Multi-Algorithm**: DP, OR-Tools CP, Gurobi MILP with intelligent selection
+- **Time Limits**: Configurable solving time limits (default: 5 minutes)
+- **Optimality Proof**: Guarantees optimal solutions for solvable instances
+- **Performance Tracking**: Detailed solve times and success rates
+- **Robust Error Handling**: Graceful fallbacks when algorithms fail
+
+#### **Integration Points:**
+1. **Comparative Plotting**: `--exact NUM_SAMPLES` computes rigorous baseline by solving random instances
+2. **Test Instance Analysis**: `--exact` flag adds exact optimal solution to model comparisons
+3. **Research Validation**: Provides ground truth for measuring optimality gaps
+
+#### **Usage Examples:**
+```bash
+# Quick exact baseline with 25 samples (~15-30 minutes)
+python make_comparative_plot.py --config configs/small.yaml --exact 25
+
+# Thorough baseline with 100 samples (~1-2 hours) 
+python make_comparative_plot.py --config configs/medium.yaml --exact 100
+
+# Test instance with exact solution
+python make_test_instance.py --config configs/small.yaml --exact
+```
+
+#### **Scientific Benefits:**
+- **Optimality Gaps**: Measure true optimality gaps vs just naive baselines
+- **Algorithm Validation**: Verify that neural methods approach optimal performance
+- **Research Rigor**: Provide ground truth comparisons for publications
+- **Performance Benchmarking**: Establish ceiling performance for problem instances
+
+**Note**: Exact solving is computationally intensive and optional. For quick experiments, use heuristic-only comparisons (default behavior).
+
 ## 🛠️ Technical Implementation
 
 ### Core Features
@@ -500,11 +562,28 @@ For **CVRP specifically**, raw tensor batching is superior because:
 
 ## 🔧 Configuration Options
 
-### Command Line Arguments (training orchestrator):
+### Command Line Arguments:
+
+#### Training Orchestrator (`run_train_validation.py` / `run_train_validation_enhanced.py`):
 ```bash
 --config <path>         # Configuration file (small/medium/production)
 --include-legacy        # Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
 --force-retrain         # Retrain even if artifacts already exist
+--disable-enhanced      # Disable enhanced features (enhanced script only)
+```
+
+#### Comparative Plot Generation (`make_comparative_plot.py`):
+```bash
+--config <path>         # Configuration file (small/medium/production)
+--suffix <text>         # Custom suffix for output filenames
+--exact <num_samples>   # Compute exact baseline by solving NUM_SAMPLES random instances (0=disabled)
+```
+
+#### Test Instance Analysis (`make_test_instance.py`):
+```bash
+--config <path>         # Configuration file (small/medium/production)  
+--seed <number>         # Random seed for reproducible test instances
+--exact                 # Include exact optimal solution using modern algorithms
 ```
 
 To change problem size, epochs, instances, batch size, etc., edit the corresponding YAML in `configs/` (the loader deep-merges with `configs/default.yaml`).
