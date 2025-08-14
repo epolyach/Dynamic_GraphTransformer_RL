@@ -52,6 +52,7 @@ def model_key(name: str) -> str:
         'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
         'DGT+RL': 'dgt_rl',
+        'Simplified-DGT+RL': 'simplified_dgt_rl',
         'GAT+RL': 'gat_rl',
         'GT-Greedy': 'gt_greedy',
         'GAT+RL (legacy)': 'gat_rl_legacy',
@@ -351,12 +352,40 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=Non
         base_dir = config.get('working_dir_path') if isinstance(config, dict) else None
         if base_dir is None:
             raise ValueError('working_dir_path must be set in config')
-        comparative_results = torch.load(os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt'), map_location='cpu', weights_only=False)
+        
+        # Try multiple possible result files
+        result_files = [
+            'analysis/enhanced_comparative_study.pt',
+            'analysis/comparative_study_complete.pt'
+        ]
+        
+        comparative_results = None
+        for result_file in result_files:
+            result_path = os.path.join(base_dir, result_file)
+            if os.path.exists(result_path):
+                try:
+                    comparative_results = torch.load(result_path, map_location='cpu', weights_only=False)
+                    logger.info(f"Loaded validation costs from {result_file}")
+                    break
+                except Exception as file_e:
+                    logger.warning(f"Failed to load {result_file}: {file_e}")
+        
+        if comparative_results is None:
+            raise ValueError("No comparative study results file found")
+        
         results = comparative_results.get('results', {})
         for model_name in model_results.keys():
             if model_name in results:
-                # final_val_cost is already per-customer in comparative results; do not divide again
-                validation_costs[model_name] = results[model_name]['final_val_cost']
+                model_data = results[model_name]
+                # Handle both old and new data structures
+                if 'final_val_cost' in model_data:
+                    # Old structure: direct access
+                    validation_costs[model_name] = model_data['final_val_cost']
+                elif 'history' in model_data and 'final_val_cost' in model_data['history']:
+                    # New structure: nested under history
+                    validation_costs[model_name] = model_data['history']['final_val_cost']
+                
+        logger.info(f"Loaded validation costs for {len(validation_costs)} models: {list(validation_costs.keys())}")
     except Exception as e:
         logger.warning(f"Could not load validation costs: {e}")
     
@@ -373,6 +402,7 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=Non
         'GT-Greedy': 'blue',
         'GT+RL': 'purple',
         'DGT+RL': 'orange',
+        'Simplified-DGT+RL': 'darkblue',
         'GAT+RL': 'brown',
         'GAT+RL (legacy)': 'pink',
         'Naive Baseline': 'red'
@@ -443,6 +473,7 @@ def load_trained_models(models_dir, config, logger):
         'GT-Greedy': os.path.join(models_dir, 'model_gt_greedy.pt'), 
         'GT+RL': os.path.join(models_dir, 'model_gt_rl.pt'),
         'DGT+RL': os.path.join(models_dir, 'model_dgt_rl.pt'),
+        'Simplified-DGT+RL': os.path.join(models_dir, 'model_simplified_dgt_rl.pt'),
         'GAT+RL': os.path.join(models_dir, 'model_gat_rl.pt')
     }
     
@@ -485,6 +516,21 @@ def load_trained_models(models_dir, config, logger):
                     model = GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config)
                 elif name == 'DGT+RL':
                     model = DynamicGraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config)
+                elif name == 'Simplified-DGT+RL':
+                    # Load simplified DGT model with its own configuration
+                    from models.simple_dgt_rl import create_simplified_dgt_rl_model
+                    model_config = {
+                        'embed_dim': config['model'].get('embed_dim', 64),
+                        'n_heads': config['model'].get('n_heads', 2),
+                        'n_layers': config['model'].get('n_layers', 3),
+                        'ff_hidden_dim': config['model'].get('ff_hidden_dim', 128),
+                        'dropout': config['model'].get('dropout', 0.15),
+                        'pointer_hidden_dim': config['model'].get('pointer_hidden_dim', 64),
+                        'vehicle_capacity': config.get('capacity', 15),
+                        'use_dynamic_embedding': config['model'].get('use_dynamic_embedding', True),
+                        'residual_gate_init': config['model'].get('dynamic_graph_transformer', {}).get('residual_gate_init', 0.1)
+                    }
+                    model = create_simplified_dgt_rl_model(model_config)
                 elif name == 'GAT+RL':
                     model = GraphAttentionTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, edge_embedding_divisor, config)
                 

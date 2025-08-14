@@ -2,12 +2,22 @@
 working_dir_path: "results/medium"
 
 problem:
-  num_customers: 30
+  num_customers: 20
 
 training:
-  num_instances: 10000
-  batch_size: 32
-  num_epochs: 50
+  num_instances: 32768     
+  batch_size: 4096         
+  num_epochs: 64          
+  
+# Override for better algorithm differentiation
+training_advanced:
+  # Longer patience for better convergence
+  early_stopping_patience: 15
+  
+  # More aggressive temperature adaptation for clear differences  
+  temp_start: 3.5          # Even higher start
+  temp_min: 0.05           # Even lower min
+  temp_adaptation_rate: 0.25   # Faster adaptation
 
 # Keep penalty explicit if studying its effect; default to small value
 cost:

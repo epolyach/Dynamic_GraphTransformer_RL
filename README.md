@@ -44,10 +44,7 @@ pip install -r requirements.txt
 
 #### **🔥 Enhanced Training (Recommended)**
 ```bash
-# Enhanced training with all modern features automatically enabled
-python run_train_validation.py --config configs/small.yaml
-
-# Use enhanced script with explicit control
+# Enhanced training with modern features (respects use_advanced_features config)
 python run_train_validation_enhanced.py --config configs/small.yaml
 
 # Disable enhanced features for comparison
@@ -56,7 +53,7 @@ python run_train_validation_enhanced.py --config configs/small.yaml --disable-en
 
 #### **📊 Original Training**
 ```bash
-# Original training pipeline (for comparison)
+# Original training pipeline (basic features only)
 python run_train_validation.py --config configs/small.yaml
 
 # Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
@@ -66,7 +63,9 @@ python run_train_validation.py --config configs/small.yaml --include-legacy
 python run_train_validation.py --config configs/small.yaml --force-retrain
 ```
 
-**Enhanced Training Features**: Automatically enabled when `use_advanced_features: true` is in config.
+**Key Differences**: 
+- `run_train_validation_enhanced.py` automatically uses enhanced features when `use_advanced_features: true` in config
+- `run_train_validation.py` uses only basic training features regardless of config settings
 
 #### 2. Generate Comparative Plots
 ```bash
@@ -83,8 +82,8 @@ python make_test_instance.py --config configs/small.yaml
 python make_test_instance.py --config configs/medium.yaml
 python make_test_instance.py --config configs/production.yaml
 
-# With custom parameters
-python make_test_instance.py --config configs/small.yaml --seed 42 --visualize
+# With custom seed
+python make_test_instance.py --config configs/small.yaml --seed 42
 ```
 
 #### 4. Results Cleanup (Optional)
@@ -133,7 +132,7 @@ python erase_run.py --path results/small --force
 │   ├── small.yaml                    # Quick testing config
 │   ├── medium.yaml                   # Research experiments config
 │   ├── production.yaml               # Publication-ready config
-│   └── default_config.yaml           # Default CPU configuration
+│   └── default.yaml                  # Default CPU configuration
 ├── results/
 │   ├── small/
 │   ├── medium/
@@ -206,31 +205,31 @@ The project uses a three-tier configuration system for different experimental sc
 
 ### 🔬 Small Scale (`configs/small.yaml`) - Quick Testing & Development
 **Purpose**: Fast iteration, debugging, and initial development
-- **Nodes**: 10-20 customers
-- **Epochs**: 10
-- **Dataset**: 800 training instances
-- **Batch Size**: 8
-- **Model**: Lightweight (64 hidden dim, 2-4 layers)
+- **Nodes**: 10 customers
+- **Epochs**: 32
+- **Dataset**: 2,048 training instances
+- **Batch Size**: 256
+- **Model**: Default (128 hidden dim, 4 layers)
 - **Results**: `results/small/`
 - **Training Time**: ~5-10 min
 
 ### 🧪 Medium Scale (`configs/medium.yaml`) - Research Experiments
 **Purpose**: Balanced experiments for research validation
-- **Nodes**: 20-50 customers
-- **Epochs**: 50
-- **Dataset**: 10,000 training instances
-- **Batch Size**: 16
-- **Model**: Standard research scale (128 hidden dim, 4-8 layers)
+- **Nodes**: 20 customers
+- **Epochs**: 64
+- **Dataset**: 32,768 training instances
+- **Batch Size**: 4,096
+- **Model**: Standard research scale (128 hidden dim, 4 layers)
 - **Results**: `results/medium/`
 - **Training Time**: ~2-4 hours
 
 ### 🏭 Production Scale (`configs/production.yaml`) - Publication-Ready Results
 **Purpose**: Comprehensive evaluation for publications
-- **Nodes**: 20-200 customers
-- **Epochs**: 200
-- **Dataset**: 100,000 training instances
-- **Batch Size**: 32
-- **Model**: Full-scale (256 hidden dim, 8+ layers)
+- **Nodes**: 100 customers
+- **Epochs**: 150
+- **Dataset**: 20,000 training instances
+- **Batch Size**: 64
+- **Model**: Full-scale (128 hidden dim, 4 layers)
 - **Results**: `results/production/`
 - **Training Time**: ~1-2 days
 
@@ -508,7 +507,7 @@ For **CVRP specifically**, raw tensor batching is superior because:
 --force-retrain         # Retrain even if artifacts already exist
 ```
 
-To change problem size, epochs, instances, batch size, etc., edit the corresponding YAML in `configs/` (the loader deep-merges with `configs/default_config.yaml`).
+To change problem size, epochs, instances, batch size, etc., edit the corresponding YAML in `configs/` (the loader deep-merges with `configs/default.yaml`).
 
 ### CPU-Optimized Configuration:
 The system is now fully CPU-optimized with:
@@ -627,8 +626,10 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # Use small configuration for limited resources
 python run_train_validation.py --config configs/small.yaml
 
-# Or reduce batch size and problem size in config
-python run_train_validation.py --config configs/small.yaml --batch 4 --customers 10
+# To reduce resource usage, edit the config file to reduce:
+# - batch_size (in training section)
+# - num_customers (in problem section)
+# - num_instances (in training section)
 ```
 
 ### Performance Issues

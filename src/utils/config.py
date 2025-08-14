@@ -40,6 +40,8 @@ def load_config(config_path: str) -> Dict[str, Any]:
     - A flattened view is added for convenience: num_customers, capacity, coord_range,
       demand_range, num_instances, batch_size, num_epochs, learning_rate, hidden_dim,
       num_heads, num_layers, entropy/temperature schedule, grad_clip, etc.
+    
+    Note: Utility config files (like strict_override.yaml) are located in src/utils/
     """
     default_path = os.path.join('configs', 'default.yaml')
     if not os.path.exists(default_path):

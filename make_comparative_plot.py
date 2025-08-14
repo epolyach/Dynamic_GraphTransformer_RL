@@ -43,7 +43,16 @@ def load_results(base_dir):
     logger = setup_logging()
     
     # Paths to saved data
-    analysis_path = os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt')
+    # Try both potential analysis filenames
+    analysis_path_enhanced = os.path.join(base_dir, 'analysis', 'enhanced_comparative_study.pt')
+    analysis_path_complete = os.path.join(base_dir, 'analysis', 'comparative_study_complete.pt')
+    
+    if os.path.exists(analysis_path_enhanced):
+        analysis_path = analysis_path_enhanced
+    elif os.path.exists(analysis_path_complete):
+        analysis_path = analysis_path_complete
+    else:
+        raise FileNotFoundError(f"Analysis results not found at {analysis_path_enhanced} or {analysis_path_complete}")
     pytorch_dir = os.path.join(base_dir, 'pytorch')
     
     if not os.path.exists(analysis_path):
@@ -57,7 +66,15 @@ def load_results(base_dir):
     data = torch.load(analysis_path, map_location='cpu', weights_only=False)
     
     results = dict(data.get('results', {}))
-    training_times = dict(data.get('training_times', {}))
+    
+    # Handle both old and new formats for training times
+    if 'training_times' in data:
+        # Old format: direct training_times dict
+        training_times = dict(data.get('training_times', {}))
+    else:
+        # New enhanced format: training_time stored per model
+        training_times = {name: result.get('training_time', 0.0) for name, result in results.items()}
+    
     config = data.get('config', {})
     
     # Scan pytorch_dir for any saved model files to augment results
@@ -236,6 +253,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
         'DGT+RL': 'dgt_rl',
+        'Simplified-DGT+RL': 'simplified_dgt_rl',
         'GAT+RL': 'gat_rl',
         'GT-Greedy': 'gt_greedy',
         'GAT+RL (legacy)': 'gat_rl_legacy',
@@ -340,8 +358,18 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 4. Final Performance Bar Chart with Naive Baseline (NORMALIZED)
     plt.subplot(2, 4, 4)
-    # Final costs are already per customer in saved results
-    final_costs_normalized = [results[name]['final_val_cost'] for name in model_names]
+    # Final costs are already per customer in saved results - handle both formats
+    final_costs_normalized = []
+    for name in model_names:
+        result = results[name]
+        if 'history' in result:
+            # New enhanced format
+            final_cost = result['history'].get('final_val_cost', 0.0)
+        else:
+            # Old format
+            final_cost = result.get('final_val_cost', 0.0)
+        final_costs_normalized.append(final_cost)
+    
     # Colors consistent with lines
     colors = [color_map[name] for name in model_names]
     
@@ -429,7 +457,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 8. Performance vs Complexity Scatter (NORMALIZED)
     plt.subplot(2, 4, 8)
-    final_costs_normalized = [results[name]['final_val_cost'] for name in model_names]
+    # Use the same final costs we computed above
+    # final_costs_normalized is already computed correctly above
     for i, model_name in enumerate(model_names):
         plt.scatter(param_counts[i], final_costs_normalized[i], 
                    s=100, color=color_map[model_name], alpha=0.8, label=model_name)
@@ -475,12 +504,23 @@ def create_performance_summary(results, training_times, model_params, config, na
     
     for model_name in model_names:
         result = results[model_name]
-        # final_val_cost is already per customer
-        final_val_cost_per_customer = result['final_val_cost']
+        
+        # Handle both old and new enhanced formats
+        if 'history' in result:
+            # New enhanced format: data is in 'history' subdictionary
+            history = result['history']
+            final_val_cost_per_customer = history.get('final_val_cost', 0.0)
+            train_costs = history.get('train_costs', [])
+            val_costs = history.get('val_costs', [])
+        else:
+            # Old format: data is directly in result
+            final_val_cost_per_customer = result.get('final_val_cost', 0.0)
+            train_costs = result.get('train_costs', [])
+            val_costs = result.get('val_costs', [])
+        
         improvement_vs_naive = ((naive_baseline_per_customer - final_val_cost_per_customer) / naive_baseline_per_customer) * 100
         
         # Calculate learning efficiency (percent change unaffected by normalization)
-        train_costs = result.get('train_costs', [])
         if len(train_costs) >= 2:
             initial_cost = train_costs[0]
             final_cost = train_costs[-1]
@@ -489,9 +529,9 @@ def create_performance_summary(results, training_times, model_params, config, na
             learning_efficiency = 0
         
         # Train and validation costs are already per customer in saved results
-        final_train_cost_per_customer = (result['train_costs'][-1]) if result.get('train_costs') else 0.0
-        best_val_cost_per_customer = (min(result.get('val_costs', [result['final_val_cost']])) )
-        val_cost_std_per_customer = (np.std(result.get('val_costs', [result['final_val_cost']])) )
+        final_train_cost_per_customer = train_costs[-1] if train_costs else 0.0
+        best_val_cost_per_customer = min(val_costs) if val_costs else final_val_cost_per_customer
+        val_cost_std_per_customer = np.std(val_costs) if val_costs else 0.0
         
         data.append({
             'Model': model_name,
