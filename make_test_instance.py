@@ -3,6 +3,7 @@
 Create and solve a single test instance using trained models.
 Exact copy of the test instance pipeline from run_comparative_study.py.
 Includes integrated visualization functions to be fully standalone.
+Now includes exact CVRP solver for optimal solutions.
 """
 
 import os
@@ -14,6 +15,9 @@ import logging
 import json
 import matplotlib.pyplot as plt
 from pathlib import Path
+
+# Import the exact solver
+from exact_solver import solve_cvrp_exact, CVRPSolution
 
 # Suppress matplotlib debug messages
 logging.getLogger('matplotlib').setLevel(logging.WARNING)
@@ -56,6 +60,7 @@ def model_key(name: str) -> str:
         'GAT+RL': 'gat_rl',
         'GT-Greedy': 'gt_greedy',
         'GAT+RL (legacy)': 'gat_rl_legacy',
+        'Exact Optimal': 'exact',
     }
     return mapping.get(name, name.lower().replace(' ', '_').replace('+', '_').replace('-', '_'))
 
@@ -405,7 +410,8 @@ def plot_test_instance_routes(test_analysis, config, logger, save_dir, scale=Non
         'Simplified-DGT+RL': 'darkblue',
         'GAT+RL': 'brown',
         'GAT+RL (legacy)': 'pink',
-        'Naive Baseline': 'red'
+        'Naive Baseline': 'red',
+        'Exact Optimal': 'gold'
     }
     
     # Create plots for each model
@@ -547,10 +553,11 @@ def load_trained_models(models_dir, config, logger):
     
     return models
 
-def create_and_solve_test_instance(models, config, logger, base_dir):
+def create_and_solve_test_instance(models, config, logger, base_dir, run_exact_solver=False):
     """Create a test CVRP instance and solve it with each trained model for detailed analysis
     
     This is an exact copy from run_comparative_study.py create_and_solve_test_instance function.
+    Now with optional exact solver integration.
     """
     logger.info("\n🧪 Creating and solving a new test instance...")
     
@@ -651,6 +658,49 @@ def create_and_solve_test_instance(models, config, logger, base_dir):
             
             logger.info(f"   Route Cost: {greedy_cost:.4f} ({greedy_cost/config['num_customers']:.4f}/customer)")
     
+    # Solve with exact algorithm for optimal solution (only if requested)
+    if run_exact_solver:
+        logger.info("\n🎯 Solving with exact algorithm for optimal solution...")
+        try:
+            exact_solution = solve_cvrp_exact(test_instance, time_limit=300.0, verbose=True)
+            exact_route = exact_solution.route
+            exact_cost = exact_solution.cost
+            exact_normalized = exact_cost / config['num_customers']
+            
+            test_results['Exact Optimal'] = {
+                'greedy_route': exact_route,
+                'sample_route': exact_route,
+                'greedy_cost': exact_cost,
+                'sample_cost': exact_cost,
+                'greedy_cost_per_customer': exact_normalized,
+                'sample_cost_per_customer': exact_normalized,
+                'greedy_log_prob': 0.0,
+                'sample_log_prob': 0.0,
+                'greedy_entropy': 0.0,
+                'sample_entropy': 0.0,
+                'solve_time': exact_solution.solve_time,
+                'algorithm_used': exact_solution.algorithm_used,
+                'is_optimal': exact_solution.is_optimal,
+                'num_vehicles': exact_solution.num_vehicles
+            }
+            
+            logger.info(f"   ✅ Exact Solution: cost={exact_cost:.4f} ({exact_normalized:.4f}/customer)")
+            logger.info(f"   🚛 Vehicles: {exact_solution.num_vehicles}")
+            logger.info(f"   ⏱️ Time: {exact_solution.solve_time:.2f}s using {exact_solution.algorithm_used}")
+            logger.info(f"   🎯 Optimal: {exact_solution.is_optimal}")
+            
+            # Calculate gaps from optimal for all other solutions
+            logger.info("\n📊 Optimality gaps:")
+            for model_name, result in test_results.items():
+                if model_name != 'Exact Optimal':
+                    gap = (result['greedy_cost'] - exact_cost) / exact_cost * 100
+                    result['optimality_gap'] = gap
+                    logger.info(f"   {model_name}: {gap:.2f}% gap from optimal")
+            
+        except Exception as e:
+            logger.warning(f"   ⚠️ Exact solver failed: {e}")
+            logger.info("   Continuing with heuristic solutions only...")
+    
     # Add naive baseline to results
     test_results['Naive Baseline'] = {
         'greedy_route': naive_route,
@@ -734,6 +784,7 @@ def main():
     parser = argparse.ArgumentParser(description='Generate test instance and solve with trained models')
     parser.add_argument('--config', type=str, default='configs/medium.yaml', help='Path to YAML configuration file')
     parser.add_argument('--seed', type=int, default=None, help='Random seed for instance generation (optional)')
+    parser.add_argument('--exact', action='store_true', help='Run exact solver and generate optimal solution')
     args = parser.parse_args()
     
     # Setup logging
@@ -771,9 +822,13 @@ def main():
         return
     
     # Create and solve test instance (exact copy from run_comparative_study.py)
-    test_results = create_and_solve_test_instance(models, config, logger, base_dir)
+    test_results = create_and_solve_test_instance(models, config, logger, base_dir, run_exact_solver=args.exact)
     
-    logger.info(f"\n💾 Generated plots and JSON files in {base_dir}/plots")
+    if args.exact:
+        logger.info(f"\n💾 Generated plots and JSON files (including exact solution) in {base_dir}/plots")
+    else:
+        logger.info(f"\n💾 Generated plots and JSON files in {base_dir}/plots")
+        logger.info(f"    Use --exact flag to include optimal solution comparison")
 
 if __name__ == '__main__':
     main()

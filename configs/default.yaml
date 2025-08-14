@@ -9,7 +9,7 @@ working_dir_path: "results/default"
 # =============================
 problem:
   num_customers: 20        # Default customers (excluding depot)
-  vehicle_capacity: 20     # Integer capacity
+  vehicle_capacity: 30     # Integer capacity
   demand_range: [1, 10]    # Integer demands [min, max]
   coord_range: 100         # Coordinates 0..coord_range, then normalized to [0,1]
 

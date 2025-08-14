@@ -2,7 +2,7 @@
 working_dir_path: "results/small"
 
 problem:
-  num_customers: 10
+  num_customers: 20
 
 training:
   num_instances: 2048     
