@@ -1,0 +1,25 @@
+cost:
+  depot_penalty_per_visit: 0.0
+model:
+  feedforward_multiplier: 1.6297295923100672
+  hidden_dim: 64
+  name: GAT+RL
+  num_heads: 2
+  num_layers: 3
+  transformer_dropout: 0.00576560626035394
+problem:
+  num_customers: 20
+training:
+  batch_size: 146
+  learning_rate: 0.004512128071240483
+  num_epochs: 64
+  num_instances: 2252
+training_advanced:
+  early_stopping_patience: 30
+  entropy_coef: 0.00986849497171162
+  gradient_clip_norm: 2.649851016840802
+  temp_adaptation_rate: 0.14561549781679073
+  temp_min: 0.347354403733235
+  temp_start: 1.7265160863320521
+  weight_decay: 2.9210748185657167e-05
+working_dir_path: results/small

@@ -120,3 +120,10 @@ docs/build/
 # Configuration overrides
 configs/local/
 configs/private/
+
+# Research artifacts
+research/logs/
+research/runs/
+research/**/tensorboard/
+# Optional: ignore large experimental results (keep curated results under results/)
+# research/results/**

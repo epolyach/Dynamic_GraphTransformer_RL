@@ -1,0 +1,56 @@
+Model: DGT+RL
+Temperature Regime: fine_grained
+Seed: 42
+Total Training Time: 158.82s
+Temperature Schedule: Fine-grained temperature control for precise exploration
+
+Training Progress:
+[DGT+RL] Epoch 000: train=0.6707, val=0.6385, lr=1.00e-03, temp=2.800, time=4.4s
+[DGT+RL] Epoch 001: train=0.6663, lr=9.99e-04, temp=2.800, time=3.0s
+[DGT+RL] Epoch 002: train=0.6709, lr=9.96e-04, temp=2.800, time=3.1s
+[DGT+RL] Epoch 003: train=0.6579, lr=9.90e-04, temp=2.800, time=3.2s
+[DGT+RL] Epoch 004: train=0.6583, val=0.6401, lr=9.83e-04, temp=2.800, time=4.2s
+[DGT+RL] Epoch 005: train=0.6647, lr=9.73e-04, temp=2.800, time=2.9s
+[DGT+RL] Epoch 006: train=0.6576, lr=9.62e-04, temp=2.800, time=2.7s
+[DGT+RL] Epoch 007: train=0.6570, lr=9.48e-04, temp=2.800, time=2.6s
+[DGT+RL] Epoch 008: train=0.6542, val=0.6349, lr=9.33e-04, temp=2.800, time=4.9s
+[DGT+RL] Epoch 009: train=0.6507, lr=9.16e-04, temp=2.800, time=2.7s
+[DGT+RL] Epoch 010: train=0.6519, lr=8.97e-04, temp=2.800, time=2.8s
+[DGT+RL] Epoch 011: train=0.6606, lr=8.76e-04, temp=2.800, time=3.2s
+[DGT+RL] Epoch 012: train=0.6629, val=0.6329, lr=8.54e-04, temp=2.800, time=4.9s
+[DGT+RL] Epoch 013: train=0.6594, lr=8.30e-04, temp=2.800, time=2.6s
+[DGT+RL] Epoch 014: train=0.6611, lr=8.05e-04, temp=2.800, time=2.7s
+[DGT+RL] Epoch 015: train=0.6553, lr=7.78e-04, temp=2.800, time=2.9s
+[DGT+RL] Epoch 016: train=0.6594, val=0.6366, lr=7.50e-04, temp=2.800, time=4.3s
+[DGT+RL] Epoch 017: train=0.6488, lr=7.21e-04, temp=2.296, time=3.3s
+[DGT+RL] Epoch 018: train=0.6511, lr=6.92e-04, temp=2.296, time=2.8s
+[DGT+RL] Epoch 019: train=0.6566, lr=6.61e-04, temp=2.296, time=2.7s
+[DGT+RL] Epoch 020: train=0.6522, val=0.6401, lr=6.30e-04, temp=2.296, time=4.1s
+[DGT+RL] Epoch 021: train=0.6443, lr=5.98e-04, temp=1.883, time=2.9s
+[DGT+RL] Epoch 022: train=0.6465, lr=5.66e-04, temp=1.883, time=3.0s
+[DGT+RL] Epoch 023: train=0.6494, lr=5.33e-04, temp=1.883, time=2.7s
+[DGT+RL] Epoch 024: train=0.6474, val=0.6351, lr=5.01e-04, temp=1.883, time=4.0s
+[DGT+RL] Epoch 025: train=0.6502, lr=4.68e-04, temp=2.222, time=2.9s
+[DGT+RL] Epoch 026: train=0.6537, lr=4.35e-04, temp=2.222, time=3.1s
+[DGT+RL] Epoch 027: train=0.6533, lr=4.03e-04, temp=2.222, time=3.2s
+[DGT+RL] Epoch 028: train=0.6505, val=0.6354, lr=3.71e-04, temp=2.222, time=3.8s
+[DGT+RL] Epoch 029: train=0.6536, lr=3.40e-04, temp=2.621, time=2.7s
+[DGT+RL] Epoch 030: train=0.6520, lr=3.09e-04, temp=2.621, time=2.8s
+[DGT+RL] Epoch 031: train=0.6521, lr=2.80e-04, temp=2.621, time=3.3s
+[DGT+RL] Epoch 032: train=0.6466, val=0.6414, lr=2.51e-04, temp=2.621, time=3.8s
+[DGT+RL] Epoch 033: train=0.6424, lr=2.23e-04, temp=2.150, time=2.7s
+[DGT+RL] Epoch 034: train=0.6459, lr=1.96e-04, temp=2.150, time=2.8s
+[DGT+RL] Epoch 035: train=0.6460, lr=1.71e-04, temp=2.150, time=2.9s
+[DGT+RL] Epoch 036: train=0.6464, val=0.6381, lr=1.47e-04, temp=2.150, time=4.8s
+[DGT+RL] Epoch 037: train=0.6454, lr=1.25e-04, temp=2.537, time=2.7s
+[DGT+RL] Epoch 038: train=0.6495, lr=1.04e-04, temp=2.537, time=2.6s
+[DGT+RL] Epoch 039: train=0.6445, lr=8.52e-05, temp=2.537, time=2.8s
+[DGT+RL] Epoch 040: train=0.6472, val=0.6368, lr=6.79e-05, temp=2.537, time=4.5s
+[DGT+RL] Epoch 041: train=0.6474, lr=5.25e-05, temp=2.800, time=2.8s
+[DGT+RL] Epoch 042: train=0.6521, lr=3.90e-05, temp=2.800, time=2.5s
+[DGT+RL] Epoch 043: train=0.6465, lr=2.75e-05, temp=2.800, time=2.8s
+[DGT+RL] Epoch 044: train=0.6427, val=0.6377, lr=1.80e-05, temp=2.800, time=4.0s
+[DGT+RL] Epoch 045: train=0.6447, lr=1.06e-05, temp=2.296, time=2.7s
+[DGT+RL] Epoch 046: train=0.6444, lr=5.27e-06, temp=2.296, time=3.0s
+[DGT+RL] Epoch 047: train=0.6463, lr=2.07e-06, temp=2.296, time=2.5s
+[DGT+RL] Epoch 048: train=0.6403, val=0.6392, lr=1.00e-06, temp=2.296, time=4.2s

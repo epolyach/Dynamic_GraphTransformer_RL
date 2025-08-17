@@ -1,0 +1,138 @@
+# Temperature Experiment Configurations
+# Different temperature regimes for reinforcement learning exploration-exploitation balance
+
+# Base configuration for all temperature experiments
+base:
+  working_dir_path: "results/temperature"
+  problem:
+    num_customers: 20
+    vehicle_capacity: 30
+    demand_range: [1, 10]
+    coord_range: 100
+  
+  training:
+    num_instances: 4096
+    batch_size: 512
+    num_epochs: 48
+    learning_rate: 0.001
+    train_val_split: 0.8
+    validation_frequency: 4
+  
+  experiment:
+    random_seed: 42
+    device: "cpu"
+    use_advanced_features: true
+
+# Temperature regime definitions
+regimes:
+  # Current default from small.yaml
+  current:
+    name: "Current Default"
+    temp_start: 3.5
+    temp_min: 0.05
+    temp_adaptation_rate: 0.25
+    use_adaptive_temperature: true
+    description: "Current aggressive exploration regime"
+  
+  # Conservative exploration - start lower, decay faster
+  conservative:
+    name: "Conservative Exploration"
+    temp_start: 1.5
+    temp_min: 0.1
+    temp_adaptation_rate: 0.4
+    use_adaptive_temperature: true
+    description: "Lower exploration, faster convergence to exploitation"
+  
+  # Aggressive exploration - start very high, decay slowly
+  aggressive:
+    name: "Aggressive Exploration" 
+    temp_start: 5.0
+    temp_min: 0.02
+    temp_adaptation_rate: 0.15
+    use_adaptive_temperature: true
+    description: "High exploration throughout training"
+  
+  # Balanced exploration - moderate start and decay
+  balanced:
+    name: "Balanced Exploration"
+    temp_start: 2.5
+    temp_min: 0.08
+    temp_adaptation_rate: 0.2
+    use_adaptive_temperature: true
+    description: "Balanced exploration-exploitation transition"
+  
+  # Fixed temperature - no adaptation
+  fixed_high:
+    name: "Fixed High Temperature"
+    temp_start: 2.0
+    temp_min: 2.0
+    temp_adaptation_rate: 0.0
+    use_adaptive_temperature: false
+    description: "Constant high temperature for maximum exploration"
+  
+  fixed_low:
+    name: "Fixed Low Temperature"
+    temp_start: 0.1
+    temp_min: 0.1
+    temp_adaptation_rate: 0.0
+    use_adaptive_temperature: false
+    description: "Constant low temperature for maximum exploitation"
+  
+  # Linear decay schedules
+  linear_fast:
+    name: "Linear Fast Decay"
+    temp_start: 3.0
+    temp_min: 0.05
+    temp_adaptation_rate: 0.5
+    use_adaptive_temperature: true
+    description: "Fast linear decay from high to low temperature"
+  
+  linear_slow:
+    name: "Linear Slow Decay"
+    temp_start: 2.0
+    temp_min: 0.1
+    temp_adaptation_rate: 0.1
+    use_adaptive_temperature: true
+    description: "Slow linear decay from moderate to low temperature"
+  
+  # Stepped temperature schedule
+  stepped:
+    name: "Stepped Temperature"
+    temp_start: 3.0
+    temp_min: 0.1
+    temp_adaptation_rate: 0.3
+    use_adaptive_temperature: true
+    step_epochs: [8, 16, 32]  # Custom field for stepped schedule
+    step_temps: [3.0, 1.5, 0.5, 0.1]  # Custom field for stepped temperatures
+    description: "Stepped temperature reduction at specific epochs"
+  
+  # Very fine-grained exploration
+  fine_grained:
+    name: "Fine-Grained Exploration"
+    temp_start: 2.8
+    temp_min: 0.12
+    temp_adaptation_rate: 0.18
+    use_adaptive_temperature: true
+    description: "Fine-grained temperature control for precise exploration"
+
+# Model selection for temperature experiments
+# Focus on the best performing models from previous experiments
+models:
+  - "GAT+RL"        # Best historical performance ~0.54
+  - "DGT-Super+RL"  # Most parameter efficient
+  - "DGT-Ultra+RL"  # Good balance of size/performance
+  - "DGT+RL"        # Original DGT for comparison
+
+# Additional experiment parameters
+experiment_params:
+  # Run multiple seeds for statistical significance
+  num_seeds: 3
+  seeds: [42, 123, 456]
+  
+  # Enhanced logging for temperature analysis
+  log_temperature_evolution: true
+  log_entropy_evolution: true
+  log_exploration_metrics: true
+  
+  # Save intermediate checkpoints for analysis
+  checkpoint_epochs: [4, 8, 16, 24, 32, 40, 48]

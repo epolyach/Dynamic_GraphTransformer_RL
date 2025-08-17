@@ -1,0 +1,54 @@
+# Minimal dry-run sweep to validate wiring end-to-end
+name: cvrp20_round2_dry_run
+working_dir_path: "results/round2_sweep_dry"
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+  coord_range: 100
+  demand_range: [1, 9]
+
+training:
+  num_instances: 512     # small for quick run
+  batch_size: 256
+  num_epochs: 6          # few epochs for speed
+  learning_rate: 0.0005
+  validation_frequency: 2
+
+training_advanced:
+  use_adaptive_temperature: true
+  temp_start: 5.0
+  temp_min: 0.02
+  temp_adaptation_rate: 0.15
+  entropy_coef: 0.003
+  gradient_clip_norm: 1.5
+
+model:
+  input_dim: 3
+  hidden_dim: 128
+  num_heads: 8
+  num_layers: 4
+  transformer_dropout: 0.1
+  feedforward_multiplier: 4
+  edge_embedding_divisor: 8
+
+experiment:
+  random_seed: 42
+
+sweep:
+  models: ["GAT+RL"]
+  seeds: [42]
+  gat_marginality:
+    enable: false
+  grid:
+    embedding_dim: [128]
+    n_layers: [4]
+    n_heads: [8]
+    learning_rate: [0.0005]
+    dropout: [0.1]
+    batch_size: [256]
+    temp_start: [5.0]
+    temp_min: [0.02]
+    temp_decay: [0.15]
+  conditionals: {}
+
