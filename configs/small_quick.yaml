@@ -1,0 +1,20 @@
+# Small-fast config to sanity-check pipeline quickly
+working_dir_path: "results/small_quick"
+
+problem:
+  num_customers: 10
+
+training:
+  num_instances: 512
+  batch_size: 64
+  num_epochs: 4
+  learning_rate: 1e-3
+  validation_frequency: 2
+
+# Keep advanced features on but short training
+training_advanced:
+  early_stopping_patience: 5
+
+cost:
+  depot_penalty_per_visit: 0.0
+

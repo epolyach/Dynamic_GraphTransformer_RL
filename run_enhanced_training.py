@@ -22,6 +22,7 @@ from src.utils.config import load_config
 from src.training.advanced_trainer import advanced_train_model
 from src.data.enhanced_generator import create_enhanced_data_generator
 from src.models.enhanced_dgt import EnhancedDynamicGraphTransformer
+from src.models.dgt import DynamicGraphTransformerNetwork as DynamicGraphTransformer
 from src.models.pointer import BaselinePointerNetwork
 from src.models.gt import GraphTransformerNetwork
 from src.models.greedy_gt import GraphTransformerGreedy
@@ -45,6 +46,7 @@ def model_key(name: str) -> str:
     mapping = {
         'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
+        'DGT+RL': 'dgt_rl',
         'Enhanced-DGT+RL': 'enhanced_dgt_rl',
         'GAT+RL': 'gat_rl',
         'GT-Greedy': 'gt_greedy',
@@ -185,6 +187,8 @@ def build_enhanced_model(name: str, config: dict):
         return EnhancedDynamicGraphTransformer(
             input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config
         )
+    elif name == 'DGT+RL':
+        return DynamicGraphTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif name == 'Pointer+RL':
         return BaselinePointerNetwork(input_dim, hidden_dim, config)
     elif name == 'GT-Greedy':
@@ -202,7 +206,7 @@ def parse_args():
     parser.add_argument('--config', type=str, default='configs/enhanced.yaml',
                        help='Path to enhanced configuration file')
     parser.add_argument('--models', nargs='+', 
-                       choices=['Enhanced-DGT+RL', 'Pointer+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
+                       choices=['Enhanced-DGT+RL', 'DGT+RL', 'Pointer+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
                        default=['Enhanced-DGT+RL', 'Pointer+RL', 'GT+RL'],
                        help='Models to train')
     parser.add_argument('--use-curriculum', action='store_true',
