@@ -1,9 +1,0 @@
-# CPU-Only Environment Configuration
-development_mode: true
-device: cpu
-python_version: 3.13.4
-pytorch_geometric_version: 2.6.1
-pytorch_version: !!python/object/new:torch.torch_version.TorchVersion
-- 2.8.0
-cpu_optimization: true
-multithread_cpu: true
