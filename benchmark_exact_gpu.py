@@ -111,7 +111,7 @@ class GPUInstanceGenerator:
             cp.random.seed(base_seed)
             
             # Generate coordinates on GPU
-            coords = cp.random.randint(0, coord_range, size=(num_instances, n_nodes, 2), dtype=cp.int32)
+            coords = cp.random.randint(0, coord_range + 1, size=(num_instances, n_nodes, 2), dtype=cp.int32).astype(cp.float32) / coord_range
             
             # Generate demands on GPU
             demands = cp.random.randint(demand_min, demand_max + 1, size=(num_instances, n_nodes), dtype=cp.int32)
