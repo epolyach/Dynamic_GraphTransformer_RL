@@ -423,8 +423,8 @@ def generate_instance(n_customers: int, capacity: int, demand_range: Tuple[int, 
     np.random.seed()  # Ensure randomness
     
     # Generate coordinates (depot at origin)
-    coords = np.random.uniform(0, 100, (n_customers + 1, 2)) / 100.0
-    coords[0] = [0.5, 0.5]  # Depot at center
+    coords = np.random.uniform(0, coord_range, (n_customers + 1, 2))
+    coords[0] = [coord_range // 2, coord_range // 2]  # Depot at center
     
     # Generate demands (depot has 0 demand)
     demands = np.zeros(n_customers + 1)
