@@ -642,7 +642,7 @@ def main():
     parser.add_argument("--demand-max", type=int, default=10, help="Max demand")
     parser.add_argument("--coord-range", type=int, default=100, help="Coordinate range")
     parser.add_argument("--timeout", type=float, default=300.0, help="Timeout per N")
-    parser.add_argument("--output", default="gpu_benchmark_validated.csv", help="Output file")
+    parser.add_argument("--output", default="csv/gpu_benchmark_validated.csv", help="Output file")
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()    

@@ -27,7 +27,6 @@ MANIFEST
 *.pkl
 
 # Data files
-*.csv
 *.h5
 *.hdf5
 *.json
@@ -39,7 +38,6 @@ instances/
 generated_instances/
 
 # Logs and outputs
-logs/
 outputs/
 runs/
 experiments/*/
@@ -127,3 +125,8 @@ research/runs/
 research/**/tensorboard/
 # Optional: ignore large experimental results (keep curated results under results/)
 # research/results/**
+
+# Output directories
+csv/*.csv
+logs/*.log
+

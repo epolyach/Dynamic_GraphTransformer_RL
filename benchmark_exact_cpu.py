@@ -698,8 +698,8 @@ def main():
     parser.add_argument('--demand-max', type=int, default=10, help='Max demand (default: 10)')
     parser.add_argument('--timeout', type=float, default=60.0, help='Total timeout per solver per N (default: 60.0s)')
     parser.add_argument('--coord-range', type=int, default=100, help='Coordinate range for instance generation (default: 100)')
-    parser.add_argument('--output', type=str, default='benchmark_exact.csv', help='Output CSV file')
-    parser.add_argument('--log', type=str, default='benchmark_exact.log', help='Log file (default: benchmark_exact.log)')
+    parser.add_argument('--output', type=str, default='csv/benchmark_exact.csv', help='Output CSV file')
+    parser.add_argument('--log', type=str, default='logs/benchmark_exact.log', help='Log file (default: benchmark_exact.log)')
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()
