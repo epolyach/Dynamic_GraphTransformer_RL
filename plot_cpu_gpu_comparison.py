@@ -99,50 +99,72 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
         ('heuristic_or', 'Heuristic OR')
     ]
     
-    # Colors: CPU (warm colors), GPU (cool colors)
-    cpu_colors = ['#FF6B6B', '#FF8E53', '#FF6B9D', '#C44569', '#F8B500']
-    gpu_colors = ['#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
+    # Shared colors for both CPU and GPU (same color per solver)
+    solver_colors = ['#FF6B6B', '#45B7D1', '#2ECC71', '#F39C12', '#9B59B6']
     
     # Panel 1: Execution Time vs Problem Size (Log Scale) - ALL SOLVERS
     for i, (solver_key, solver_label) in enumerate(solvers):
         time_key = f'time_{solver_key}'
+        color = solver_colors[i]
         
-        # CPU data
+        # CPU data - DASHED lines with CIRCLES
         cpu_times = [row.get(time_key, float('nan')) for row in cpu_data]
         cpu_valid_indices = [j for j, t in enumerate(cpu_times) if not np.isnan(t) and t > 0]
         if cpu_valid_indices:
             cpu_valid_n = [cpu_n_values[j] for j in cpu_valid_indices]
             cpu_valid_times = [cpu_times[j] for j in cpu_valid_indices]
             
-            ax1.semilogy(cpu_valid_n, cpu_valid_times, 'o-', color=cpu_colors[i], 
-                        linewidth=2.5, markersize=7, label=f'CPU {solver_label}', 
-                        alpha=0.8, markerfacecolor='white', markeredgewidth=2, 
-                        markeredgecolor=cpu_colors[i])
+            ax1.semilogy(cpu_valid_n, cpu_valid_times, 'o--', color=color, 
+                        linewidth=2.5, markersize=7, alpha=0.8, 
+                        markerfacecolor='white', markeredgewidth=2, 
+                        markeredgecolor=color)
         
-        # GPU data  
+        # GPU data - SOLID lines with SQUARES  
         gpu_times = [row.get(time_key, float('nan')) for row in gpu_data]
         gpu_valid_indices = [j for j, t in enumerate(gpu_times) if not np.isnan(t) and t > 0]
         if gpu_valid_indices:
             gpu_valid_n = [gpu_n_values[j] for j in gpu_valid_indices]
             gpu_valid_times = [gpu_times[j] for j in gpu_valid_indices]
             
-            ax1.semilogy(gpu_valid_n, gpu_valid_times, 's--', color=gpu_colors[i], 
-                        linewidth=2.5, markersize=7, label=f'GPU {solver_label}', 
-                        alpha=0.8, markerfacecolor='white', markeredgewidth=2, 
-                        markeredgecolor=gpu_colors[i])
+            ax1.semilogy(gpu_valid_n, gpu_valid_times, 's-', color=color, 
+                        linewidth=2.5, markersize=7, alpha=0.8, 
+                        markerfacecolor='white', markeredgewidth=2, 
+                        markeredgecolor=color)
     
     ax1.set_ylabel('Time per Instance (seconds)', fontsize=13, fontweight='bold')
     ax1.set_title('Performance Scaling Comparison (Log Scale)', fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3)
-    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, ncol=2)
+    
+    # Create custom legend for Panel 1 - each solver on one line
+    legend_elements = []
+    for i, (solver_key, solver_label) in enumerate(solvers):
+        color = solver_colors[i]
+        # Create proxy artists for legend
+        cpu_line = plt.Line2D([0], [0], color=color, marker='o', linestyle='--', 
+                             linewidth=2.5, markersize=7, markerfacecolor='white',
+                             markeredgewidth=2, markeredgecolor=color)
+        gpu_line = plt.Line2D([0], [0], color=color, marker='s', linestyle='-', 
+                             linewidth=2.5, markersize=7, markerfacecolor='white',
+                             markeredgewidth=2, markeredgecolor=color)
+        
+        # Add both CPU and GPU for this solver
+        legend_elements.extend([
+            (cpu_line, f'{solver_label} (CPU)'),
+            (gpu_line, f'{solver_label} (GPU)')
+        ])
+    
+    # Split into lines and labels for legend
+    lines, labels = zip(*legend_elements)
+    ax1.legend(lines, labels, bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, ncol=1)
     
     # Panel 2: Cost per Customer vs Problem Size - ALL SOLVERS
     for i, (solver_key, solver_label) in enumerate(solvers):
         cpc_key = f'cpc_{solver_key}'
         std_key = f'std_{solver_key}'
         solved_key = f'solved_{solver_key}'
+        color = solver_colors[i]
         
-        # CPU data
+        # CPU data - DASHED lines with CIRCLES
         cpu_costs = [row.get(cpc_key, float('nan')) for row in cpu_data]
         cpu_stds = [row.get(std_key, float('nan')) for row in cpu_data]
         cpu_solved = [row.get(solved_key, 0) for row in cpu_data]
@@ -154,9 +176,9 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
             cpu_valid_stds = [cpu_stds[j] for j in cpu_valid_indices if j < len(cpu_stds) and not np.isnan(cpu_stds[j])]
             cpu_valid_solved = [cpu_solved[j] for j in cpu_valid_indices]
             
-            ax2.plot(cpu_valid_n, cpu_valid_costs, 'o-', color=cpu_colors[i], linewidth=2.5, 
-                     markersize=7, label=f'CPU {solver_label}', alpha=0.8,
-                     markerfacecolor='white', markeredgewidth=2, markeredgecolor=cpu_colors[i])
+            ax2.plot(cpu_valid_n, cpu_valid_costs, 'o--', color=color, linewidth=2.5, 
+                     markersize=7, alpha=0.8, markerfacecolor='white', 
+                     markeredgewidth=2, markeredgecolor=color)
             
             # Add error bars for CPU
             if len(cpu_valid_stds) == len(cpu_valid_costs) and len(cpu_valid_stds) > 0:
@@ -170,9 +192,9 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
                 
                 if cpu_sems:
                     ax2.errorbar(cpu_valid_n, cpu_valid_costs, yerr=cpu_sems, fmt='none', 
-                                color=cpu_colors[i], alpha=0.3, capsize=3, capthick=1)
+                                color=color, alpha=0.3, capsize=3, capthick=1)
         
-        # GPU data
+        # GPU data - SOLID lines with SQUARES
         gpu_costs = [row.get(cpc_key, float('nan')) for row in gpu_data]
         gpu_stds = [row.get(std_key, float('nan')) for row in gpu_data]
         gpu_solved = [row.get(solved_key, 0) for row in gpu_data]
@@ -184,9 +206,9 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
             gpu_valid_stds = [gpu_stds[j] for j in gpu_valid_indices if j < len(gpu_stds) and not np.isnan(gpu_stds[j])]
             gpu_valid_solved = [gpu_solved[j] for j in gpu_valid_indices]
             
-            ax2.plot(gpu_valid_n, gpu_valid_costs, 's--', color=gpu_colors[i], linewidth=2.5, 
-                     markersize=7, label=f'GPU {solver_label}', alpha=0.8,
-                     markerfacecolor='white', markeredgewidth=2, markeredgecolor=gpu_colors[i])
+            ax2.plot(gpu_valid_n, gpu_valid_costs, 's-', color=color, linewidth=2.5, 
+                     markersize=7, alpha=0.8, markerfacecolor='white', 
+                     markeredgewidth=2, markeredgecolor=color)
             
             # Add error bars for GPU
             if len(gpu_valid_stds) == len(gpu_valid_costs) and len(gpu_valid_stds) > 0:
@@ -200,14 +222,16 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
                 
                 if gpu_sems:
                     ax2.errorbar(gpu_valid_n, gpu_valid_costs, yerr=gpu_sems, fmt='none', 
-                                color=gpu_colors[i], alpha=0.3, capsize=3, capthick=1)
+                                color=color, alpha=0.3, capsize=3, capthick=1)
     
     # Formatting for panel 2
     ax2.set_xlabel('Number of Customers (N)', fontsize=13, fontweight='bold')
     ax2.set_ylabel('Cost per Customer (All Solvers)', fontsize=13, fontweight='bold')
     ax2.set_title('Solution Quality Comparison', fontsize=14, fontweight='bold')
     ax2.grid(True, alpha=0.3)
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, ncol=2)
+    
+    # Same legend for Panel 2
+    ax2.legend(lines, labels, bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9, ncol=1)
     
     # Set x-ticks for both panels
     all_n_values = sorted(set(cpu_n_values + gpu_n_values))
@@ -216,7 +240,7 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
     ax2.set_xticks(all_n_values)
     
     # Adjust layout
-    plt.tight_layout(rect=[0, 0, 0.85, 0.96])
+    plt.tight_layout(rect=[0, 0, 0.82, 0.96])
     
     # Save the plot
     png_file = f'{output_prefix}.png'
@@ -267,6 +291,10 @@ def create_cpu_gpu_comparison_plots(cpu_csv_file: str, gpu_csv_file: str,
     print(f"• Heuristic method shows expected quality trade-offs but much faster execution")
     print(f"• GPU maintains 100% reliability while CPU degrades at higher N")
     print(f"• GPU provides consistent performance scaling for all solver types")
+    print(f"\n📋 LEGEND:")
+    print(f"• Circles with dashed lines: CPU results")
+    print(f"• Squares with solid lines: GPU results")
+    print(f"• Same color indicates same solver method")
 
 
 def main():
