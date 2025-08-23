@@ -16,6 +16,7 @@ import numpy as np
 import time
 import csv
 import sys
+import os
 import statistics
 import logging
 from typing import List, Dict, Any, Tuple, Optional, Set
@@ -23,14 +24,77 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 # GPU acceleration
-try:
-    import cupy as cp
-    GPU_AVAILABLE = True
-    print("🚀 GPU acceleration available")
-except ImportError:
-    print("⚠️ CuPy not found - Using CPU arrays as fallback")
-    GPU_AVAILABLE = False
-    cp = np
+import cupy as cp
+print("🚀 GPU acceleration available")
+
+
+# Import enhanced generator for consistency with CPU benchmark
+sys.path.append(os.path.join(os.path.dirname(__file__), "research", "benchmark_exact"))
+from enhanced_generator import EnhancedCVRPGenerator, InstanceType
+import solvers.heuristic_or as heuristic_or
+
+# Inline config loading functionality
+import json
+
+def load_config(config_path: str = "config.json"):
+    """Load configuration from JSON file."""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    return config
+
+def get_instance_params(config):
+    """Extract instance generation parameters from config."""
+    instance_config = config["instance_generation"]
+    return {
+        "capacity": instance_config["capacity"],
+        "demand_range": [instance_config["demand_min"], instance_config["demand_max"]],
+        "coord_range": instance_config["coord_range"]
+    }
+
+def validate_config(config):
+    """Validate that config contains required parameters."""
+    required_sections = ["instance_generation", "benchmark_settings", "output"]
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required config section: {section}")
+    
+    instance_params = ["capacity", "demand_min", "demand_max", "coord_range"]
+    for param in instance_params:
+        if param not in config["instance_generation"]:
+            raise ValueError(f"Missing required instance parameter: {param}")
+    
+    print(f"✅ Config validation passed")
+    print(f"   - Capacity: {config['instance_generation']['capacity']}")
+    print(f"   - Demand range: [{config['instance_generation']['demand_min']}, {config['instance_generation']['demand_max']}]")
+    print(f"   - Coordinate range: [0, {config['instance_generation']['coord_range']}] normalized to [0, 1]")
+
+def generate_instance(n_customers: int, capacity: int, demand_range: Tuple[int, int],
+                     coord_range: int, seed: int) -> Dict[str, Any]:
+    """Generate a single CVRP instance using CPU EnhancedCVRPGenerator for consistency"""
+    gen = EnhancedCVRPGenerator(config={})
+    instance = gen.generate_instance(
+        num_customers=n_customers,
+        capacity=capacity,
+        coord_range=coord_range,
+        demand_range=demand_range,
+        seed=seed,
+        instance_type=InstanceType.RANDOM,
+        apply_augmentation=False,
+    )
+    
+    # Convert to the format expected by GPU solvers
+    return {
+        "coords": instance["coords"],
+        "demands": instance["demands"],
+        "distances": instance["distances"],
+        "capacity": capacity,
+        "n_customers": n_customers
+    }
+
 
 @dataclass 
 class CVRPSolution:
@@ -58,16 +122,41 @@ def normalize_trip(trip: List[int]) -> Tuple[int, ...]:
     normalized = trip[min_idx:] + trip[:min_idx]
     return tuple(normalized)
 
+def format_instance_matlab(instance: Dict[str, Any]) -> str:
+    """Format instance in MATLAB-ready format"""
+    coords = instance["coords"]
+    demands = instance["demands"]
+    
+    # Extract x and y coordinates
+    x_coords = [f"{coord[0]:.2f}" for coord in coords]
+    y_coords = [f"{coord[1]:.2f}" for coord in coords]
+    demands_list = [f"{int(demand)}" for demand in demands]
+    
+    # Format as MATLAB matrix
+    x_row = " ".join(x_coords)
+    y_row = " ".join(y_coords)
+    d_row = " ".join(demands_list)
+    
+    return f"[{x_row};\n {y_row};\n {d_row}]"
+
 def format_route_with_depot(vehicle_routes: List[List[int]]) -> str:
-    """Format vehicle routes for display, adding depot"""
-    formatted_routes = []
+    """
+    Format a route solution as a single list with depot nodes, for MATLAB-style output.
+    """
+    if not vehicle_routes:
+        return "[]"
+    
+    # Combine all routes into one sequence, ensuring depot start/end
+    combined = [0]  # Start at depot
     for route in vehicle_routes:
-        if route:
-            route_str = "0-" + "-".join(map(str, route)) + "-0"
-        else:
-            route_str = "0-0"
-        formatted_routes.append(route_str)
-    return " | ".join(formatted_routes)
+        # Add customer nodes (skip depot if already present)
+        for customer in route:
+            if customer != 0:  # Skip depot nodes in route
+                combined.append(customer)
+        # Return to depot after each route
+        combined.append(0)
+    
+    return str(combined)
 
 def normalize_route(vehicle_routes: List[List[int]]) -> Set[Tuple[int, ...]]:
     """Normalize route representation for comparison"""
@@ -165,11 +254,8 @@ class TrueGPUCVRPSolvers:
     """GPU-accelerated CVRP solvers with simultaneous execution"""
     
     def __init__(self):
-        if GPU_AVAILABLE:
-            self.device = cp.cuda.Device(0)
-            print(f"🎯 GPU Solvers initialized on: {self.device}")
-        else:
-            print("⚠️ Running GPU solvers on CPU (CuPy not available)")
+        self.device = cp.cuda.Device(0)
+        print(f"🎯 GPU Solvers initialized on: {self.device}")
     
     def gpu_distance_matrix(self, coords_gpu):
         """Calculate distance matrix entirely on GPU"""
@@ -238,14 +324,9 @@ class TrueGPUCVRPSolvers:
             distances = self.gpu_distance_matrix(coords_gpu)
             
             # Convert to CPU for route construction (hybrid approach)
-            if GPU_AVAILABLE:
-                distances_cpu = cp.asnumpy(distances)
-                coords_cpu = cp.asnumpy(coords_gpu)
-                demands_cpu = cp.asnumpy(demands_gpu)
-            else:
-                distances_cpu = distances
-                coords_cpu = coords_gpu
-                demands_cpu = demands_gpu
+            distances_cpu = cp.asnumpy(distances)
+            coords_cpu = cp.asnumpy(coords_gpu)
+            demands_cpu = cp.asnumpy(demands_gpu)
             
             # Advanced heuristic construction
             vehicle_routes = self._nearest_neighbor_construction(distances_cpu, demands_cpu, capacity)
@@ -272,30 +353,29 @@ class TrueGPUCVRPSolvers:
             )
     
     def _gpu_heuristic_solver(self, coords_gpu, demands_gpu, capacity) -> CVRPSolution:
-        """GPU heuristic solver (faster, less optimal)"""
+        """GPU heuristic solver using proper OR-Tools heuristic (same as CPU)"""
         start_time = time.time()
         
         try:
-            n = len(coords_gpu)
-            distances = self.gpu_distance_matrix(coords_gpu)
+            # Convert GPU arrays to CPU for compatibility with heuristic_or
+            coords_cpu = cp.asnumpy(coords_gpu)
+            demands_cpu = cp.asnumpy(demands_gpu)
+            distances_cpu = np.sqrt(((coords_cpu[:, np.newaxis] - coords_cpu[np.newaxis, :]) ** 2).sum(axis=2))
             
-            # Convert to CPU for route construction
-            if GPU_AVAILABLE:
-                distances_cpu = cp.asnumpy(distances)
-                demands_cpu = cp.asnumpy(demands_gpu)
-            else:
-                distances_cpu = distances
-                demands_cpu = demands_gpu
+            # Create instance dictionary for heuristic_or solver
+            instance = {
+                "coords": coords_cpu,
+                "demands": demands_cpu,
+                "distances": distances_cpu,
+                "capacity": capacity
+            }
             
-            # Simple greedy construction
-            vehicle_routes = self._greedy_construction(distances_cpu, demands_cpu, capacity)
-            
-            # Calculate final cost
-            total_cost = calculate_route_cost(vehicle_routes, distances_cpu)
+            # Use the same high-quality heuristic as CPU benchmark
+            heuristic_solution = heuristic_or.solve(instance, time_limit=30.0, verbose=False)
             
             return CVRPSolution(
-                cost=total_cost,
-                vehicle_routes=vehicle_routes,
+                cost=heuristic_solution.cost,
+                vehicle_routes=heuristic_solution.vehicle_routes,
                 optimal=False,
                 solve_time=time.time() - start_time
             )
@@ -307,7 +387,6 @@ class TrueGPUCVRPSolvers:
                 optimal=False,
                 solve_time=time.time() - start_time
             )
-    
     def _nearest_neighbor_construction(self, distances: np.ndarray, demands: np.ndarray, capacity: int) -> List[List[int]]:
         """Nearest neighbor route construction"""
         n = distances.shape[0]
@@ -417,43 +496,20 @@ class TrueGPUCVRPSolvers:
 # MAIN BENCHMARK FUNCTIONS
 # ============================================================================
 
-def generate_instance(n_customers: int, capacity: int, demand_range: Tuple[int, int], 
-                     coord_range: int) -> Dict[str, Any]:
-    """Generate a single CVRP instance"""
-    np.random.seed()  # Ensure randomness
-    
-    # Generate coordinates (depot at origin)
-    coords = np.random.uniform(0, 100, (n_customers + 1, 2)) / 100.0
-    coords[0] = [0.5, 0.5]  # Depot at center
-    
-    # Generate demands (depot has 0 demand)
-    demands = np.zeros(n_customers + 1)
-    demands[1:] = np.random.randint(demand_range[0], demand_range[1] + 1, n_customers)
-    
-    # Calculate distance matrix
-    distances = np.sqrt(((coords[:, np.newaxis] - coords[np.newaxis, :]) ** 2).sum(axis=2))
-    
-    return {
-        "n_customers": n_customers,
-        "capacity": capacity,
-        "coords": coords,
-        "demands": demands,
-        "distances": distances,
-        "demand_range": demand_range,
-        "coord_range": coord_range
-    }
 
 def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int, 
                      demand_range: Tuple[int, int], coord_range: int, 
-                     timeout: float) -> Dict[str, Any]:
+                     timeout: float, debug: bool = False) -> Dict[str, Any]:
     """Run GPU benchmark with full validation"""
-    print(f"🚀 Starting GPU benchmark: N={n_customers}, {n_instances} instances")
+    print(f"Starting GPU benchmark: N={n_customers}, {n_instances} instances")
     
     # Generate instances
     print(f"📊 Generating {n_instances} instances...")
     instances = []
     for i in range(n_instances):
-        instance = generate_instance(n_customers, capacity, demand_range, coord_range)
+        # Use deterministic seed (same as CPU benchmark)
+        seed = 4242 + n_customers * 1000 + i * 10
+        instance = generate_instance(n_customers, capacity, demand_range, coord_range, seed)
         instance["instance_id"] = i
         instances.append(instance)
     
@@ -464,12 +520,8 @@ def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int,
     batch_capacities = []
     
     for instance in instances:
-        if GPU_AVAILABLE:
-            coords_gpu = cp.asarray(instance["coords"])
-            demands_gpu = cp.asarray(instance["demands"])
-        else:
-            coords_gpu = instance["coords"]
-            demands_gpu = instance["demands"]
+        coords_gpu = cp.asarray(instance["coords"])
+        demands_gpu = cp.asarray(instance["demands"])
         
         batch_coords_gpu.append(coords_gpu)
         batch_demands_gpu.append(demands_gpu)
@@ -495,11 +547,18 @@ def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int,
     logger = logging.getLogger("gpu_validation")
     logger.setLevel(logging.INFO)
     
+    instance_idx = 0
     for instance, instance_results in zip(instances, batch_results):
         # Create solution objects
         solutions = {}
         ortools_solution = None
         
+        # Debug: print instance in MATLAB format (once per instance)
+        if debug:
+            matlab_format = format_instance_matlab(instance)
+            print(f"\n📊 MATLAB Instance {instance_idx+1}/{n_instances}, N={instance["n_customers"]}:")
+            print(matlab_format)
+        instance_idx += 1
         for solver_name in solver_names:
             result = instance_results[solver_name]
             if result["success"]:
@@ -510,6 +569,14 @@ def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int,
                     solve_time=result["solve_time"]
                 )
                 solutions[solver_name] = solution
+
+                # Debug output when --debug flag is set
+                if debug and solution is not None:
+                    cpc = solution.cost / max(1, instance["n_customers"])
+                    routes_str = ", ".join([str(route) for route in solution.vehicle_routes])
+                    route_formatted = format_route_with_depot(solution.vehicle_routes)
+                    print(f"{solver_name} cost/route/cpc: {solution.cost:.4f} {route_formatted} CPC={cpc:.4f}")
+
                 
                 if solver_name == "exact_ortools_vrp":
                     ortools_solution = solution
@@ -576,19 +643,37 @@ def main():
     parser.add_argument("--coord-range", type=int, default=100, help="Coordinate range")
     parser.add_argument("--timeout", type=float, default=300.0, help="Timeout per N")
     parser.add_argument("--output", default="gpu_benchmark_validated.csv", help="Output file")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
-    args = parser.parse_args()
+    args = parser.parse_args()    
+    # Load configuration file
+    print('📋 Loading configuration from config.json...')
+    config = load_config()
+    validate_config(config)
+    instance_params = get_instance_params(config)
+    
+    # Use config values as defaults, allow command line overrides
+    if args.capacity == 30:  # default value
+        args.capacity = instance_params['capacity']
+    if args.demand_min == 1:  # default value  
+        args.demand_min = instance_params['demand_range'][0]
+    if args.demand_max == 10:  # default value
+        args.demand_max = instance_params['demand_range'][1] 
+    if args.coord_range == 100:  # default value
+        args.coord_range = instance_params['coord_range']
+        
+    print(f'🔧 Using parameters: capacity={args.capacity}, demand=[{args.demand_min},{args.demand_max}], coord_range={args.coord_range}')
     
     print("=" * 80)
-    print("🚀 TRUE GPU CVRP BENCHMARK WITH FULL VALIDATION")
+    print("GPU CVRP SOLVER BENCHMARK WITH FULL VALIDATION")
     print("=" * 80)
-    print(f"Problem sizes: N = {args.n_start} to {args.n_end}")
+    print(f"Problem size: N = {args.n_start} to {args.n_end}")
     print(f"Instances per N: {args.instances}")
     print(f"Vehicle capacity: {args.capacity}")
     print(f"Demand range: [{args.demand_min}, {args.demand_max}]")
     print(f"Coordinate range: {args.coord_range}")
-    print(f"Timeout per N: {args.timeout}s")
-    print(f"Output: {args.output}")
+    print(f"Total timeout per solver per N: {args.timeout}s")
+    print(f"Output file: {args.output}")
     print()
     
     # Run benchmark
@@ -596,12 +681,11 @@ def main():
     
     for n in range(args.n_start, args.n_end + 1):
         print(f"\n{'='*60}")
-        print(f"🎯 BENCHMARKING N={n}")
-        print(f"{'='*60}")
+        print(f"N={n}: attempting {args.instances} instances (timeout={args.timeout}s total per solver)")
         
         demand_range = (args.demand_min, args.demand_max)
         stats = run_gpu_benchmark(n, args.instances, args.capacity, demand_range, 
-                                 args.coord_range, args.timeout)
+                                 args.coord_range, args.timeout, args.debug)
         
         # Format results for CSV
         row = {"N": n}

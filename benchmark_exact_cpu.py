@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+
 """
 Exact CVRP Solver Benchmark with Solution Validation
 Compares exact_ortools_vrp, exact_milp, exact_dp, exact_pulp, heuristic_or solvers
@@ -16,6 +18,49 @@ import threading
 import signal
 from pathlib import Path
 from typing import List, Set, Tuple, Dict, Any, Optional
+
+
+# Inline config loading functionality
+import json
+import os
+
+def load_config(config_path: str = "config.json"):
+    """Load configuration from JSON file."""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    return config
+
+def get_instance_params(config):
+    """Extract instance generation parameters from config."""
+    instance_config = config["instance_generation"]
+    return {
+        "capacity": instance_config["capacity"],
+        "demand_range": [instance_config["demand_min"], instance_config["demand_max"]],
+        "coord_range": instance_config["coord_range"]
+    }
+
+def validate_config(config):
+    """Validate that config contains required parameters."""
+    required_sections = ["instance_generation", "benchmark_settings", "output"]
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required config section: {section}")
+    
+    instance_params = ["capacity", "demand_min", "demand_max", "coord_range"]
+    for param in instance_params:
+        if param not in config["instance_generation"]:
+            raise ValueError(f"Missing required instance parameter: {param}")
+    
+    print(f"✅ Config validation passed")
+    print(f"   - Capacity: {config['instance_generation']['capacity']}")
+    print(f"   - Demand range: [{config['instance_generation']['demand_min']}, {config['instance_generation']['demand_max']}]")
+    print(f"   - Coordinate range: [0, {config['instance_generation']['coord_range']}] normalized to [0, 1]")
+
+
 
 # Import solvers
 import solvers.exact_ortools_vrp as exact_ortools_vrp
@@ -272,6 +317,23 @@ def run_single_solver(solver_module, solver_name, instance, time_limit, logger):
     return result.solution, solve_time, False
 
 
+def format_instance_matlab_cpu(instance: Dict[str, Any]) -> str:
+    """Format instance in MATLAB-ready format (CPU version)"""
+    coords = instance["coords"]
+    demands = instance["demands"]
+    
+    # Extract x and y coordinates
+    x_coords = [f"{coord[0]:.2f}" for coord in coords]
+    y_coords = [f"{coord[1]:.2f}" for coord in coords]
+    demands_list = [f"{int(demand)}" for demand in demands]
+    
+    # Format as MATLAB matrix
+    x_row = " ".join(x_coords)
+    y_row = " ".join(y_coords)
+    d_row = " ".join(demands_list)
+    
+    return f"[{x_row};\n {y_row};\n {d_row}]"
+
 def safe_print(*args, **kwargs):
     """Safely print to stdout, handling cases where it might be closed."""
     try:
@@ -293,7 +355,7 @@ def print_progress_bar(iteration, total, length=50):
         pass
 
 
-def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range, total_timeout, coord_range, logger, disabled_solvers=None):
+def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range, total_timeout, coord_range, logger, disabled_solvers=None, debug=False):
     """Run benchmark for a specific problem size N with new timeout behavior."""
     if disabled_solvers is None:
         disabled_solvers = set()
@@ -361,6 +423,12 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
             attempt_msg = f" (attempt {attempt + 1}/{MAX_INSTANCE_ATTEMPTS})" if attempt > 0 else ""
             logger.info(f"\n=== Instance {i+1}/{instances_max} (N={n}, seed={seed}){attempt_msg} ===")
             
+            # Debug: print instance in MATLAB format (once per instance)
+            if debug:
+                matlab_format = format_instance_matlab_cpu(instance)
+                print(f"\n📊 MATLAB Instance {i+1}/{instances_max}, N={n}, Seed={seed}:")
+                print(matlab_format)
+            
             # Test each solver ON THE SAME INSTANCE
             instance_solutions = {}
             any_solver_active = False
@@ -387,6 +455,13 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                 )
                 
                 instance_solutions[solver_name] = solution
+                
+                # Debug output when --debug flag is set
+                if debug and solution is not None:
+                    cpc = solution.cost / max(1, instance['num_customers'])
+                    routes_str = ', '.join([str(route) for route in solution.vehicle_routes])
+                    route_formatted = format_route_with_depot(solution.vehicle_routes)
+                    print(f"{solver_name} cost/route/cpc: {solution.cost:.4f} {route_formatted} CPC={cpc:.4f}")
                 
                 # Check if this instance took too long for ANY solver
                 if solve_time >= instance_timeout_threshold:
@@ -625,8 +700,27 @@ def main():
     parser.add_argument('--coord-range', type=int, default=100, help='Coordinate range for instance generation (default: 100)')
     parser.add_argument('--output', type=str, default='benchmark_exact.csv', help='Output CSV file')
     parser.add_argument('--log', type=str, default='benchmark_exact.log', help='Log file (default: benchmark_exact.log)')
+    parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()
+    
+    # Load configuration file
+    print('📋 Loading configuration from config.json...')
+    config = load_config()
+    validate_config(config)
+    instance_params = get_instance_params(config)
+    
+    # Use config values as defaults, allow command line overrides
+    if hasattr(args, 'capacity') and args.capacity == 30:  # default value
+        args.capacity = instance_params['capacity']
+    if hasattr(args, 'demand_min') and args.demand_min == 1:  # default value  
+        args.demand_min = instance_params['demand_range'][0]
+    if hasattr(args, 'demand_max') and args.demand_max == 10:  # default value
+        args.demand_max = instance_params['demand_range'][1] 
+    if hasattr(args, 'coord_range') and args.coord_range == 100:  # default value
+        args.coord_range = instance_params['coord_range']
+        
+    print(f'🔧 Using parameters: capacity={args.capacity}, demand=[{args.demand_min},{args.demand_max}], coord_range={args.coord_range}')
     
     # Set up logging
     logger = setup_logging(args.log)
@@ -676,7 +770,7 @@ def main():
     
     # Run benchmark for each N
     for n in range(args.n_start, args.n_end + 1):
-        result = run_benchmark_for_n(n, args.instances_min, args.instances_max, args.capacity, demand_range, args.timeout, args.coord_range, logger, disabled_solvers)
+        result = run_benchmark_for_n(n, args.instances_min, args.instances_max, args.capacity, demand_range, args.timeout, args.coord_range, logger, disabled_solvers, debug=args.debug)
         
         total_validation_errors += result.get('validation_errors', 0)
         

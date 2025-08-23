@@ -1,275 +1,221 @@
-# Dynamic GraphTransformer RL - GPU Branch
+# Dynamic GraphTransformer RL - CVRP Benchmark
 
-GPU-accelerated CVRP (Capacitated Vehicle Routing Problem) solvers with significant performance improvements over CPU implementations.
+GPU-accelerated CVRP (Capacitated Vehicle Routing Problem) solvers with unified, config-driven instance generation ensuring fair performance comparisons.
 
 ## Directory Structure
 
 ```
-├── benchmark_exact_gpu.py    # GPU benchmark script
-├── benchmark_exact_cpu.py    # CPU benchmark script  
-├── plot_gpu_benchmark.py     # GPU results plotting
-├── plot_cpu_gpu_comparison.py # CPU vs GPU comparison
-├── activate_env.sh           # Environment activation
-├── csv/                      # CSV benchmark results
-├── plots/                    # PNG visualization outputs
-├── logs/                     # Log files from benchmarks
-└── misc/                     # Archived old scripts
+├── benchmark_exact_cpu.py       # CPU benchmark (config-driven, standalone)
+├── benchmark_exact_gpu.py       # GPU benchmark (config-driven, unified generation, standalone)  
+├── plot_gpu_benchmark.py        # GPU results plotting
+├── plot_cpu_gpu_comparison.py   # CPU vs GPU comparison plotting
+├── config.json                  # Fixed parameters for consistent benchmarking
+├── csv/                         # CSV benchmark results
+├── plots/                       # PNG visualization outputs
+├── logs/                        # Log files from benchmarks
+└── misc/                        # Development/utility scripts and backups
 ```
 
-## Setup
+## Key Features
+
+✅ **Config-Driven**: All parameters loaded from `config.json` for consistency  
+✅ **Unified Instance Generation**: Both benchmarks generate identical instances  
+✅ **Standalone**: Main files require no external dependencies beyond config.json  
+✅ **Fair Comparison**: Performance differences reflect computational efficiency, not instance variations
+
+
+
+## Setup & GPU Acceleration
 
 ### Environment Activation
+
+**For CPU-only benchmarks:**
 ```bash
-# Activate the virtual environment (CPU-optimized for benchmarking)
+# Activate CPU-optimized environment
 ./activate_env.sh
 ```
 
-The `activate_env.sh` script:
-- Activates the Python virtual environment (`venv/`)
-- Shows Python version and CPU thread information
-- Provides quick reference for available configurations
-
-### Requirements
-```bash
-pip install ortools matplotlib pandas seaborn numpy
+**For GPU-accelerated benchmarks:**
+```bash  
+# Activate GPU environment with CuPy support
+./activate_gpu_env.sh
 ```
 
-## Core Scripts
+### GPU Requirements
 
-### 1. GPU Benchmarking (`benchmark_exact_gpu.py`)
+To enable true GPU acceleration, you need:
+- **NVIDIA GPU** with CUDA support
+- **CuPy** installed in the gpu_env environment
 
-Run GPU-accelerated CVRP solver benchmarks with comprehensive validation.
+**Status Messages:**
+- ✅ `🚀 GPU acceleration available` - True GPU acceleration enabled
+- ❌ `⚠️ ImportError: No module named 'cupy' - CuPy not installed (benchmark will not run)` - Fallback to CPU
 
-#### Basic Usage
+**Installation:**
 ```bash
-# Quick test (5 customers, 20 instances)
-python3 benchmark_exact_gpu.py --instances 20 --n-start 5 --n-end 5 --timeout 10.0 --output csv/gpu_test.csv
+# Activate GPU environment and install CuPy
+source gpu_env/bin/activate
+pip install cupy-cuda12x  # For CUDA 12.x
+# or pip install cupy-cuda11x  # For CUDA 11.x
 
-# Small benchmark (5-8 customers)
-python3 benchmark_exact_gpu.py --instances 10 --n-start 5 --n-end 8 --timeout 15.0 --output csv/gpu_small.csv
-
-# Standard benchmark (5-12 customers)
-python3 benchmark_exact_gpu.py --instances 20 --n-start 5 --n-end 12 --timeout 30.0 --output csv/gpu_standard.csv
-
-# Extended benchmark (5-15 customers)
-python3 benchmark_exact_gpu.py --instances 50 --n-start 5 --n-end 15 --timeout 60.0 --output csv/gpu_extended.csv
+**Note:** The GPU benchmark now requires CuPy and will fail cleanly if not available - no CPU fallback ensures true GPU performance measurement.
 ```
 
-#### Advanced Parameters
-```bash
-# Custom vehicle capacity and demand range
-python3 benchmark_exact_gpu.py \
-  --instances 25 \
-  --n-start 6 \
-  --n-end 10 \
-  --capacity 50 \
-  --demand-min 2 \
-  --demand-max 8 \
-  --coord-range 200 \
-  --timeout 45.0 \
-  --output csv/gpu_custom.csv
+## Configuration
 
-# High-performance run (large instances)
-python3 benchmark_exact_gpu.py \
-  --instances 100 \
-  --n-start 8 \
-  --n-end 20 \
-  --capacity 40 \
-  --timeout 120.0 \
-  --output csv/gpu_large.csv
+All benchmark parameters are fixed in `config.json`:
+
+```json
+{
+  "instance_generation": {
+    "capacity": 30,
+    "demand_min": 1,
+    "demand_max": 10,
+    "coord_range": 100,
+    "coordinates_normalized": true
+  }
+}
 ```
 
-### 2. CPU Benchmarking (`benchmark_exact_cpu.py`)
+**Fixed Parameters (DO NOT CHANGE):**
+- **Capacity**: 30
+- **Demand**: Integer range [1, 10]  
+- **Coordinates**: Generated as integers [0, 100], normalized to [0, 1]
 
-Run CPU-based CVRP solver benchmarks for comparison with GPU performance.
+## Usage
 
-#### Basic Usage
+### CPU Benchmark
 ```bash
-# Quick test (5 customers)
-python3 benchmark_exact_cpu.py --instances-min 5 --instances-max 5 --n-start 5 --n-end 5 --timeout 60.0 --output csv/cpu_test.csv
+# Quick test (N=5, 1 instance)
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 5 --instances-min 1 --instances-max 1 --timeout 30
 
-# Small benchmark (5-8 customers)
-python3 benchmark_exact_cpu.py --instances-min 5 --instances-max 10 --n-start 5 --n-end 8 --timeout 90.0 --output csv/cpu_small.csv
+# Small benchmark (N=5-8, 10 instances each)
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 8 --instances-min 10 --instances-max 10 --timeout 120
 
-# Standard benchmark (5-12 customers)
-python3 benchmark_exact_cpu.py --instances-min 10 --instances-max 20 --n-start 5 --n-end 12 --timeout 120.0 --output csv/cpu_standard.csv
+# Standard benchmark (N=5-12, 20 instances each)
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 12 --instances-min 20 --instances-max 20 --timeout 300
 ```
 
-#### Advanced Parameters
+### GPU Benchmark
 ```bash
-# Variable instance count per problem size
-python3 benchmark_exact_cpu.py \
-  --instances-min 5 \
-  --instances-max 25 \
-  --n-start 6 \
-  --n-end 15 \
-  --capacity 45 \
-  --demand-min 1 \
-  --demand-max 12 \
-  --coord-range 150 \
-  --timeout 180.0 \
-  --output csv/cpu_advanced.csv \
-  --log logs/cpu_advanced.log
+# Quick test (N=5, 1 instance)
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 5 --instances 1 --timeout 30
 
-# Production benchmark with logging
-python3 benchmark_exact_cpu.py \
-  --instances-min 20 \
-  --instances-max 50 \
-  --n-start 5 \
-  --n-end 20 \
-  --timeout 300.0 \
-  --output csv/cpu_production.csv \
-  --log logs/cpu_production.log
+# Small benchmark (N=5-8, 10 instances each)
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 8 --instances 10 --timeout 120
+
+# Standard benchmark (N=5-12, 20 instances each) 
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 12 --instances 20 --timeout 300
+
+# Large benchmark (N=5-20, 100 instances each)
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 20 --instances 100 --timeout 600
 ```
 
-### 3. GPU Results Plotting (`plot_gpu_benchmark.py`)
-
-Visualize GPU benchmark results with performance metrics.
-
+### Plotting Results
 ```bash
-# Basic GPU results plot
+# Plot GPU results only
 python3 plot_gpu_benchmark.py csv/gpu_results.csv --output plots/gpu_analysis
 
-# Custom title and output
-python3 plot_gpu_benchmark.py csv/gpu_extended.csv \
-  --output plots/gpu_detailed_analysis \
-  --title "GPU CVRP Performance Analysis (Extended Dataset)"
-
-# Multiple GPU result sets
-python3 plot_gpu_benchmark.py csv/gpu_small.csv --output plots/gpu_small_analysis
-python3 plot_gpu_benchmark.py csv/gpu_large.csv --output plots/gpu_large_analysis
+# Compare CPU vs GPU results
+python3 plot_cpu_gpu_comparison.py csv/cpu_results.csv csv/gpu_results.csv --output plots/comparison
 ```
 
-### 4. CPU vs GPU Comparison (`plot_cpu_gpu_comparison.py`)
+## Benchmark Validation
 
-Generate side-by-side performance comparisons between CPU and GPU implementations.
+Both benchmarks display configuration validation on startup:
 
-```bash
-# Basic comparison
-python3 plot_cpu_gpu_comparison.py csv/cpu_results.csv csv/gpu_results.csv --output plots/cpu_gpu_comparison
-
-# Custom comparison with title
-python3 plot_cpu_gpu_comparison.py csv/cpu_standard.csv csv/gpu_standard.csv \
-  --output plots/detailed_comparison \
-  --title "CPU vs GPU CVRP Solver Performance Comparison"
-
-# Multiple comparison scenarios
-python3 plot_cpu_gpu_comparison.py csv/cpu_small.csv csv/gpu_small.csv --output plots/small_comparison
-python3 plot_cpu_gpu_comparison.py csv/cpu_large.csv csv/gpu_large.csv --output plots/large_comparison
+```
+📋 Loading configuration from config.json...
+✅ Config validation passed
+   - Capacity: 30
+   - Demand range: [1, 10]
+   - Coordinate range: [0, 100] normalized to [0, 1]
+🔧 Using parameters: capacity=30, demand=[1,10], coord_range=100
 ```
 
 ## Complete Workflow Examples
 
-### Quick Performance Test
+### Performance Comparison
 ```bash
-# 1. Run quick GPU benchmark
-python3 benchmark_exact_gpu.py --instances 10 --n-start 5 --n-end 8 --timeout 20.0 --output csv/gpu_quick.csv
+# 1. Run CPU benchmark
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 10 --instances-min 10 --instances-max 10 --output csv/cpu_test.csv
 
-# 2. Run equivalent CPU benchmark  
-python3 benchmark_exact_cpu.py --instances-min 10 --instances-max 10 --n-start 5 --n-end 8 --timeout 120.0 --output csv/cpu_quick.csv
+# 2. Run GPU benchmark (same problem sizes)
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 10 --instances 10 --output csv/gpu_test.csv
 
-# 3. Compare results
-python3 plot_cpu_gpu_comparison.py csv/cpu_quick.csv csv/gpu_quick.csv --output plots/quick_comparison
-```
-
-### Comprehensive Analysis
-```bash
-# 1. Extended GPU benchmark
-python3 benchmark_exact_gpu.py --instances 50 --n-start 5 --n-end 15 --timeout 60.0 --output csv/gpu_full.csv
-
-# 2. Extended CPU benchmark
-python3 benchmark_exact_cpu.py --instances-min 20 --instances-max 50 --n-start 5 --n-end 15 --timeout 300.0 --output csv/cpu_full.csv
-
-# 3. Individual analysis
-python3 plot_gpu_benchmark.py csv/gpu_full.csv --output plots/gpu_full_analysis --title "Comprehensive GPU Performance Analysis"
-
-# 4. Comparative analysis
-python3 plot_cpu_gpu_comparison.py csv/cpu_full.csv csv/gpu_full.csv \
-  --output plots/comprehensive_comparison \
-  --title "Comprehensive CPU vs GPU CVRP Performance Analysis"
+# 3. Generate comparison plot
+python3 plot_cpu_gpu_comparison.py csv/cpu_test.csv csv/gpu_test.csv --output plots/performance_comparison
 ```
 
 ### Research-Grade Benchmarking
 ```bash
-# High-volume GPU benchmark
-python3 benchmark_exact_gpu.py \
-  --instances 100 \
-  --n-start 5 \
-  --n-end 20 \
-  --capacity 40 \
-  --demand-min 1 \
-  --demand-max 10 \
-  --coord-range 100 \
-  --timeout 120.0 \
-  --output csv/gpu_research.csv
+# Comprehensive GPU benchmark
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 15 --instances 50 --timeout 120 --output csv/gpu_research.csv
 
-# Equivalent CPU benchmark with detailed logging
-python3 benchmark_exact_cpu.py \
-  --instances-min 50 \
-  --instances-max 100 \
-  --n-start 5 \
-  --n-end 20 \
-  --capacity 40 \
-  --demand-min 1 \
-  --demand-max 10 \
-  --coord-range 100 \
-  --timeout 600.0 \
-  --output csv/cpu_research.csv \
-  --log logs/cpu_research.log
+# Equivalent CPU benchmark
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 15 --instances-min 50 --instances-max 50 --timeout 600 --output csv/cpu_research.csv
 
-# Generate publication-ready plots
+# Publication-ready comparison
 python3 plot_cpu_gpu_comparison.py csv/cpu_research.csv csv/gpu_research.csv \
-  --output plots/research_grade_comparison \
-  --title "Research-Grade CPU vs GPU CVRP Solver Performance"
+  --output plots/research_comparison \
+  --title "Research-Grade CPU vs GPU CVRP Performance"
 ```
 
 ## Output Organization
 
-### `csv/` Directory
-- **Purpose**: Stores all CSV benchmark results
-- **Contents**: Timing data, cost-per-customer metrics, solver statistics
-- **Examples**: `gpu_results.csv`, `cpu_results.csv`, `gpu_large_scale.csv`
+- **`csv/`** - Benchmark results with timing and cost-per-customer metrics
+- **`plots/`** - Performance visualizations and comparison charts  
+- **`logs/`** - Detailed execution logs (primarily from CPU benchmarks)
+- **`misc/`** - Development utilities, backups, and archived scripts
 
-### `plots/` Directory  
-- **Purpose**: Stores all PNG visualization outputs
-- **Contents**: Performance plots, comparison charts, analysis graphs
-- **Examples**: `gpu_analysis.png`, `cpu_gpu_comparison.png`, `research_grade_comparison.png`
 
-### `logs/` Directory
-- **Purpose**: Stores detailed execution logs (mainly from CPU benchmarks)
-- **Contents**: Debug information, solver progress, error messages
-- **Examples**: `cpu_production.log`, `cpu_research.log`
 
-### `misc/` Directory
-- **Purpose**: Archive of old scripts and backup files
-- **Contents**: Deprecated scripts, backup versions, experimental code
+### Debug Mode
+
+Both benchmarks support detailed debug output when the `--debug` flag is set:
+
+```bash
+# CPU benchmark with debug output
+python3 benchmark_exact_cpu.py --n-start 5 --n-end 5 --instances-min 1 --instances-max 1 --debug
+
+# GPU benchmark with debug output  
+python3 benchmark_exact_gpu.py --n-start 5 --n-end 5 --instances 1 --debug
+```
+
+**Debug Output Format:**
+```
+🐛 DEBUG [exact_ortools_vrp] Instance 1/1, N=5, Seed=9242
+   └─ CPC: 0.523962, Cost: 2.619810, Routes: [[0, 1, 4, 3, 5, 2, 0]]
+🐛 DEBUG [exact_milp] Instance 1/1, N=5, Seed=9242  
+   └─ CPC: 0.523962, Cost: 2.619810, Routes: [[0, 1, 4, 3, 5, 2, 0]]
+```
+
+Shows for each solver:
+- **Solver name** in brackets
+- **Instance number** and **total instances**  
+- **Problem size** (N) and **seed** used
+- **Cost per customer** (CPC) and **total cost**
+- **Vehicle routes** showing the solution
 
 ## Parameter Reference
 
-| Parameter | Description | Typical Values |
-|-----------|-------------|----------------|
-| `--instances` | Number of random CVRP instances per problem size | 10-100 |
-| `--n-start` | Starting number of customers | 5-10 |
-| `--n-end` | Ending number of customers | 8-20 |
-| `--capacity` | Vehicle capacity constraint | 20-50 |
-| `--demand-min/max` | Customer demand range | 1-10 |
-| `--coord-range` | Coordinate space for customer locations | 50-200 |
-| `--timeout` | Maximum solver time per problem size (seconds) | 10-600 |
-| `--output` | Output CSV file path (use `csv/filename.csv`) | `csv/results.csv` |
-| `--log` | Log file path (use `logs/filename.log`) | `logs/benchmark.log` |
+| Parameter | CPU Benchmark | GPU Benchmark | Description |
+|-----------|---------------|---------------|-------------|
+| Problem sizes | `--n-start`, `--n-end` | `--n-start`, `--n-end` | Customer count range |
+| Instances | `--instances-min`, `--instances-max` | `--instances` | Number of random instances per size |
+| Timeout | `--timeout` | `--timeout` | Maximum solver time per size (seconds) |
+| Output | `--output` | `--output` | CSV file path for results |
+| Logging | `--log` | - | Log file path (CPU only) |
 
-## File Naming Conventions
+**Note**: Vehicle capacity, demand range, and coordinate range are fixed in `config.json` and cannot be overridden via command line.
 
-### CSV Files
-- `gpu_[descriptor].csv` - GPU benchmark results
-- `cpu_[descriptor].csv` - CPU benchmark results
-- Examples: `gpu_small.csv`, `cpu_production.csv`, `gpu_large_scale.csv`
+## Identical Results Guarantee
 
-### Plot Files
-- `[descriptor]_analysis.png` - Individual performance analysis
-- `[descriptor]_comparison.png` - CPU vs GPU comparisons  
-- Examples: `gpu_analysis.png`, `comprehensive_comparison.png`
+Both benchmarks generate identical instances using the same seed formula and `EnhancedCVRPGenerator`. This ensures:
+- Same customer locations and demands for identical seeds
+- Same optimal solutions from exact solvers  
+- Fair performance comparisons based purely on computational efficiency
 
-### Log Files
-- `cpu_[descriptor].log` - CPU benchmark execution logs
-- Examples: `cpu_production.log`, `cpu_research.log`
+Example verification:
+- CPU N=5: `cpc_exact_ortools_vrp=0.523962001269`
+- GPU N=5: `cpc_exact_ortools_vrp=0.523962001269` ✅ Identical!
