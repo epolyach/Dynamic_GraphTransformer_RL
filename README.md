@@ -40,81 +40,83 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Training Options
+## 🚀 GPU CVRP Benchmark
 
-#### **🔥 Enhanced Training (Recommended)**
+### True GPU-Parallel CVRP Solver Benchmarking
+
+This project includes a true GPU-parallel benchmark system (`benchmark_gpu_true_parallel.py`) that:
+
+1. **CPU**: Generates N instances for each problem size
+2. **GPU**: Launches 5×N parallel threads (5 solvers × N instances) with timeout  
+3. **CPU**: Collects partial results after timeout, calculates statistics
+
+**Example**: `--instances=100` creates **500 parallel tasks** per problem size.
+
+#### **Solver Arsenal:**
+1. **`exact_ortools_vrp`** - Google OR-Tools Vehicle Routing solver
+2. **`exact_milp`** - Mixed Integer Linear Programming approach  
+3. **`exact_dp`** - Dynamic Programming with bitmasking (optimal for small instances)
+4. **`exact_pulp`** - PuLP-based linear programming solver
+5. **`heuristic_or`** - OR-Tools heuristic with fast local search
+
+### **Generate Benchmark CSV**
+
 ```bash
-# Enhanced training with modern features (respects use_advanced_features config)
-python run_train_validation_enhanced.py --config configs/small.yaml
+# Activate GPU environment
+source gpu_env/bin/activate
 
-# Disable enhanced features for comparison
-python run_train_validation_enhanced.py --config configs/small.yaml --disable-enhanced
+# Generate benchmark CSV (100 instances = 500 parallel tasks per problem size)
+python3 benchmark_gpu_true_parallel.py --instances 100 --n-start 5 --n-end 15 --timeout 120
+
+# Quick test (10 instances = 50 parallel tasks per problem size)  
+python3 benchmark_gpu_true_parallel.py --instances 10 --n-start 5 --n-end 8 --timeout 60
 ```
 
-#### **📊 Original Training**
+**Key Features:**
+- **True Parallelization**: 5 solvers × N instances = 5N parallel tasks simultaneously
+- **GPU Instance Generation**: Fast coordinate/demand generation on GPU with CuPy
+- **Timeout-Based Collection**: Collects partial results (e.g., 86/100 solved) after timeout
+- **Comprehensive Statistics**: Success rates, solve times, optimality tracking per solver
+
+**Output Files:**
+- **`gpu_benchmark_results.csv`** - Benchmark results with partial completion rates
+- **Detailed logs** - Console output with progress tracking
+
+### **Create Performance Plots**
+
 ```bash
-# Original training pipeline (basic features only)
-python run_train_validation.py --config configs/small.yaml
+# Generate performance plots from CSV
+python3 plot_exact_benchmark.py gpu_benchmark_results.csv
 
-# Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
-python run_train_validation.py --config configs/small.yaml --include-legacy
-
-# Force retraining even if checkpoints/CSVs already exist
-python run_train_validation.py --config configs/small.yaml --force-retrain
+# With custom output and title
+python3 plot_exact_benchmark.py gpu_benchmark_results.csv --output gpu_benchmark --title "GPU-Parallel CVRP Solver Benchmark"
 ```
 
-**Key Differences**: 
-- `run_train_validation_enhanced.py` automatically uses enhanced features when `use_advanced_features: true` in config
-- `run_train_validation.py` uses only basic training features regardless of config settings
+### **Example Performance Results**
 
-#### 2. Generate Comparative Plots
-```bash
-# Generate training curves and performance comparison plots
-python make_comparative_plot.py --config configs/small.yaml
-python make_comparative_plot.py --config configs/medium.yaml
-python make_comparative_plot.py --config configs/production.yaml
+**Typical GPU-Parallel Performance:**
+```
+🚀 N=5: GPU-Parallel benchmark (10 instances)
+🔧 Generating 10 instances on GPU...
+✅ Generated 10 instances in 0.2s
+🚀 Running 5 solvers × 10 instances = 50 parallel tasks
+⏱️ Global timeout: 30.0s for all parallel execution
+✅ Parallel execution completed: 50/50 tasks in 0.8s
 
-# With exact baseline computation (solves NUM_SAMPLES random instances for rigorous comparison)
-python make_comparative_plot.py --config configs/small.yaml --exact 50
-python make_comparative_plot.py --config configs/medium.yaml --exact 100
-
-# With custom suffix for organized output files
-python make_comparative_plot.py --config configs/small.yaml --suffix final_results
-python make_comparative_plot.py --config configs/small.yaml --exact 75 --suffix with_exact_baseline
+📊 Solver Performance (Partial Results):
+  exact_ortools_vrp: 10/10 solved (100.0%), 10 optimal, time=0.4520s, cpc=0.5119
+  exact_milp: 10/10 solved (100.0%), 10 optimal, time=0.1353s, cpc=0.5119  
+  exact_dp: 10/10 solved (100.0%), 10 optimal, time=0.0975s, cpc=0.5119
+  exact_pulp: 9/10 solved (90.0%), 9 optimal, time=0.4194s, cpc=0.5119
+  heuristic_or: 10/10 solved (100.0%), time=0.3062s, cpc=0.5119
 ```
 
-#### 3. Test Instance Analysis
-```bash
-# Create test instances and route visualizations
-python make_test_instance.py --config configs/small.yaml
-python make_test_instance.py --config configs/medium.yaml
-python make_test_instance.py --config configs/production.yaml
+**Demonstrates:**
+- **GPU Speedup**: Fast instance generation on GPU
+- **True Parallelism**: 50 tasks running simultaneously  
+- **Partial Results**: Some solvers may timeout (e.g., PuLP 9/10 solved)
+- **Statistics**: Success rates and performance calculated from completed tasks
 
-# With custom seed for reproducible test instances
-python make_test_instance.py --config configs/small.yaml --seed 42
-
-# With exact optimal solution comparison (requires exact_solver.py)
-python make_test_instance.py --config configs/small.yaml --exact
-python make_test_instance.py --config configs/medium.yaml --exact --seed 12345
-```
-
-#### 4. Results Cleanup (Optional)
-```bash
-# Clean results for a specific config's working_dir_path (preserves directory structure)
-python erase_run.py --config configs/small.yaml
-
-# Dry run (preview what would be removed)
-python erase_run.py --config configs/medium.yaml --dry-run
-
-# Force cleanup without confirmation
-python erase_run.py --config configs/production.yaml --force
-
-# Clean only a single model's artifacts (checkpoint/CSV/plots)
-python erase_run.py --config configs/small.yaml --only_gt_rl
-
-# Clean by explicit path instead of config
-python erase_run.py --path results/small --force
-```
 
 ## 📋 Project Structure
 
