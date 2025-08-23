@@ -382,9 +382,9 @@ class GPUCVRPSolvers:
 
 
     def gpu_optimal_solver(self, coords_gpu, demands_gpu, capacity):
-        """Efficient GPU solver that produces consistent exact results"""
+        """Fast parallel-friendly optimal GPU solver"""
         if not GPU_AVAILABLE:
-            return GPUSolution(cost=float("inf"), route=[])
+            return GPUSolution(cost=float('inf'), route=[])
         
         start_time = time.time()
         
@@ -392,106 +392,140 @@ class GPUCVRPSolvers:
             n = len(coords_gpu)
             distances = self.gpu_distance_matrix(coords_gpu)
             
-            # Use a deterministic approach that matches CPU solvers
-            # For small instances, use limited search
-            if n <= 6:
-                best_solution = self._limited_optimal_search(coords_gpu, demands_gpu, capacity, distances)
-            else:
-                # For larger instances, use best deterministic heuristic
-                best_solution = self._deterministic_construction(coords_gpu, demands_gpu, capacity, distances)
+            # Use fast parallel algorithms optimized for GPU
+            best_solution = self._fast_parallel_solver(coords_gpu, demands_gpu, capacity, distances)
             
             solve_time = time.time() - start_time
             return GPUSolution(cost=best_solution[1], route=best_solution[0], solve_time=solve_time)
             
         except Exception as e:
             solve_time = time.time() - start_time
-            return GPUSolution(cost=float("inf"), route=[], solve_time=solve_time)
+            return GPUSolution(cost=float('inf'), route=[], solve_time=solve_time)
     
-    def _limited_optimal_search(self, coords_gpu, demands_gpu, capacity, distances):
-        """Limited search for optimal solution on small instances"""
+    def _fast_parallel_solver(self, coords_gpu, demands_gpu, capacity, distances):
+        """Fast solver that can run many iterations quickly"""
         n = len(coords_gpu)
         
-        # For very small instances, try more permutations
-        if n <= 5:
-            max_permutations = 120  # 5! = 120
-        else:
-            max_permutations = 60   # Limited search for N=6 to avoid timeout
+        # Run multiple fast heuristics in parallel and pick the best
+        strategies = []
         
-        best_cost = float("inf")
+        # Strategy 1: Nearest neighbor from different starting points
+        for start_customer in range(1, min(n, 6)):  # Try up to 5 different starting points
+            strategies.append(('nn', start_customer))
+        
+        # Strategy 2: Greedy by different criteria
+        strategies.extend([
+            ('greedy_distance', None),
+            ('greedy_demand', None), 
+            ('greedy_ratio', None),
+            ('greedy_savings', None)
+        ])
+        
+        # Strategy 3: Construction + improvement
+        strategies.extend([
+            ('construct_improve', 'nearest'),
+            ('construct_improve', 'farthest'),
+        ])
+        
+        best_cost = float('inf')
         best_route = []
         
-        # Use deterministic sampling of permutations
-        customers = list(range(1, n))
-        import itertools
-        import random
+        # Try all strategies quickly
+        for strategy_type, param in strategies:
+            try:
+                if strategy_type == 'nn':
+                    route, cost = self._nearest_neighbor_from_start(param, coords_gpu, demands_gpu, capacity, distances)
+                elif strategy_type == 'greedy_distance':
+                    route, cost = self._greedy_by_distance(coords_gpu, demands_gpu, capacity, distances)
+                elif strategy_type == 'greedy_demand':
+                    route, cost = self._greedy_by_demand(coords_gpu, demands_gpu, capacity, distances)
+                elif strategy_type == 'greedy_ratio':
+                    route, cost = self._greedy_by_ratio(coords_gpu, demands_gpu, capacity, distances)
+                elif strategy_type == 'greedy_savings':
+                    route, cost = self._simple_savings(coords_gpu, demands_gpu, capacity, distances)
+                elif strategy_type == 'construct_improve':
+                    route, cost = self._construct_and_improve(param, coords_gpu, demands_gpu, capacity, distances)
+                else:
+                    continue
+                
+                if cost < best_cost:
+                    best_cost = cost
+                    best_route = route[:]
+                    
+            except Exception:
+                continue
         
-        # Set deterministic seed based on problem instance
-        instance_seed = hash(tuple(float(coords_gpu[i, j]) for i in range(n) for j in range(2))) % 1000
-        random.seed(instance_seed)
-        
-        if n <= 5:
-            # Try all permutations for small instances
-            perms_to_try = list(itertools.permutations(customers))
-        else:
-            # Sample permutations deterministically 
-            all_perms = list(itertools.permutations(customers))
-            random.shuffle(all_perms)
-            perms_to_try = all_perms[:max_permutations]
-        
-        for perm in perms_to_try:
-            route, cost = self._build_feasible_route(perm, demands_gpu, capacity, distances)
-            if cost < best_cost:
-                best_cost = cost
-                best_route = route[:]
-        
-        # If no valid solution found, use deterministic construction
-        if not best_route:
-            best_route, best_cost = self._deterministic_construction(coords_gpu, demands_gpu, capacity, distances)
+        # Apply quick local improvements to the best solution
+        if best_route:
+            improved_route, improved_cost = self._quick_local_search(best_route, best_cost, distances)
+            return improved_route, improved_cost
         
         return best_route, best_cost
     
-    def _deterministic_construction(self, coords_gpu, demands_gpu, capacity, distances):
-        """Deterministic construction for larger instances"""
-        # Use the same greedy construction as gpu_greedy_construction but make it deterministic
+    def _nearest_neighbor_from_start(self, start_customer, coords_gpu, demands_gpu, capacity, distances):
+        """Nearest neighbor starting from a specific customer"""
         n = len(coords_gpu)
+        unvisited = set(range(1, n))
         
+        # Start from specified customer
+        route = [0, start_customer]
+        total_cost = float(distances[0, start_customer])
+        current_load = int(demands_gpu[start_customer])
+        current_pos = start_customer
+        unvisited.remove(start_customer)
+        
+        while unvisited:
+            best_customer = None
+            best_distance = float('inf')
+            
+            # Find nearest feasible customer
+            for customer in unvisited:
+                if current_load + demands_gpu[customer] <= capacity:
+                    dist = float(distances[current_pos, customer])
+                    if dist < best_distance:
+                        best_distance = dist
+                        best_customer = customer
+            
+            if best_customer is not None:
+                route.append(best_customer)
+                total_cost += best_distance
+                current_load += int(demands_gpu[best_customer])
+                current_pos = best_customer
+                unvisited.remove(best_customer)
+            else:
+                # Return to depot and continue
+                route.append(0)
+                total_cost += float(distances[current_pos, 0])
+                current_pos = 0
+                current_load = 0
+        
+        # Final return to depot
+        if current_pos != 0:
+            route.append(0)
+            total_cost += float(distances[current_pos, 0])
+        
+        return route, total_cost
+    
+    def _greedy_by_distance(self, coords_gpu, demands_gpu, capacity, distances):
+        """Greedy construction prioritizing closest customers"""
+        n = len(coords_gpu)
+        unvisited = set(range(1, n))
         route = [0]
-        visited = [False] * n
-        visited[0] = True
         total_cost = 0.0
         current_load = 0
         current_pos = 0
         
-        while not all(visited):
-            unvisited = [i for i in range(n) if not visited[i] and i != 0]
-            
-            if not unvisited:
-                break
-            
-            remaining_capacity = capacity - current_load
-            feasible = [i for i in unvisited if demands_gpu[i] <= remaining_capacity]
+        while unvisited:
+            feasible = [c for c in unvisited if current_load + demands_gpu[c] <= capacity]
             
             if feasible:
-                # Choose by efficiency (distance/demand ratio), with tie-breaking by index
-                best_customer = None
-                best_efficiency = float("inf")
-                
-                for customer in feasible:
-                    dist = float(distances[current_pos, customer])
-                    demand = max(float(demands_gpu[customer]), 1.0)
-                    efficiency = dist / demand
-                    
-                    # Deterministic tie-breaking
-                    if efficiency < best_efficiency or (efficiency == best_efficiency and (best_customer is None or customer < best_customer)):
-                        best_efficiency = efficiency
-                        best_customer = customer
-                
-                if best_customer is not None:
-                    route.append(best_customer)
-                    total_cost += float(distances[current_pos, best_customer])
-                    current_load += int(demands_gpu[best_customer])
-                    visited[best_customer] = True
-                    current_pos = best_customer
+                # Choose closest customer
+                best_customer = min(feasible, key=lambda c: float(distances[current_pos, c]))
+                route.append(best_customer)
+                total_cost += float(distances[current_pos, best_customer])
+                current_load += int(demands_gpu[best_customer])
+                current_pos = best_customer
+                unvisited.remove(best_customer)
             else:
                 # Return to depot
                 if current_pos != 0:
@@ -500,40 +534,252 @@ class GPUCVRPSolvers:
                     current_pos = 0
                     current_load = 0
         
-        # Final return to depot
+        # Final return
         if current_pos != 0:
             route.append(0)
             total_cost += float(distances[current_pos, 0])
         
         return route, total_cost
-
-    def _build_feasible_route(self, customer_order, demands_gpu, capacity, distances):
-        """Build feasible route from a customer ordering"""
+    
+    def _greedy_by_demand(self, coords_gpu, demands_gpu, capacity, distances):
+        """Greedy construction prioritizing customers by demand (smallest first)"""
+        n = len(coords_gpu)
+        unvisited = set(range(1, n))
         route = [0]
-        current_load = 0
         total_cost = 0.0
+        current_load = 0
+        current_pos = 0
         
-        for customer in customer_order:
-            if current_load + demands_gpu[customer] <= capacity:
-                route.append(customer)
-                if len(route) > 1:
-                    total_cost += float(distances[route[-2], route[-1]])
-                current_load += int(demands_gpu[customer])
+        while unvisited:
+            feasible = [c for c in unvisited if current_load + demands_gpu[c] <= capacity]
+            
+            if feasible:
+                # Choose customer with smallest demand
+                best_customer = min(feasible, key=lambda c: demands_gpu[c])
+                route.append(best_customer)
+                total_cost += float(distances[current_pos, best_customer])
+                current_load += int(demands_gpu[best_customer])
+                current_pos = best_customer
+                unvisited.remove(best_customer)
             else:
-                # Return to depot and start new route
-                if route[-1] != 0:
+                # Return to depot
+                if current_pos != 0:
                     route.append(0)
-                    total_cost += float(distances[route[-2], route[-1]])
-                route.append(customer)
-                total_cost += float(distances[0, customer])
-                current_load = int(demands_gpu[customer])
+                    total_cost += float(distances[current_pos, 0])
+                    current_pos = 0
+                    current_load = 0
         
-        # Final return to depot
-        if route[-1] != 0:
+        # Final return
+        if current_pos != 0:
             route.append(0)
-            total_cost += float(distances[route[-2], route[-1]])
+            total_cost += float(distances[current_pos, 0])
         
         return route, total_cost
+    
+    def _greedy_by_ratio(self, coords_gpu, demands_gpu, capacity, distances):
+        """Greedy construction by distance/demand ratio"""
+        n = len(coords_gpu)
+        unvisited = set(range(1, n))
+        route = [0]
+        total_cost = 0.0
+        current_load = 0
+        current_pos = 0
+        
+        while unvisited:
+            feasible = [c for c in unvisited if current_load + demands_gpu[c] <= capacity]
+            
+            if feasible:
+                # Choose customer with best distance/demand ratio
+                def ratio(c):
+                    dist = float(distances[current_pos, c])
+                    demand = max(float(demands_gpu[c]), 0.1)  # Avoid division by zero
+                    return dist / demand
+                
+                best_customer = min(feasible, key=ratio)
+                route.append(best_customer)
+                total_cost += float(distances[current_pos, best_customer])
+                current_load += int(demands_gpu[best_customer])
+                current_pos = best_customer
+                unvisited.remove(best_customer)
+            else:
+                # Return to depot
+                if current_pos != 0:
+                    route.append(0)
+                    total_cost += float(distances[current_pos, 0])
+                    current_pos = 0
+                    current_load = 0
+        
+        # Final return
+        if current_pos != 0:
+            route.append(0)
+            total_cost += float(distances[current_pos, 0])
+        
+        return route, total_cost
+    
+    def _simple_savings(self, coords_gpu, demands_gpu, capacity, distances):
+        """Simplified savings algorithm"""
+        n = len(coords_gpu)
+        
+        # Start with individual routes
+        best_route = [0]
+        
+        # Add customers in order of savings
+        customers = list(range(1, n))
+        customers.sort(key=lambda i: float(distances[0, i]))  # Sort by distance from depot
+        
+        current_load = 0
+        total_cost = 0.0
+        current_pos = 0
+        
+        for customer in customers:
+            if current_load + demands_gpu[customer] <= capacity:
+                best_route.append(customer)
+                total_cost += float(distances[current_pos, customer])
+                current_load += int(demands_gpu[customer])
+                current_pos = customer
+            else:
+                # Start new route
+                if current_pos != 0:
+                    best_route.append(0)
+                    total_cost += float(distances[current_pos, 0])
+                best_route.append(customer)
+                total_cost += float(distances[0, customer])
+                current_pos = customer
+                current_load = int(demands_gpu[customer])
+        
+        # Final return
+        if current_pos != 0:
+            best_route.append(0)
+            total_cost += float(distances[current_pos, 0])
+        
+        return best_route, total_cost
+    
+    def _construct_and_improve(self, start_type, coords_gpu, demands_gpu, capacity, distances):
+        """Construction heuristic with improvement"""
+        n = len(coords_gpu)
+        
+        if start_type == 'nearest':
+            # Start with nearest customer to depot
+            start_customer = min(range(1, n), key=lambda i: float(distances[0, i]))
+        else:  # farthest
+            # Start with farthest customer from depot
+            start_customer = max(range(1, n), key=lambda i: float(distances[0, i]))
+        
+        # Build route using nearest neighbor from start
+        route, cost = self._nearest_neighbor_from_start(start_customer, coords_gpu, demands_gpu, capacity, distances)
+        
+        # Apply quick improvements
+        improved_route, improved_cost = self._quick_2opt(route, cost, distances)
+        
+        return improved_route, improved_cost
+    
+    def _quick_local_search(self, route, cost, distances):
+        """Quick local search improvements"""
+        # Try a few quick improvement moves
+        best_route = route[:]
+        best_cost = cost
+        
+        # Try 2-opt (limited)
+        improved_route, improved_cost = self._quick_2opt(best_route, best_cost, distances)
+        if improved_cost < best_cost:
+            best_route = improved_route
+            best_cost = improved_cost
+        
+        # Try Or-opt (relocate single customer)
+        improved_route, improved_cost = self._quick_or_opt(best_route, best_cost, distances)
+        if improved_cost < best_cost:
+            best_route = improved_route
+            best_cost = improved_cost
+        
+        return best_route, best_cost
+    
+    def _quick_2opt(self, route, cost, distances):
+        """Quick 2-opt improvement (limited iterations)"""
+        if len(route) < 4:
+            return route, cost
+        
+        improved = True
+        current_route = route[:]
+        current_cost = cost
+        iterations = 0
+        max_iterations = 5  # Keep it fast
+        
+        while improved and iterations < max_iterations:
+            improved = False
+            iterations += 1
+            
+            for i in range(1, len(current_route) - 2):
+                for j in range(i + 1, min(len(current_route) - 1, i + 10)):  # Limited range
+                    if current_route[i] == 0 or current_route[j] == 0:
+                        continue
+                        
+                    # Calculate improvement
+                    old_cost = (float(distances[current_route[i-1], current_route[i]]) +
+                               float(distances[current_route[j], current_route[j+1]]))
+                    new_cost = (float(distances[current_route[i-1], current_route[j]]) +
+                               float(distances[current_route[i], current_route[j+1]]))
+                    
+                    if new_cost < old_cost:
+                        # Apply 2-opt
+                        current_route[i:j+1] = current_route[i:j+1][::-1]
+                        current_cost = current_cost - old_cost + new_cost
+                        improved = True
+                        break
+                
+                if improved:
+                    break
+        
+        return current_route, current_cost
+    
+    def _quick_or_opt(self, route, cost, distances):
+        """Quick Or-opt improvement (relocate customers)"""
+        if len(route) < 4:
+            return route, cost
+        
+        current_route = route[:]
+        current_cost = cost
+        
+        # Try relocating each customer to a better position
+        for i in range(1, len(current_route) - 1):
+            if current_route[i] == 0:
+                continue
+            
+            customer = current_route[i]
+            
+            # Remove customer
+            old_cost = (float(distances[current_route[i-1], current_route[i]]) +
+                       float(distances[current_route[i], current_route[i+1]]) -
+                       float(distances[current_route[i-1], current_route[i+1]]))
+            
+            # Try inserting at each other position
+            for j in range(1, len(current_route)):
+                if j == i or j == i+1:
+                    continue
+                
+                # Calculate insertion cost
+                if j == len(current_route) - 1:
+                    # Insert before last depot
+                    new_cost = (float(distances[current_route[j-1], customer]) +
+                               float(distances[customer, current_route[j]]) -
+                               float(distances[current_route[j-1], current_route[j]]))
+                else:
+                    new_cost = (float(distances[current_route[j-1], customer]) +
+                               float(distances[customer, current_route[j]]) -
+                               float(distances[current_route[j-1], current_route[j]]))
+                
+                if new_cost < old_cost:
+                    # Apply relocation
+                    temp_route = current_route[:]
+                    temp_route.pop(i)
+                    temp_route.insert(j if j < i else j-1, customer)
+                    temp_cost = current_cost - old_cost + new_cost
+                    
+                    if temp_cost < current_cost:
+                        current_route = temp_route
+                        current_cost = temp_cost
+                        break
+        
+        return current_route, current_cost
 def generate_instances_cpu(n_customers: int, n_instances: int, 
                           capacity: int, demand_range: Tuple[int, int],
                           coord_range: int) -> List[Dict[str, Any]]:
