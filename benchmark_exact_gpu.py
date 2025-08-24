@@ -709,7 +709,7 @@ def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int,
     instances = []
     for i in range(n_instances):
         # Use deterministic seed (same as CPU benchmark)
-        seed = 4242 + n_customers * 1000 + i * 10
+        seed = 4242 + n_customers * 1000 + i * 10 + 0  # attempt=0 (no retries in GPU)
         instance = generate_instance(n_customers, capacity, demand_range, coord_range, seed)
         instance["instance_id"] = i
         instances.append(instance)
