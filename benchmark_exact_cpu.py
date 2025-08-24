@@ -136,6 +136,21 @@ def calculate_route_cost(vehicle_routes: List[List[int]], distances: np.ndarray)
     return float(total_cost)
 
 
+
+def normalize_routes_to_depot_free(routes):
+    """
+    Normalize routes to depot-free format.
+    Removes depot node (0) from routes and handles empty routes.
+    """
+    normalized = []
+    for route in routes:
+        # Remove depot nodes (0) and keep non-empty routes
+        depot_free = [node for node in route if node != 0]
+        if depot_free:  # Only add non-empty routes
+            normalized.append(depot_free)
+    return normalized
+
+
 def validate_solutions(ortools_solution: CVRPSolution, other_solutions: Dict[str, CVRPSolution], 
                       instance: Dict[str, Any], logger: logging.Logger) -> None:
     """
@@ -153,7 +168,9 @@ def validate_solutions(ortools_solution: CVRPSolution, other_solutions: Dict[str
     
     ortools_normalized = normalize_route(ortools_solution.vehicle_routes)
     ortools_cost = ortools_solution.cost
-    ortools_calculated_cost = calculate_route_cost(ortools_solution.vehicle_routes, instance['distances'])
+    # Normalize routes to depot-free format for consistent cost calculation
+    ortools_depot_free = normalize_routes_to_depot_free(ortools_solution.vehicle_routes)
+    ortools_calculated_cost = calculate_route_cost(ortools_depot_free, instance['distances'])
     distances = instance['distances']
     
     # Check for validation errors
@@ -166,7 +183,9 @@ def validate_solutions(ortools_solution: CVRPSolution, other_solutions: Dict[str
             
         solver_normalized = normalize_route(solution.vehicle_routes)
         solver_cost = solution.cost
-        calculated_cost = calculate_route_cost(solution.vehicle_routes, distances)
+        # Normalize routes to depot-free format for consistent cost calculation
+        solver_depot_free = normalize_routes_to_depot_free(solution.vehicle_routes)
+        calculated_cost = calculate_route_cost(solver_depot_free, distances)
         
         # Check cost calculation accuracy
         cost_calc_diff = abs(calculated_cost - solver_cost) / max(solver_cost, 1e-10)
@@ -698,8 +717,8 @@ def main():
     parser.add_argument('--demand-max', type=int, default=10, help='Max demand (default: 10)')
     parser.add_argument('--timeout', type=float, default=60.0, help='Total timeout per solver per N (default: 60.0s)')
     parser.add_argument('--coord-range', type=int, default=100, help='Coordinate range for instance generation (default: 100)')
-    parser.add_argument('--output', type=str, default='csv/benchmark_exact.csv', help='Output CSV file')
-    parser.add_argument('--log', type=str, default='logs/benchmark_exact.log', help='Log file (default: benchmark_exact.log)')
+    parser.add_argument('--output', type=str, default='results/csv/benchmark_cpu.csv', help='Output CSV file')
+    parser.add_argument('--log', type=str, default='results/logs/benchmark_cpu.log', help='Log file (default: benchmark_exact.log)')
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()

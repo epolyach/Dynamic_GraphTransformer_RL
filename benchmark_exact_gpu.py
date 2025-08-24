@@ -147,6 +147,21 @@ def format_route_with_depot(vehicle_routes):
         combined.append(0)
     return str(combined)
 
+
+def normalize_routes_to_depot_free(routes):
+    """
+    Normalize routes to depot-free format.
+    Removes depot node (0) from routes and handles empty routes.
+    """
+    normalized = []
+    for route in routes:
+        # Remove depot nodes (0) and keep non-empty routes
+        depot_free = [node for node in route if node != 0]
+        if depot_free:  # Only add non-empty routes
+            normalized.append(depot_free)
+    return normalized
+
+
 def validate_solutions_cpu_style(ortools_solution, other_solutions, instance, logger):
     """CPU-style validation focused on cost comparison, not route format."""
     if ortools_solution is None:
@@ -158,7 +173,9 @@ def validate_solutions_cpu_style(ortools_solution, other_solutions, instance, lo
     
     ortools_normalized = normalize_route(ortools_solution.vehicle_routes)
     ortools_cost = ortools_solution.cost
-    ortools_calculated_cost = calculate_route_cost(ortools_solution.vehicle_routes, instance['distances'])
+    # Normalize routes to depot-free format for consistent cost calculation
+    ortools_depot_free = normalize_routes_to_depot_free(ortools_solution.vehicle_routes)
+    ortools_calculated_cost = calculate_route_cost(ortools_depot_free, instance['distances'])
     distances = instance['distances']
     
     validation_errors = []
@@ -171,7 +188,9 @@ def validate_solutions_cpu_style(ortools_solution, other_solutions, instance, lo
         try:
             solver_normalized = normalize_route(solution.vehicle_routes)
             solver_cost = solution.cost
-            calculated_cost = calculate_route_cost(solution.vehicle_routes, distances)
+            # Normalize routes to depot-free format for consistent cost calculation
+            solver_depot_free = normalize_routes_to_depot_free(solution.vehicle_routes)
+            calculated_cost = calculate_route_cost(solver_depot_free, distances)
             
             # Check cost calculation accuracy
             cost_calc_diff = abs(calculated_cost - solver_cost) / max(solver_cost, 1e-10)
@@ -841,7 +860,7 @@ def main():
     parser.add_argument("--demand-max", type=int, default=10, help="Max demand")
     parser.add_argument("--coord-range", type=int, default=100, help="Coordinate range")
     parser.add_argument("--timeout", type=float, default=300.0, help="Timeout per N")
-    parser.add_argument("--output", default="csv/gpu_benchmark_validated.csv", help="Output file")
+    parser.add_argument("--output", default="results/csv/benchmark_gpu.csv", help="Output file")
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()    
@@ -903,21 +922,22 @@ def main():
         
         all_results.append(row)
         
+        # Save results incrementally after each N
+        print(f"💾 Saving N={n} results to {args.output}...")
+        with open(args.output, 'w', newline='') as f:
+            if all_results:
+                fieldnames = all_results[0].keys()
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(all_results)
+        print(f"✅ N={n} results saved to CSV")
+        
         # Print summary
         print(f"\n📊 N={n} Results:")
         for solver_name in stats:
             s = stats[solver_name]
             print(f"  {solver_name}: {s['solved']}/{s['total_instances']} solved, "
                   f"time={s['avg_time']:.3f}s, cpc={s['avg_cpc']:.4f}")
-    
-    # Save results
-    print(f"\n💾 Saving results to {args.output}...")
-    with open(args.output, 'w', newline='') as f:
-        if all_results:
-            fieldnames = all_results[0].keys()
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(all_results)
     
     print(f"✅ GPU benchmark completed! Results saved to {args.output}")
 
