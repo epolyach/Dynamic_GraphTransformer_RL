@@ -73,8 +73,8 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
                         index = solution.Value(routing.NextVar(index))
                     if len(vr) > 1:
                         vr.append(0)
-                        vrs.append(vr[1:-1])
-                        route.extend(vr[1:-1])
+                        vrs.append(vr)
+                        route.extend(vr[1:])
                 best_route = route
                 best_vehicle_routes = vrs
 

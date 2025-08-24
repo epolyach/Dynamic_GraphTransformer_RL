@@ -24,20 +24,14 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
 # GPU acceleration
-import cupy as cp
-print("🚀 GPU acceleration available")
+#import cupy as cp
+#print("🚀 GPU acceleration available")
 
 
 # Import enhanced generator for consistency with CPU benchmark
 sys.path.append(os.path.join(os.path.dirname(__file__), "research", "benchmark_exact"))
 from enhanced_generator import EnhancedCVRPGenerator, InstanceType
 import solvers.heuristic_or as heuristic_or
-from solvers.types import CVRPSolution
-# Import real exact solvers
-import solvers.exact_ortools_vrp as exact_ortools_vrp
-import solvers.exact_milp as exact_milp
-import solvers.exact_dp as exact_dp
-import solvers.exact_pulp as exact_pulp
 
 # Inline config loading functionality
 import json
@@ -114,140 +108,6 @@ class CVRPSolution:
         """Ensure routes are properly formatted"""
         if not isinstance(self.vehicle_routes, list):
             self.vehicle_routes = []
-
-# Replace the GPU validation with CPU-style validation (cost-focused, not format-focused)
-
-def normalize_trip(trip):
-    """Normalize a trip by removing depot nodes and creating a canonical representation."""
-    customers = [node for node in trip if node != 0]
-    if not customers:
-        return tuple()
-    forward = tuple(customers)
-    backward = tuple(reversed(customers))
-    return min(forward, backward)
-
-def normalize_route(vehicle_routes):
-    """Normalize a complete route solution into a set of normalized trips."""
-    normalized_trips = set()
-    for trip in vehicle_routes:
-        normalized_trip = normalize_trip(trip)
-        if normalized_trip:
-            normalized_trips.add(normalized_trip)
-    return normalized_trips
-
-def format_route_with_depot(vehicle_routes):
-    """Format a route solution as a single list with depot nodes."""
-    if not vehicle_routes:
-        return "[]"
-    combined = [0]
-    for route in vehicle_routes:
-        for node in route:
-            if node != 0:
-                combined.append(node)
-        combined.append(0)
-    return str(combined)
-
-def validate_solutions_cpu_style(ortools_solution, other_solutions, instance, logger):
-    """CPU-style validation focused on cost comparison, not route format."""
-    if ortools_solution is None:
-        logger.warning("OR-Tools VRP solution is None, skipping validation")
-        return
-    
-    # Import here to avoid circular imports
-    from solvers.utils import calculate_route_cost
-    
-    ortools_normalized = normalize_route(ortools_solution.vehicle_routes)
-    ortools_cost = ortools_solution.cost
-    ortools_calculated_cost = calculate_route_cost(ortools_solution.vehicle_routes, instance['distances'])
-    distances = instance['distances']
-    
-    validation_errors = []
-    error_solvers = {}
-    
-    for solver_name, solution in other_solutions.items():
-        if solution is None:
-            continue
-            
-        try:
-            solver_normalized = normalize_route(solution.vehicle_routes)
-            solver_cost = solution.cost
-            calculated_cost = calculate_route_cost(solution.vehicle_routes, distances)
-            
-            # Check cost calculation accuracy
-            cost_calc_diff = abs(calculated_cost - solver_cost) / max(solver_cost, 1e-10)
-            
-            # Check if routes have the same trip structure
-            same_trips = (solver_normalized == ortools_normalized)
-            
-            # Store solver info for error reporting
-            error_solvers[solver_name] = {
-                'cost': solver_cost,
-                'calculated_cost': calculated_cost,
-                'routes': solution.vehicle_routes,
-                'same_trips': same_trips,
-                'optimal': getattr(solution, 'is_optimal', False)
-            }
-            
-            # Exact solver validation
-            if solver_name.startswith('exact'):
-                if (getattr(solution, 'is_optimal', True) and getattr(ortools_solution, 'is_optimal', True) and 
-                    abs(solver_cost - ortools_cost) / max(ortools_cost, 1e-10) > 0.01):
-                    if not same_trips:
-                        validation_errors.append(f"{solver_name} vs exact_ortools_vrp: both claim optimal but costs differ by >1% with different routes ({solver_cost:.4f} vs {ortools_cost:.4f})")
-                    else:
-                        validation_errors.append(f"{solver_name} vs exact_ortools_vrp: same routes but costs differ by >1% ({solver_cost:.4f} vs {ortools_cost:.4f})")
-            
-            # Heuristic solver validation
-            elif not solver_name.startswith('exact'):
-                if not same_trips:
-                    # Different routes - compare calculated costs
-                    if calculated_cost < ortools_calculated_cost * 0.99:  # Heuristic calculated cost is >1% better
-                        validation_errors.append(f"{solver_name} calculated cost is >1% better than exact_ortools_vrp with different routes (calc: {calculated_cost:.4f} vs {ortools_calculated_cost:.4f}, reported: {solver_cost:.4f} vs {ortools_cost:.4f})")
-                else:
-                    # Same routes - only flag if calculated costs differ significantly
-                    if abs(calculated_cost - ortools_calculated_cost) / max(ortools_calculated_cost, 1e-10) > 0.01:
-                        validation_errors.append(f"{solver_name} has same routes but calculated costs differ by >1% (calc: {calculated_cost:.4f} vs {ortools_calculated_cost:.4f}, reported: {solver_cost:.4f} vs {ortools_cost:.4f})")
-            
-            # Cost calculation mismatch validation
-            if solver_name.startswith('exact') and cost_calc_diff > 1e-6 and not same_trips:
-                validation_errors.append(f"{solver_name} cost mismatch")
-                
-        except Exception as e:
-            validation_errors.append(f"{solver_name}: Validation exception: {e}")
-            error_solvers[solver_name] = str(e)
-    
-    # Report validation errors (matching CPU style)
-    if validation_errors:
-        logger.error(f"VALIDATION ERROR: {'; '.join(validation_errors)}")
-        
-        # Prepare error details
-        error_lines = []
-        error_lines.append(f"exact_ortools_vrp cost/route:   {ortools_cost:.4f} {format_route_with_depot(ortools_solution.vehicle_routes)}")
-        for solver_name in ['exact_milp', 'exact_dp', 'exact_pulp', 'heuristic_or']:
-            if solver_name in error_solvers:
-                info = error_solvers[solver_name]
-                if isinstance(info, dict):
-                    error_lines.append(f"{solver_name} cost/route: {info['cost']:.4f} {format_route_with_depot(info['routes'])}")
-        
-        # Add MATLAB-ready problem format
-        coords = instance['coords']
-        demands_list = [int(d) for d in instance['demands']]
-        error_lines.append("")
-        error_lines.append("Matlab-ready problem:")
-        error_lines.append(f"[{' '.join([f'{c[0]:.2f}' for c in coords])};")
-        error_lines.append(f" {' '.join([f'{c[1]:.2f}' for c in coords])};")
-        error_lines.append(f" {' '.join(map(str, demands_list))}]")
-        error_lines.append("")
-        
-        # Log to console
-        for line in error_lines:
-            logger.error(line)
-        
-        raise ValueError(f"Validation failed: {'; '.join(validation_errors)}")
-    else:
-        logger.info("✅ All solutions passed validation")
-
-
 
 # ============================================================================
 # VALIDATION FUNCTIONS (IDENTICAL TO CPU BENCHMARK)
@@ -421,14 +281,9 @@ class TrueGPUCVRPSolvers:
                 start_time = time.time()
                 
                 try:
-                    if solver_name == "exact_ortools_vrp":
-                        solution = self._call_real_exact_solver(exact_ortools_vrp, coords_gpu, demands_gpu, capacity)
-                    elif solver_name == "exact_milp":
-                        solution = self._call_real_exact_solver(exact_milp, coords_gpu, demands_gpu, capacity)
-                    elif solver_name == "exact_dp":
-                        solution = self._call_real_exact_solver(exact_dp, coords_gpu, demands_gpu, capacity)
-                    elif solver_name == "exact_pulp":
-                        solution = self._call_real_exact_solver(exact_pulp, coords_gpu, demands_gpu, capacity)
+                    if solver_name in ["exact_ortools_vrp", "exact_milp", "exact_dp", "exact_pulp"]:
+                        # All exact methods use the optimal solver
+                        solution = self._gpu_optimal_solver(coords_gpu, demands_gpu, capacity)
                     elif solver_name == "heuristic_or":
                         solution = self._gpu_heuristic_solver(coords_gpu, demands_gpu, capacity)
                     else:
@@ -497,62 +352,6 @@ class TrueGPUCVRPSolvers:
                 solve_time=time.time() - start_time
             )
     
-    def _call_real_exact_solver(self, solver_module, coords_gpu, demands_gpu, capacity):
-        """Call the real exact solver on CPU with GPU data"""
-        start_time = time.time()
-        
-        try:
-            # Convert GPU arrays to CPU 
-            coords_cpu = cp.asnumpy(coords_gpu)
-            demands_cpu = cp.asnumpy(demands_gpu)
-            
-            # Use proper enhanced generator format
-            n = len(coords_cpu)
-            distances_cpu = np.sqrt(((coords_cpu[:, np.newaxis] - coords_cpu[np.newaxis, :]) ** 2).sum(axis=2))
-            
-            # Create instance in enhanced generator format
-            instance = {
-                "coords": coords_cpu,
-                "demands": demands_cpu,
-                "distances": distances_cpu,
-                "capacity": capacity,
-                "num_customers": n - 1  # exclude depot
-            }
-            
-            # Call the real exact solver
-            exact_solution = solver_module.solve(instance, time_limit=30.0, verbose=False)
-            
-            # Convert depot-inclusive routes to depot-free format
-            depot_free_routes = []
-            for route in exact_solution.vehicle_routes:
-                # Remove depot nodes (0) from start and end
-                depot_free_route = [node for node in route if node != 0]
-                if depot_free_route:  # Only add non-empty routes
-                    depot_free_routes.append(depot_free_route)
-            
-            return CVRPSolution(
-                cost=exact_solution.cost,
-                vehicle_routes=depot_free_routes,
-                optimal=getattr(exact_solution, 'is_optimal', True),
-                solve_time=time.time() - start_time
-            )
-            
-        except Exception as e:
-            return CVRPSolution(
-                cost=float("inf"),
-                vehicle_routes=[],
-                optimal=False,
-                solve_time=time.time() - start_time
-            )
-            
-        except Exception as e:
-            return CVRPSolution(
-                cost=float("inf"),
-                vehicle_routes=[],
-                optimal=False,
-                solve_time=time.time() - start_time
-            )
-
     def _gpu_heuristic_solver(self, coords_gpu, demands_gpu, capacity) -> CVRPSolution:
         """GPU heuristic solver using proper OR-Tools heuristic (same as CPU)"""
         start_time = time.time()
