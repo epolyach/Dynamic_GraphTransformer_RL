@@ -744,9 +744,7 @@ def run_gpu_benchmark(n_customers: int, n_instances: int, capacity: int,
     solver_results = {solver: [] for solver in solver_names}
     validation_count = 0
     
-    # Setup logging for validation
-    logger = logging.getLogger("gpu_validation")
-    logger.setLevel(logging.INFO)
+    logger = logging.getLogger("gpu_benchmark")
     
     instance_idx = 0
     for instance, instance_results in zip(instances, batch_results):
@@ -847,6 +845,9 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
     args = parser.parse_args()    
+    
+    # Setup logging
+
     # Load configuration file
     print('📋 Loading configuration from config.json...')
     config = load_config()
