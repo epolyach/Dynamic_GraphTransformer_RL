@@ -3,8 +3,9 @@
 
 """
 Exact CVRP Solver Benchmark with Solution Validation
-Compares exact_ortools_vrp, exact_milp, exact_dp, exact_pulp, heuristic_or solvers
+Compares exact_ortools_vrp, exact_milp, and heuristic_or solvers
 Validates solutions and logs detailed results to benchmark_exact.log
+Updated to produce CSV format compatible with plot_cpu_benchmark.py
 """
 
 import argparse
@@ -23,6 +24,179 @@ from typing import List, Set, Tuple, Dict, Any, Optional
 # Inline config loading functionality
 import json
 import os
+
+
+# ============================================================================
+# MATLAB LOGGING CONFIGURATION AND FUNCTIONS
+# ============================================================================
+
+MATLAB_LOG_ENABLED = True  # Set to False to disable MATLAB logging
+MATLAB_LOG_MAX_INSTANCES = 5  # Log first N instances per problem size
+
+def format_route_for_matlab(vehicle_routes, solver_name=""):
+    """Format vehicle routes for MATLAB log with depot nodes included.
+    
+    For heuristic solver, routes don't include depot nodes, so we add them.
+    For other solvers, routes already include depot nodes.
+    """
+    if not vehicle_routes:
+        return []
+    
+    # Check if this is from the heuristic solver
+    is_heuristic = 'heuristic' in solver_name.lower()
+    
+    # Flatten multiple vehicle routes into a single route
+    merged_route = []
+    
+    for i, route in enumerate(vehicle_routes):
+        if not route:
+            continue
+        
+        if is_heuristic:
+            # Heuristic solver: routes don't have depot nodes
+            if i == 0 or not merged_route:
+                merged_route.append(0)
+            merged_route.extend(route)
+            merged_route.append(0)
+        else:
+            # Other solvers: routes already have depot nodes
+            if i == 0:
+                merged_route.extend(route)
+            else:
+                # Skip leading depot for subsequent routes
+                start_idx = 1 if route and route[0] == 0 else 0
+                merged_route.extend(route[start_idx:])
+    
+    # Clean up duplicate consecutive depot nodes
+    if merged_route:
+        cleaned = [merged_route[0]]
+        for j in range(1, len(merged_route)):
+            if not (merged_route[j] == 0 and merged_route[j-1] == 0):
+                cleaned.append(merged_route[j])
+        merged_route = cleaned
+    
+    # Ensure it starts and ends with depot
+    if merged_route and merged_route[0] != 0:
+        merged_route = [0] + merged_route
+    if merged_route and merged_route[-1] != 0:
+        merged_route = merged_route + [0]
+    
+    return merged_route
+
+
+class MatlabLogger:
+    """Logger for MATLAB-formatted output."""
+    
+    def __init__(self, log_file=None):
+        self.log_file = log_file
+        self.instance_counts = {}  # Track instances logged per N
+        self.file_handle = None
+        
+        if log_file and MATLAB_LOG_ENABLED:
+            # Create directory if needed
+            from pathlib import Path
+            Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+            self.file_handle = open(log_file, 'w')
+            self._write_header()
+    
+    def _write_header(self):
+        """Write MATLAB log header."""
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.file_handle.write("CPU CVRP Benchmark - MATLAB Format Log\n")
+        self.file_handle.write(f"Date: {timestamp}\n")
+        self.file_handle.write("Config: capacity=30, demand=[1,10]\n")
+        self.file_handle.write("\n")
+        self.file_handle.flush()
+
+    def should_log_instance(self, n):
+        """Check if we should log this instance."""
+        if not MATLAB_LOG_ENABLED or not self.file_handle:
+            return False
+        
+        if n not in self.instance_counts:
+            self.instance_counts[n] = 0
+        
+        return self.instance_counts[n] < MATLAB_LOG_MAX_INSTANCES
+    
+    def log_instance_start(self, n, instance, instance_num):
+        """Log the start of a new instance."""
+        if not MATLAB_LOG_ENABLED or not self.file_handle:
+            return
+            
+        if n not in self.instance_counts:
+            self.instance_counts[n] = 0
+            
+        # Check if we should log this instance
+        if self.instance_counts[n] >= MATLAB_LOG_MAX_INSTANCES:
+            return
+            
+        # Increment counter only if we're actually logging
+        self.instance_counts[n] += 1
+        
+        # Format problem data
+        coords = instance["coords"]
+        demands = instance["demands"]
+        
+        x_coords = " ".join([f"{c[0]:.2f}" for c in coords])
+        y_coords = " ".join([f"{c[1]:.2f}" for c in coords])
+        demand_str = " ".join([f"{int(d)}" for d in demands])
+        
+        # Write instance header (no % prefix, no capacity repeat)
+        # Add empty line before instance (except first)
+        if self.instance_counts[n] > 1:
+            self.file_handle.write("\n")
+        
+        self.file_handle.write(f"N={n}, Instance {self.instance_counts[n]}:\n")
+        self.file_handle.write(f"problem_matrix = [{x_coords};\n")
+        self.file_handle.write(f"                  {y_coords};\n")
+        self.file_handle.write(f"                  {demand_str}];\n")
+        self.file_handle.flush()
+
+
+    def log_solver_result(self, n, solver_name, solution):
+        """Log a solver's result."""
+        if not self.file_handle or not self.should_log_instance(n) or not solution:
+            return
+        
+        # Calculate CPC
+        cpc = solution.cost / n
+        
+        # Format solver name for display
+        if 'exact_milp' in solver_name.lower():
+            solver_display = "Exact (MILP)"
+        elif 'exact_ortools' in solver_name.lower():
+            solver_display = "Metaheuristic (OR-Tools)"
+        elif 'heuristic' in solver_name.lower():
+            solver_display = "Heuristic (OR-Tools)"
+        else:
+            solver_display = solver_name
+        
+        # Format to consistent width
+        solver_display = f"{solver_display:25s}"
+        
+        # Format route with depot nodes
+        route = format_route_for_matlab(solution.vehicle_routes, solver_name)
+        
+        # Write result (no % prefix)
+        self.file_handle.write(f"{solver_display} {cpc:.4f} {route}\n")
+        self.file_handle.flush()
+
+    
+    def end_instance(self):
+        """Mark the end of an instance with an empty line."""
+        if self.file_handle:
+            self.file_handle.write("\n")
+            self.file_handle.flush()
+
+    def close(self):
+        """Close the log file."""
+        if self.file_handle:
+            self.file_handle.close()
+
+# ============================================================================
+# END OF MATLAB LOGGING
+# ============================================================================
 
 def load_config(config_path: str = "config.json"):
     """Load configuration from JSON file."""
@@ -65,14 +239,13 @@ def validate_config(config):
 # Import solvers
 import solvers.exact_ortools_vrp as exact_ortools_vrp
 import solvers.exact_milp as exact_milp
-import solvers.exact_dp as exact_dp
-import solvers.exact_pulp as exact_pulp
 import solvers.heuristic_or as heuristic_or
 
 # Import generator from research folder
 sys.path.append('research/benchmark_exact')
 from enhanced_generator import EnhancedCVRPGenerator, InstanceType
 from solvers.types import CVRPSolution
+from datetime import datetime
 
 
 def normalize_trip(trip: List[int]) -> Tuple[int, ...]:
@@ -134,7 +307,6 @@ def calculate_route_cost(vehicle_routes: List[List[int]], distances: np.ndarray)
             # Use double precision for accurate cost calculation
             total_cost += float(distances[route[i]][route[i + 1]])
     return float(total_cost)
-
 
 
 def normalize_routes_to_depot_free(routes):
@@ -238,7 +410,7 @@ def validate_solutions(ortools_solution: CVRPSolution, other_solutions: Dict[str
         # Prepare error details for both console and log
         error_lines = []
         error_lines.append(f"exact_ortools_vrp cost/route:   {ortools_cost:.4f} {format_route_with_depot(ortools_solution.vehicle_routes)}")
-        for solver_name in ['exact_milp', 'exact_dp', 'exact_pulp', 'heuristic_or']:
+        for solver_name in ['exact_milp', 'heuristic_or']:
             if solver_name in error_solvers:
                 info = error_solvers[solver_name]
                 error_lines.append(f"{solver_name} cost/route: {info['cost']:.4f} {format_route_with_depot(info['routes'])}")
@@ -374,8 +546,11 @@ def print_progress_bar(iteration, total, length=50):
         pass
 
 
-def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range, total_timeout, coord_range, logger, disabled_solvers=None, debug=False):
-    """Run benchmark for a specific problem size N with new timeout behavior."""
+def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range, total_timeout, coord_range, logger, matlab_logger, csv_writer, disabled_solvers=None, debug=False):
+    """Run benchmark for a specific problem size N with new timeout behavior.
+    
+    Updated to write individual instance results to CSV in format expected by plot_cpu_benchmark.py
+    """
     if disabled_solvers is None:
         disabled_solvers = set()
     
@@ -389,16 +564,12 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     results = {
         'exact_ortools_vrp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
         'exact_milp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
-        'exact_dp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
-        'exact_pulp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
         'heuristic_or': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []}
     }
     
     solvers = {
-        'exact_ortools_vrp': exact_ortools_vrp,
         'exact_milp': exact_milp,
-        'exact_dp': exact_dp, 
-        'exact_pulp': exact_pulp,
+        'exact_ortools_vrp': exact_ortools_vrp,
         'heuristic_or': heuristic_or
     }
     
@@ -415,6 +586,9 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     validation_errors = 0
     attempted = 0
     t0 = time.time()
+    
+    # List to collect CSV rows for this N
+    csv_rows = []
     
     for i in range(instances_max):
         attempted = i + 1
@@ -438,6 +612,10 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                 instance_type=InstanceType.RANDOM,
                 apply_augmentation=False,
             )
+
+            # Log instance to MATLAB format
+            matlab_logger.log_instance_start(n, instance, i+1)
+            
             
             attempt_msg = f" (attempt {attempt + 1}/{MAX_INSTANCE_ATTEMPTS})" if attempt > 0 else ""
             logger.info(f"\n=== Instance {i+1}/{instances_max} (N={n}, seed={seed}){attempt_msg} ===")
@@ -454,9 +632,20 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
             instance_too_hard = False
             current_failures = {}
             
+            # Generate a unique instance ID for this instance
+            instance_id = f"n{n}_s{seed}"
+            
             for solver_name, solver_module in solvers.items():
                 if solver_name in disabled_solvers or solver_name in solver_disabled_this_n:
-                    # Skip disabled solvers
+                    # Skip disabled solvers but record them as failed in CSV
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'disabled',
+                        'time': np.nan,
+                        'cpc': np.nan
+                    })
                     instance_solutions[solver_name] = None
                     if solver_name in disabled_solvers:
                         logger.info(f"{solver_name}: DISABLED (from previous N)")
@@ -473,6 +662,10 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                     solver_module, solver_name, instance, instance_timeout, logger
                 )
                 
+                # Log to MATLAB format
+                if solution:
+                    matlab_logger.log_solver_result(n, solver_name, solution)
+                
                 instance_solutions[solver_name] = solution
                 
                 # Debug output when --debug flag is set
@@ -488,8 +681,25 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                     # Log single informative message about timeout/hard instance
                     if timed_out:
                         logger.warning(f"{solver_name}: Timed out after {solve_time:.2f}s (too hard, will try different instance)")
+                        csv_rows.append({
+                            'n_customers': n,
+                            'solver': solver_name,
+                            'instance_id': instance_id,
+                            'status': 'timeout',
+                            'time': solve_time,
+                            'cpc': np.nan
+                        })
                     else:
                         logger.warning(f"{solver_name}: Instance took {solve_time:.2f}s >= {instance_timeout_threshold:.2f}s (too hard, will try different instance)")
+                        # Even though solver finished, mark as timeout if it took too long
+                        csv_rows.append({
+                            'n_customers': n,
+                            'solver': solver_name,
+                            'instance_id': instance_id,
+                            'status': 'timeout',
+                            'time': solve_time,
+                            'cpc': np.nan
+                        })
                     instance_too_hard = True
                 else:
                     current_failures[solver_name] = False
@@ -505,9 +715,29 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                     results[solver_name]['costs'].append(benchmark_cost)
                     results[solver_name]['solutions'].append(solution)
                     
+                    # Write successful result to CSV
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'success',
+                        'time': solve_time,
+                        'cpc': benchmark_cost
+                    })
+                    
                     # Only count as optimal if solver claims it's optimal AND it's an exact solver
                     if solution.is_optimal and solver_name.startswith('exact'):
                         results[solver_name]['optimal_count'] += 1
+                elif solution is None and not current_failures.get(solver_name, False):
+                    # Failed but not due to timeout
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'failed',
+                        'time': solve_time,
+                        'cpc': np.nan
+                    })
             
             # If instance was not too hard for any active solver, use it
             if not instance_too_hard:
@@ -542,6 +772,9 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                             results[solver_name]['optimal_count'] += 1
         
         # If no solvers are active, stop early
+        # End MATLAB instance logging
+        matlab_logger.end_instance()
+            
         if not any_solver_active:
             logger.info("No active solvers remaining, stopping early")
             break
@@ -560,6 +793,11 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
             validation_errors += 1
             # Continue with benchmark but note the error
         
+        # Write CSV rows periodically (after each instance)
+        if csv_writer:
+            for row in csv_rows:
+                csv_writer.writerow(row)
+            csv_rows = []  # Clear the buffer
     
     # Complete progress bar
     print_progress_bar(instances_max if attempted == instances_max else attempted, instances_max)
@@ -568,7 +806,7 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     # The newly disabled solvers for next N (only from consecutive failures)
     newly_disabled = solver_disabled_this_n
     
-    # Compute statistics
+    # Compute statistics (for logging/display purposes)
     stats = {'N': n, 'validation_errors': validation_errors}
     
     for solver_name in solvers.keys():
@@ -661,7 +899,7 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     if validation_errors > 0:
         safe_print(f"⚠️  {validation_errors} validation errors detected!")
     
-    for solver in ['exact_ortools_vrp', 'exact_milp', 'exact_dp', 'exact_pulp', 'heuristic_or']:
+    for solver in ['exact_milp', 'exact_ortools_vrp', 'heuristic_or']:
         solved = stats.get(f'solved_{solver}', 0)
         optimal = stats.get(f'optimal_{solver}', 0) if solver.startswith('exact') else 'N/A'
         avg_time = stats.get(f'time_{solver}', float('nan'))
@@ -717,7 +955,7 @@ def main():
     parser.add_argument('--demand-max', type=int, default=10, help='Max demand (default: 10)')
     parser.add_argument('--timeout', type=float, default=60.0, help='Total timeout per solver per N (default: 60.0s)')
     parser.add_argument('--coord-range', type=int, default=100, help='Coordinate range for instance generation (default: 100)')
-    parser.add_argument('--output', type=str, default='results/csv/benchmark_cpu.csv', help='Output CSV file')
+    parser.add_argument('--output', type=str, default='results/csv/cpu_benchmark.csv', help='Output CSV file')
     parser.add_argument('--log', type=str, default='results/logs/benchmark_cpu.log', help='Log file (default: benchmark_exact.log)')
     parser.add_argument("--debug", action="store_true", help="Enable debug output showing CPC and routes for each solver")
     
@@ -743,6 +981,11 @@ def main():
     
     # Set up logging
     logger = setup_logging(args.log)
+    # Setup MATLAB logger
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    matlab_log_file = f"results/logs/cpu_benchmark_{timestamp}.log"
+    matlab_logger = MatlabLogger(matlab_log_file)
+    
     
     safe_print("="*60)
     safe_print("EXACT CVRP SOLVER BENCHMARK WITH NEW TIMEOUT BEHAVIOR")
@@ -771,54 +1014,53 @@ def main():
     
     demand_range = [args.demand_min, args.demand_max]
     
-    # Initialize CSV file with header
-    fieldnames = ['N', 'time_exact_ortools_vrp', 'cpc_exact_ortools_vrp', 'std_exact_ortools_vrp', 'solved_exact_ortools_vrp', 'optimal_exact_ortools_vrp',
-                  'time_exact_milp', 'cpc_exact_milp', 'std_exact_milp', 'solved_exact_milp', 'optimal_exact_milp',
-                  'time_exact_dp', 'cpc_exact_dp', 'std_exact_dp', 'solved_exact_dp', 'optimal_exact_dp',
-                  'time_exact_pulp', 'cpc_exact_pulp', 'std_exact_pulp', 'solved_exact_pulp', 'optimal_exact_pulp',
-                  'time_heuristic_or', 'cpc_heuristic_or', 'std_heuristic_or', 'solved_heuristic_or']
+    # Initialize CSV file with header format expected by plot_cpu_benchmark.py
+    fieldnames = ['n_customers', 'solver', 'instance_id', 'status', 'time', 'cpc']
                   
-    with open(args.output, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        f.flush()
+    # Create parent directory if it doesn't exist
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    
+    # Open CSV file for writing
+    csv_file = open(args.output, 'w', newline='', encoding='utf-8')
+    csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+    csv_writer.writeheader()
+    csv_file.flush()
     
     rows_written = 0
     total_validation_errors = 0
     disabled_solvers = set()  # Track solvers that exceeded timeout
     
-    # Run benchmark for each N
-    for n in range(args.n_start, args.n_end + 1):
-        result = run_benchmark_for_n(n, args.instances_min, args.instances_max, args.capacity, demand_range, args.timeout, args.coord_range, logger, disabled_solvers, debug=args.debug)
+    try:
+        # Run benchmark for each N
+        for n in range(args.n_start, args.n_end + 1):
+            result = run_benchmark_for_n(
+                n, args.instances_min, args.instances_max, args.capacity, 
+                demand_range, args.timeout, args.coord_range, logger, 
+                matlab_logger, csv_writer, disabled_solvers, debug=args.debug
+            )
+            
+            total_validation_errors += result.get('validation_errors', 0)
+            
+            # Update disabled solvers set
+            newly_disabled = result.get('newly_disabled', set())
+            disabled_solvers.update(newly_disabled)
+            
+            # Flush CSV file after each N
+            csv_file.flush()
         
-        total_validation_errors += result.get('validation_errors', 0)
-        
-        # Update disabled solvers set
-        newly_disabled = result.get('newly_disabled', set())
-        disabled_solvers.update(newly_disabled)
-        
-        # Write result immediately
-        with open(args.output, 'a', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            # Filter to only include CSV fieldnames and clean NaN values
-            filtered_result = {}
-            for k, v in result.items():
-                if k in fieldnames:
-                    if isinstance(v, float) and np.isnan(v):
-                        filtered_result[k] = 'nan'
-                    else:
-                        filtered_result[k] = v
-            writer.writerow(filtered_result)
-            f.flush()
-        rows_written += 1
+        safe_print(f"\n✅ Benchmark complete!")
+        safe_print(f"📊 Results written to {args.output}")
+        safe_print(f"📝 Detailed results logged to {args.log}")
+        if total_validation_errors > 0:
+            safe_print(f"⚠️  Total validation errors: {total_validation_errors}")
+        else:
+            safe_print(f"✅ All solutions validated successfully!")
     
-    safe_print(f"\n✅ Benchmark complete!")
-    safe_print(f"📊 Wrote {rows_written} rows to {args.output}")
-    safe_print(f"📝 Detailed results logged to {args.log}")
-    if total_validation_errors > 0:
-        safe_print(f"⚠️  Total validation errors: {total_validation_errors}")
-    else:
-        safe_print(f"✅ All solutions validated successfully!")
+    finally:
+        # Close CSV file
+        csv_file.close()
+        # Close MATLAB logger
+        matlab_logger.close()
 
 
 if __name__ == '__main__':
