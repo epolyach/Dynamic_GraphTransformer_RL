@@ -5,7 +5,7 @@ problem:
   num_customers: 20
 
 training:
-  num_instances: 2048     
+  num_instances: 131072     
   batch_size: 256         
   num_epochs: 64          # Increased for deeper convergence analysis
   

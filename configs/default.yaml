@@ -20,7 +20,7 @@ training:
   num_instances: 4096      # Default dataset size
   batch_size: 128          # Default batch size
   num_epochs: 32           # Default number of epochs
-  learning_rate: 1e-3      # Base LR
+  learning_rate: 5e-5      # Base LR
   train_val_split: 0.8     # Train/val split
   validation_frequency: 4  # Run validation every N epochs
 
@@ -38,7 +38,7 @@ experiment:
 # =============================
 model:
   input_dim: 3
-  hidden_dim: 128
+  hidden_dim: 256
   num_heads: 4
   num_layers: 4
   transformer_dropout: 0.1
