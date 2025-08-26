@@ -628,6 +628,22 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                 apply_augmentation=False,
             )
 
+            # Check for duplicate coordinates
+            coords = instance["coords"]
+            has_duplicates = False
+            for idx1 in range(len(coords)):
+                for idx2 in range(idx1 + 1, len(coords)):
+                    if np.allclose(coords[idx1], coords[idx2], rtol=1e-9, atol=1e-9):
+                        logger.warning(f"Duplicate coordinates detected: nodes {idx1} and {idx2} at position {coords[idx1]}. Regenerating...")
+                        has_duplicates = True
+                        break
+                if has_duplicates:
+                    break
+
+            if has_duplicates:
+                continue  # Try next attempt with different seed
+
+
             # Log instance to MATLAB format (only if not retrying)
             if attempt == 0:
                 matlab_logger.log_instance_start(n, instance, successful_instances + 1)

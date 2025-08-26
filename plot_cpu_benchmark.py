@@ -73,8 +73,8 @@ def plot_cpu_benchmark(csv_file: str = "results/csv/cpu_benchmark.csv",
     
     # Define solver info matching the style
     solver_info = {
-        'exact_milp': {
-            'label': 'Exact (MILP)',
+        'exact_dp': {
+            'label': 'Exact (DP, N≤10)',
             'color': '#1f77b4',  # Blue
             'marker': 'o'
         },
@@ -206,7 +206,7 @@ def plot_cpu_benchmark_detailed(csv_file: str = "results/csv/cpu_benchmark.csv",
     fig = plt.figure(figsize=(16, 10))
     
     solver_info = {
-        'exact_milp': {'label': 'Exact (MILP)', 'color': '#2E7D32', 'marker': 'o'},
+        'exact_dp': {'label': 'Exact (DP, N≤10)', 'color': '#2E7D32', 'marker': 'o'},
         'exact_ortools_vrp': {'label': 'Metaheuristic', 'color': '#1565C0', 'marker': 's'},
         'heuristic_or': {'label': 'Heuristic', 'color': '#E65100', 'marker': '^'}
     }
@@ -274,7 +274,7 @@ def plot_cpu_benchmark_detailed(csv_file: str = "results/csv/cpu_benchmark.csv",
     # Panel 5: CPC distribution
     ax5 = plt.subplot(2, 3, 5)
     success_df = df[df['status'] == 'success'].copy()
-    solver_order = ['exact_milp', 'exact_ortools_vrp', 'heuristic_or']
+    solver_order = ['exact_dp', 'exact_ortools_vrp', 'heuristic_or']
     solver_labels = [solver_info[s]['label'] for s in solver_order if s in success_df['solver'].unique()]
     box_data = []
     colors = []
@@ -294,7 +294,7 @@ def plot_cpu_benchmark_detailed(csv_file: str = "results/csv/cpu_benchmark.csv",
     # Panel 6: Speedup
     ax6 = plt.subplot(2, 3, 6)
     heuristic_times = stats_df[stats_df['solver'] == 'heuristic_or'].set_index('n_customers')['avg_time']
-    for solver in ['exact_milp', 'exact_ortools_vrp']:
+    for solver in ['exact_dp', 'exact_ortools_vrp']:
         solver_stats = stats_df[stats_df['solver'] == solver]
         if not solver_stats.empty:
             speedup = []
