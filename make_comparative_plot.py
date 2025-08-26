@@ -390,9 +390,9 @@ def create_comparison_plots(results, training_times, model_params, config, scale
 
     csv_series = {name: load_csv_series_for_model(name) for name in model_names}
 
-    # 1. Entropy or Loss evolution panel
+    # 1. Entropy or Policy Loss evolution panel
     ax1 = plt.subplot(2, 4, 1)
-    # Decide what to plot: prefer negative entropy if available, else fall back to REINFORCE loss
+    # Decide what to plot: prefer entropy if available, else fall back to policy gradient loss
     have_entropy = any(
         (series is not None) and ('train_entropy' in series) and any(pd.notna(v) for v in (series['train_entropy'] or []))
         for series in csv_series.values()
@@ -403,21 +403,22 @@ def create_comparison_plots(results, training_times, model_params, config, scale
             if series and series.get('train_entropy'):
                 ys_raw = series['train_entropy']
                 xs = [series['epochs'][i] for i, v in enumerate(ys_raw) if pd.notna(v)]
-                ys = [-(v) for v in ys_raw if pd.notna(v)]  # negative entropy to show decreasing trend
+                ys = [v for v in ys_raw if pd.notna(v)]  # plot entropy directly
                 if ys:
                     ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-        ax1.set_title('Negative Entropy Evolution (−entropy)', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('− Entropy (per-epoch mean)')
+        ax1.set_title('Entropy Evolution', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Entropy (per-epoch mean)')
     else:
         for model_name in model_names:
             series = csv_series.get(model_name)
             if series and series['train_loss']:
                 xs = [series['epochs'][i] for i, v in enumerate(series['train_loss']) if pd.notna(v)]
+                # Plot the policy gradient loss directly (typically negative for REINFORCE with advantages)
                 ys = [v for v in series['train_loss'] if pd.notna(v)]
                 if ys:
                     ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-        ax1.set_title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
-        ax1.set_ylabel('REINFORCE Loss')
+        ax1.set_title('Policy Gradient Loss Evolution\n(REINFORCE with Advantages)', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('Policy Loss (negative = good)')
     ax1.set_xlabel('Epoch')
     _safe_legend(ax1)
     ax1.grid(True, alpha=0.3)
@@ -450,6 +451,18 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     if exact_normalized is not None:
         ax3.axhline(y=exact_normalized, color='red', linewidth=3, linestyle=':', 
                    label=f'Exact Baseline ({exact_baseline_stats["num_solved"]} samples)', alpha=0.8)
+    
+    # Add OR-Tools GLS benchmark with transparent strap (confidence band)
+    ortools_gls_avg = 0.329127
+    ortools_gls_std = 0.047500
+    # Plot confidence band (±1 std)
+    ax3.fill_between([0, num_epochs], 
+                     ortools_gls_avg - ortools_gls_std, 
+                     ortools_gls_avg + ortools_gls_std,
+                     color='green', alpha=0.15, label='OR-Tools GLS (±1 std)')
+    # Plot middle line
+    ax3.axhline(y=ortools_gls_avg, color='green', linewidth=2, linestyle='-', 
+                label='OR-Tools GLS', alpha=0.7)
 
     # Plot model validation series; handle GT-Greedy specially (no training/validation curve)
     for model_name in model_names:
@@ -501,6 +514,11 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         baseline_names.append(f'Exact Baseline\n({exact_baseline_stats["num_solved"]} samples)')
         baseline_costs.append(exact_normalized)
         baseline_colors.append((0.6, 0.0, 0.0))  # dark red for exact
+    
+    # Add OR-Tools GLS benchmark
+    baseline_names.append('OR-Tools GLS')
+    baseline_costs.append(0.329127)
+    baseline_colors.append((0.0, 0.5, 0.0))  # green for OR-Tools
     
     all_names = model_names + baseline_names
     all_costs_normalized = final_costs_normalized + baseline_costs
