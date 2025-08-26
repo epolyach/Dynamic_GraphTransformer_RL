@@ -3,7 +3,7 @@
 Modified CVRP Exact Solver CPU Benchmark
 
 Solver names:
-- exact_dp: Dynamic programming exact solver (N ≤ 9)
+- exact_dp: Dynamic programming exact solver (N ≤ 8)
 - ortools_greedy: OR-Tools greedy/exact solver (formerly exact_ortools_vrp)
 - ortools_gls: OR-Tools with Guided Local Search (formerly heuristic_or)
 
@@ -33,15 +33,15 @@ from datetime import datetime
 def get_solver_timeout(solver_name, n):
     """Get appropriate timeout for each solver based on N"""
     if solver_name == "exact_dp":
-        # Only runs for N ≤ 9
-        if n > 9:
+        # Only runs for N ≤ 8
+        if n > 8:
             return None  # Don't run
         # Give generous timeout for exact solution
         return min(60.0, 2.0 * (2 ** (n-5)))  # Exponential scaling
     
     elif solver_name == "ortools_greedy":
-        # In exact regime (N ≤ 9), give more time
-        if n <= 9:
+        # In exact regime (N ≤ 8), give more time
+        if n <= 8:
             return 30.0  # 30s for exact solutions
         else:
             return 5.0  # 5s for greedy/heuristic mode
@@ -55,7 +55,7 @@ def get_solver_timeout(solver_name, n):
 def should_run_solver(solver_name, n):
     """Determine if a solver should run for given N"""
     if solver_name == "exact_dp":
-        return n <= 9
+        return n <= 8
     elif solver_name in ["ortools_greedy", "ortools_gls"]:
         return n <= 20
     return False
@@ -219,7 +219,7 @@ def print_summary(all_results):
 
 def main():
     parser = argparse.ArgumentParser(description='Modified CVRP Benchmark')
-    parser.add_argument('--n-values', type=int, nargs='+', 
+    parser.add_argument('--n-values', '--N', type=int, nargs='+', 
                        default=[5, 6, 7, 8, 9, 10, 12, 15, 18, 20],
                        help='N values to test')
     parser.add_argument('--instances', type=int, default=10,
@@ -240,8 +240,8 @@ def main():
     print("MODIFIED CVRP BENCHMARK")
     print("="*70)
     print("\nSolver Configuration:")
-    print("- exact_dp: Runs for N ≤ 9 (exact dynamic programming)")
-    print("- ortools_greedy: Runs for N ≤ 20 (exact for N≤9, greedy after)")
+    print("- exact_dp: Runs for N ≤ 8 (exact dynamic programming)")
+    print("- ortools_greedy: Runs for N ≤ 20 (exact for N≤8, greedy after)")
     print("- ortools_gls: Runs for N ≤ 20 with 2s timeout (Guided Local Search)")
     print(f"\nTesting N values: {n_values}")
     print(f"Instances per N: {num_instances}")

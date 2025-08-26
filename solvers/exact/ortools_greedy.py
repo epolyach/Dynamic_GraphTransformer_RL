@@ -93,8 +93,8 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
     search_parameters.use_full_propagation = True
     
     # Note: use_depth_first_search can help but may slow down for larger instances
-    # Only enable for very small instances (< 10 customers)
-    if n_customers <= 10:
+    # Only enable for very small instances (<= 8 customers)
+    if n_customers <= 8:
         search_parameters.use_depth_first_search = True
     
     # Set time limit
