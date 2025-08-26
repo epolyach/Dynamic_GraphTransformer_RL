@@ -25,13 +25,20 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
 
     total_demand = int(sum(int(d) for d in demands[1:]))
     min_vehicles = max(1, int(np.ceil(total_demand / capacity)))
-    max_vehicles = min(n_customers, min_vehicles + 2)
+    avg_demand = 5.5  # Average of demand range [1, 10]
+    max_vehicles = min(n_customers, int(n_customers * avg_demand / capacity) + 3)
 
     best_route: List[int] = [0]
     best_vehicle_routes: List[List[int]] = []
     best_cost = float('inf')
 
+    if verbose:
+        print(f"Heuristic solver: n_customers={n_customers}, total_demand={total_demand}, capacity={capacity}")
+        print(f"  Will try {min_vehicles} to {max_vehicles} vehicles")
+    
     for n_vehicles in range(min_vehicles, max_vehicles + 1):
+        if verbose:
+            print(f"  Trying {n_vehicles} vehicles...", end=" ")
         manager = pywrapcp.RoutingIndexManager(len(coords), n_vehicles, 0)
         routing = pywrapcp.RoutingModel(manager)
 
@@ -51,7 +58,7 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
         routing.AddDimensionWithVehicleCapacity(demand_idx, 0, [capacity] * n_vehicles, True, 'Capacity')
 
         search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-        search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.BEST_INSERTION
+        search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.AUTOMATIC
         search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
         search_parameters.time_limit.seconds = int(max(1, time_limit / (max_vehicles - min_vehicles + 1)))
         search_parameters.log_search = False
