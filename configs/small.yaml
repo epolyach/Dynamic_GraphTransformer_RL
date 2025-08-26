@@ -6,7 +6,7 @@ problem:
 
 training:
   num_instances: 131072     
-  batch_size: 256         
+  batch_size: 512         
   num_epochs: 64          # Increased for deeper convergence analysis
   
 # Override for better algorithm differentiation
