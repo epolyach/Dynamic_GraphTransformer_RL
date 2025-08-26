@@ -12,6 +12,7 @@ import csv
 import sys
 import statistics
 import logging
+import os
 from pathlib import Path
 from typing import List, Set, Tuple, Dict, Any, Optional
 
@@ -21,8 +22,11 @@ import solvers.exact_dp as exact_dp
 import solvers.heuristic_or as heuristic_or
 import solvers.heuristic_dp as heuristic_dp
 
-# Import generator from research folder
-sys.path.append('research/benchmark_exact')
+# Import generator from research folder (resolve relative to this script)
+_script_dir = Path(__file__).resolve().parent
+_repo_root = _script_dir.parents[3]
+sys.path.insert(0, str(_repo_root))  # Ensure repo root is importable (for solvers/*)
+sys.path.append(str(_script_dir.parents[2] / 'benchmark_exact'))
 from enhanced_generator import EnhancedCVRPGenerator, InstanceType
 from solvers.types import CVRPSolution
 
@@ -523,13 +527,25 @@ def main():
     parser.add_argument('--demand-max', type=int, default=10, help='Max demand (default: 10)')
     parser.add_argument('--timeout', type=float, default=60.0, help='Total timeout per solver per N (default: 60.0s)')
     parser.add_argument('--coord-range', type=int, default=100, help='Coordinate range for instance generation (default: 100)')
-    parser.add_argument('--output', type=str, default='benchmark_4.csv', help='Output CSV file')
-    parser.add_argument('--log', type=str, default='benchmark_4.log', help='Log file (default: benchmark_4.log)')
+    parser.add_argument('--output', type=str, default=None, help='Output CSV file (default: research/benchmark_cpu/csv/benchmark_4.csv)')
+    parser.add_argument('--log', type=str, default=None, help='Log file (default: research/benchmark_cpu/log/benchmark_4.log)')
     
     args = parser.parse_args()
     
+    # Resolve benchmark CPU base directories relative to this file
+    _script_dir = Path(__file__).resolve().parent
+    _benchmark_base = _script_dir.parent  # research/benchmark_cpu
+    _csv_dir = _benchmark_base / 'csv'
+    _log_dir = _benchmark_base / 'log'
+    os.makedirs(_csv_dir, exist_ok=True)
+    os.makedirs(_log_dir, exist_ok=True)
+
+    # Determine output paths
+    output_csv = args.output if args.output else str(_csv_dir / 'benchmark_4.csv')
+    log_file = args.log if args.log else str(_log_dir / 'benchmark_4.log')
+    
     # Set up logging
-    logger = setup_logging(args.log)
+    logger = setup_logging(log_file)
     
     print("="*60)
     print("4-SOLVER CVRP BENCHMARK WITH NEW TIMEOUT BEHAVIOR")
@@ -540,8 +556,8 @@ def main():
     print(f"Demand range: [{args.demand_min}, {args.demand_max}]")
     print(f"Coordinate range: {args.coord_range}")
     print(f"Total timeout per solver per N: {args.timeout}s")
-    print(f"Output file: {args.output}")
-    print(f"Log file: {args.log}")
+    print(f"Output file: {output_csv}")
+    print(f"Log file: {log_file}")
     print()
     
     # Log the configuration
@@ -554,7 +570,7 @@ def main():
     logger.info(f"Demand range: [{args.demand_min}, {args.demand_max}]")
     logger.info(f"Coordinate range: {args.coord_range}")
     logger.info(f"Total timeout per solver per N: {args.timeout}s")
-    logger.info(f"Output file: {args.output}")
+    logger.info(f"Output file: {output_csv}")
     
     demand_range = [args.demand_min, args.demand_max]
     
@@ -564,7 +580,7 @@ def main():
                   'time_heuristic_or', 'cpc_heuristic_or', 'std_heuristic_or', 'solved_heuristic_or', 
                   'time_heuristic_dp', 'cpc_heuristic_dp', 'std_heuristic_dp', 'solved_heuristic_dp']
                   
-    with open(args.output, 'w', newline='', encoding='utf-8') as f:
+    with open(output_csv, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         f.flush()
@@ -584,7 +600,7 @@ def main():
         disabled_solvers.update(newly_disabled)
         
         # Write result immediately
-        with open(args.output, 'a', newline='', encoding='utf-8') as f:
+        with open(output_csv, 'a', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             # Filter to only include CSV fieldnames and clean NaN values
             filtered_result = {}
@@ -599,8 +615,8 @@ def main():
         rows_written += 1
     
     print(f"\n✅ Benchmark complete!")
-    print(f"📊 Wrote {rows_written} rows to {args.output}")
-    print(f"📝 Detailed results logged to {args.log}")
+    print(f"📊 Wrote {rows_written} rows to {output_csv}")
+    print(f"📝 Detailed results logged to {log_file}")
     if total_validation_errors > 0:
         print(f"⚠️  Total validation errors: {total_validation_errors}")
     else:

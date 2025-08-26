@@ -34,10 +34,9 @@ function validate_cvrp_solution(problem_matrix, solution_string)
     end
     
     % Calculate cost per customer for comparison
-    num_customers = sum(demands > 0);  % Exclude depot
+    num_customers = sum(demands > 0) - 1;  % Exclude depot
     actual_cost_per_customer = actual_cost / num_customers;
-    % reported_total_cost = reported_cost_per_customer * num_customers;
-    reported_cost_per_customer = reported_total_cost / num_customers;
+    % reported_cost_per_customer = reported_total_cost / num_customers;
     
     % Create visualization
     figure('Position', [100, 100, 800, 600]);

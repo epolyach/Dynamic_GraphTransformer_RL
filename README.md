@@ -1,22 +1,17 @@
 # Dynamic Graph Transformer for Reinforcement Learning on CVRP
 
-A comprehensive comparative study implementing and comparing 6 different neural network architectures for solving the Capacitated Vehicle Routing Problem (CVRP) using reinforcement learning with **enhanced training features** and modern deep learning best practices.
+A comprehensive comparative study implementing and comparing 6 different neural network architectures for solving the Capacitated Vehicle Routing Problem (CVRP) using reinforcement learning.
 
-## ✨ Enhanced Features
+## 🏗️ Architecture Comparison
 
-### 🎯 **Advanced Training System**
-- **Learning Rate Scheduling**: Cosine annealing and ReduceLROnPlateau
-- **Early Stopping**: Prevents overfitting with automatic best model restoration
-- **Adaptive Temperature**: Dynamic exploration-exploitation balance
-- **Enhanced Optimizer**: AdamW with weight decay regularization
-- **Advanced Metrics**: Comprehensive per-epoch tracking (learning rate, temperature, entropy)
-- **Epoch 0 Support**: Training starts from epoch 0 for complete learning analysis
+This study compares 6 different neural network architectures:
 
-### 📊 **Improved Performance**
-- **28-39% better** validation costs with enhanced training features
-- **Professional logging** with detailed per-epoch metrics
-- **Enhanced CSV outputs** with learning rate and temperature tracking
-- **Best model tracking** shows both final and best validation performance
+1. **Pointer Network + RL** (~21K params) - Simple attention-based pointer mechanism
+2. **Graph Transformer (Greedy)** (~92K params) - Multi-head self-attention with greedy decoding 
+3. **Graph Transformer + RL** (~92K params) - Same as GT-Greedy but with RL training
+4. **Dynamic Graph Transformer + RL** (~92K params) - GT with dynamic state updates and gating
+5. **Graph Attention Transformer + RL** (~59K params) - GAT-style attention with edge features
+6. **GAT+RL (Legacy)** - PyTorch Geometric implementation for comparison
 
 ## 🚀 Quick Start
 
@@ -40,34 +35,23 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 ```
 
-### Training Options
+## 🔄 Workflow
 
-#### **🔥 Enhanced Training (Recommended)**
+The project follows a three-stage pipeline:
+
+### 1. Training Models
 ```bash
-# Enhanced training with modern features (respects use_advanced_features config)
-python run_train_validation_enhanced.py --config configs/small.yaml
+# Train all models (or only missing ones)
+python run_enhanced_training.py --config configs/small.yaml
 
-# Disable enhanced features for comparison
-python run_train_validation_enhanced.py --config configs/small.yaml --disable-enhanced
-```
-
-#### **📊 Original Training**
-```bash
-# Original training pipeline (basic features only)
-python run_train_validation.py --config configs/small.yaml
+# Force retrain even if checkpoints exist
+python run_enhanced_training.py --config configs/small.yaml --force-retrain
 
 # Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
-python run_train_validation.py --config configs/small.yaml --include-legacy
-
-# Force retraining even if checkpoints/CSVs already exist
-python run_train_validation.py --config configs/small.yaml --force-retrain
+python run_enhanced_training.py --config configs/small.yaml --include-legacy
 ```
 
-**Key Differences**: 
-- `run_train_validation_enhanced.py` automatically uses enhanced features when `use_advanced_features: true` in config
-- `run_train_validation.py` uses only basic training features regardless of config settings
-
-#### 2. Generate Comparative Plots
+### 2. Generate Comparative Plots
 ```bash
 # Generate training curves and performance comparison plots
 python make_comparative_plot.py --config configs/small.yaml

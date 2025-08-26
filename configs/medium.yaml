@@ -5,20 +5,20 @@ problem:
   num_customers: 20
 
 training:
-  num_instances: 32768     
-  batch_size: 4096         
-  num_epochs: 64          
+  num_instances: 768000     
+  batch_size: 512         
+  num_epochs: 100          # Increased for deeper convergence analysis
   
 # Override for better algorithm differentiation
 training_advanced:
   # Longer patience for better convergence
-  early_stopping_patience: 15
+  early_stopping_patience: 25  # Increased to match longer training
   
   # More aggressive temperature adaptation for clear differences  
   temp_start: 3.5          # Even higher start
   temp_min: 0.05           # Even lower min
   temp_adaptation_rate: 0.25   # Faster adaptation
 
-# Keep penalty explicit if studying its effect; default to small value
+# Keep default cost penalty modest to speed learning signal; override if studying penalties
 cost:
   depot_penalty_per_visit: 0.0

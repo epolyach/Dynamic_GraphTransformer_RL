@@ -362,10 +362,15 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         except Exception as e:
             logger.warning(f"   ⚠️ Failed to read CSV for {model_name}: {e}")
             return None
-        # Ensure required columns exist
+        # Ensure required columns exist (best-effort)
         for col in ['epoch', 'train_loss', 'train_cost', 'val_cost']:
             if col not in df.columns:
                 logger.warning(f"   ⚠️ CSV for {model_name} missing column '{col}'")
+        # Enhanced metrics (optional)
+        ent_col = 'metric_train_entropy_mean'
+        pol_loss_col = 'metric_train_policy_loss_mean'
+        ent_series = df[ent_col].tolist() if ent_col in df.columns else []
+        pol_series = df[pol_loss_col].tolist() if pol_loss_col in df.columns else []
         # Build series using exact CSV rows
         epochs = df['epoch'].tolist() if 'epoch' in df.columns else list(range(len(df)))
         train_loss = df['train_loss'].tolist() if 'train_loss' in df.columns else []
@@ -379,23 +384,41 @@ def create_comparison_plots(results, training_times, model_params, config, scale
             'train_cost': train_cost,
             'val_epochs': val_epochs,
             'val_costs': val_costs,
+            'train_entropy': ent_series,
+            'policy_loss': pol_series,
         }
 
     csv_series = {name: load_csv_series_for_model(name) for name in model_names}
 
-# 1. Training Loss Comparison (standardized REINFORCE loss for all models)
+    # 1. Entropy or Loss evolution panel
     ax1 = plt.subplot(2, 4, 1)
-    for model_name in model_names:
-        series = csv_series.get(model_name)
-        if series and series['train_loss']:
-            xs = series['epochs'][:len(series['train_loss'])]
-            ys = [v for v in series['train_loss'] if pd.notna(v)]
-            xs = [series['epochs'][i] for i, v in enumerate(series['train_loss']) if pd.notna(v)]
-            if ys:
-                ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
-    ax1.set_title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
+    # Decide what to plot: prefer negative entropy if available, else fall back to REINFORCE loss
+    have_entropy = any(
+        (series is not None) and ('train_entropy' in series) and any(pd.notna(v) for v in (series['train_entropy'] or []))
+        for series in csv_series.values()
+    )
+    if have_entropy:
+        for model_name in model_names:
+            series = csv_series.get(model_name)
+            if series and series.get('train_entropy'):
+                ys_raw = series['train_entropy']
+                xs = [series['epochs'][i] for i, v in enumerate(ys_raw) if pd.notna(v)]
+                ys = [-(v) for v in ys_raw if pd.notna(v)]  # negative entropy to show decreasing trend
+                if ys:
+                    ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
+        ax1.set_title('Negative Entropy Evolution (−entropy)', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('− Entropy (per-epoch mean)')
+    else:
+        for model_name in model_names:
+            series = csv_series.get(model_name)
+            if series and series['train_loss']:
+                xs = [series['epochs'][i] for i, v in enumerate(series['train_loss']) if pd.notna(v)]
+                ys = [v for v in series['train_loss'] if pd.notna(v)]
+                if ys:
+                    ax1.plot(xs, ys, label=model_name, linewidth=2, marker='o', markersize=3, color=color_map[model_name])
+        ax1.set_title('Training Loss Evolution\n(Standardized REINFORCE)', fontsize=12, fontweight='bold')
+        ax1.set_ylabel('REINFORCE Loss')
     ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('REINFORCE Loss')
     _safe_legend(ax1)
     ax1.grid(True, alpha=0.3)
     
