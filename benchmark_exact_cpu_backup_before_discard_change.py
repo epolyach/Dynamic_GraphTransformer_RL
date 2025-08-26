@@ -6,7 +6,6 @@ Exact CVRP Solver Benchmark with Solution Validation
 Compares exact_ortools_vrp, exact_milp, and heuristic_or solvers
 Validates solutions and logs detailed results to benchmark_exact.log
 Updated to produce CSV format compatible with plot_cpu_benchmark.py
-Modified to discard entire instance if any solver finds it too hard
 """
 
 import argparse
@@ -559,7 +558,6 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     """Run benchmark for a specific problem size N with new timeout behavior.
     
     Updated to write individual instance results to CSV in format expected by plot_cpu_benchmark.py
-    Modified to discard entire instance if any solver finds it too hard
     """
     if disabled_solvers is None:
         disabled_solvers = set()
@@ -595,7 +593,6 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     
     validation_errors = 0
     attempted = 0
-    successful_instances = 0  # Track successfully completed instances
     t0 = time.time()
     
     # List to collect CSV rows for this N
@@ -605,11 +602,7 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
         attempted = i + 1
         
         # Progress bar
-        print_progress_bar(successful_instances, instances_max)
-        
-        # Stop if we have enough successful instances
-        if successful_instances >= instances_max:
-            break
+        print_progress_bar(i, instances_max)
         
         # Try up to 3 different instances to avoid pathologically hard instances
         MAX_INSTANCE_ATTEMPTS = 3
@@ -628,35 +621,39 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                 apply_augmentation=False,
             )
 
-            # Log instance to MATLAB format (only if not retrying)
-            if attempt == 0:
-                matlab_logger.log_instance_start(n, instance, successful_instances + 1)
+            # Log instance to MATLAB format
+            matlab_logger.log_instance_start(n, instance, i+1)
+            
             
             attempt_msg = f" (attempt {attempt + 1}/{MAX_INSTANCE_ATTEMPTS})" if attempt > 0 else ""
-            logger.info(f"\n=== Instance {successful_instances + 1}/{instances_max} (N={n}, seed={seed}){attempt_msg} ===")
+            logger.info(f"\n=== Instance {i+1}/{instances_max} (N={n}, seed={seed}){attempt_msg} ===")
             
             # Debug: print instance in MATLAB format (once per instance)
-            if debug and attempt == 0:
+            if debug:
                 matlab_format = format_instance_matlab_cpu(instance)
-                print(f"\n📊 MATLAB Instance {successful_instances + 1}/{instances_max}, N={n}, Seed={seed}:")
+                print(f"\n📊 MATLAB Instance {i+1}/{instances_max}, N={n}, Seed={seed}:")
                 print(matlab_format)
             
             # Test each solver ON THE SAME INSTANCE
             instance_solutions = {}
-            temp_results = {}  # Temporarily store results for this instance
             any_solver_active = False
             instance_too_hard = False
             current_failures = {}
             
-            # Generate a unique instance ID for this instance (use successful count + 1)
-            instance_id = successful_instances + 1
-            
-            # Store temporary CSV rows for this attempt
-            temp_csv_rows = []
+            # Generate a unique instance ID for this instance
+            instance_id = i + 1  # Simple consecutive instance number
             
             for solver_name, solver_module in solvers.items():
                 if solver_name in disabled_solvers or solver_name in solver_disabled_this_n:
-                    # Skip disabled solvers
+                    # Skip disabled solvers but record them as failed in CSV
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'disabled',
+                        'time': np.nan,
+                        'cpc': np.nan
+                    })
                     instance_solutions[solver_name] = None
                     if solver_name in disabled_solvers:
                         logger.info(f"{solver_name}: DISABLED (from previous N)")
@@ -673,6 +670,10 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                     solver_module, solver_name, instance, instance_timeout, logger
                 )
                 
+                # Log to MATLAB format
+                if solution:
+                    matlab_logger.log_solver_result(n, solver_name, solution)
+                
                 instance_solutions[solver_name] = solution
                 
                 # Debug output when --debug flag is set
@@ -687,74 +688,70 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                     current_failures[solver_name] = True
                     # Log single informative message about timeout/hard instance
                     if timed_out:
-                        logger.warning(f"{solver_name}: Timed out after {solve_time:.2f}s (too hard, will discard entire instance)")
+                        logger.warning(f"{solver_name}: Timed out after {solve_time:.2f}s (too hard, will try different instance)")
+                        csv_rows.append({
+                            'n_customers': n,
+                            'solver': solver_name,
+                            'instance_id': instance_id,
+                            'status': 'timeout',
+                            'time': solve_time,
+                            'cpc': np.nan
+                        })
                     else:
-                        logger.warning(f"{solver_name}: Instance took {solve_time:.2f}s >= {instance_timeout_threshold:.2f}s (too hard, will discard entire instance)")
+                        logger.warning(f"{solver_name}: Instance took {solve_time:.2f}s >= {instance_timeout_threshold:.2f}s (too hard, will try different instance)")
+                        # Even though solver finished, mark as timeout if it took too long
+                        csv_rows.append({
+                            'n_customers': n,
+                            'solver': solver_name,
+                            'instance_id': instance_id,
+                            'status': 'timeout',
+                            'time': solve_time,
+                            'cpc': np.nan
+                        })
                     instance_too_hard = True
-                    # Don't add to results - instance will be discarded
                 else:
                     current_failures[solver_name] = False
                     # Reset consecutive failures on success
                     consecutive_failures[solver_name] = 0
+                
+                if solution is not None and not current_failures.get(solver_name, False):
+                    results[solver_name]['times'].append(solve_time)
                     
-                    # Store results temporarily - will only add if no solver times out
-                    if solution is not None:
-                        temp_results[solver_name] = {
-                            'time': solve_time,
-                            'cost': solution.cost / max(1, instance['num_customers']),
-                            'solution': solution
-                        }
-                        
-                        # Prepare CSV row (but don't add yet)
-                        temp_csv_rows.append({
-                            'n_customers': n,
-                            'solver': solver_name,
-                            'instance_id': instance_id,
-                            'status': 'success',
-                            'time': solve_time,
-                            'cpc': solution.cost / max(1, instance['num_customers'])
-                        })
-                    else:
-                        # Failed but not due to timeout
-                        temp_csv_rows.append({
-                            'n_customers': n,
-                            'solver': solver_name,
-                            'instance_id': instance_id,
-                            'status': 'failed',
-                            'time': solve_time,
-                            'cpc': np.nan
-                        })
+                    # All solvers now return standardized costs, so use them directly
+                    benchmark_cost = solution.cost / max(1, instance['num_customers'])
+                    
+                    results[solver_name]['costs'].append(benchmark_cost)
+                    results[solver_name]['solutions'].append(solution)
+                    
+                    # Write successful result to CSV
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'success',
+                        'time': solve_time,
+                        'cpc': benchmark_cost
+                    })
+                    
+                    # Only count as optimal if solver claims it's optimal AND it's an exact solver
+                    if solution.is_optimal and solver_name.startswith('exact'):
+                        results[solver_name]['optimal_count'] += 1
+                elif solution is None and not current_failures.get(solver_name, False):
+                    # Failed but not due to timeout
+                    csv_rows.append({
+                        'n_customers': n,
+                        'solver': solver_name,
+                        'instance_id': instance_id,
+                        'status': 'failed',
+                        'time': solve_time,
+                        'cpc': np.nan
+                    })
             
             # If instance was not too hard for any active solver, use it
             if not instance_too_hard:
                 instance_found = True
-                successful_instances += 1
-                
-                # Add all temporary results to permanent results
-                for solver_name, temp_result in temp_results.items():
-                    results[solver_name]['times'].append(temp_result['time'])
-                    results[solver_name]['costs'].append(temp_result['cost'])
-                    results[solver_name]['solutions'].append(temp_result['solution'])
-                    
-                    # Log to MATLAB format
-                    if temp_result['solution']:
-                        matlab_logger.log_solver_result(n, solver_name, temp_result['solution'])
-                    
-                    # Count as optimal if solver claims it's optimal AND it's an exact solver
-                    if temp_result['solution'].is_optimal and solver_name.startswith('exact'):
-                        results[solver_name]['optimal_count'] += 1
-                
-                # Add CSV rows for successful instance
-                csv_rows.extend(temp_csv_rows)
-                
-                # End MATLAB instance logging
-                matlab_logger.end_instance()
-                
-                break  # Instance was successful, move to next
+                break
             else:
-                # Instance was too hard - discard all results from this attempt
-                logger.warning(f"Instance too hard for at least one solver, discarding entire instance and trying different one...")
-                
                 # Update consecutive failure counts for solvers that failed on this hard instance
                 for solver_name in current_failures:
                     if current_failures[solver_name]:
@@ -762,39 +759,56 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
                         if consecutive_failures[solver_name] >= MAX_CONSECUTIVE_FAILURES:
                             solver_disabled_this_n.add(solver_name)
                             logger.warning(f"{solver_name}: {MAX_CONSECUTIVE_FAILURES} consecutive hard instances - DISABLED for N>{n}")
+                
+                if attempt < MAX_INSTANCE_ATTEMPTS - 1:
+                    logger.warning(f"Instance too hard for some solvers, trying different instance...")
         
-        # If we couldn't find a reasonable instance after MAX_INSTANCE_ATTEMPTS, skip
+        # If we couldn't find a reasonable instance after MAX_INSTANCE_ATTEMPTS, use the last one anyway
         if not instance_found:
-            logger.warning(f"All {MAX_INSTANCE_ATTEMPTS} instance attempts were hard, skipping to next instance slot")
-            
+            logger.warning(f"All {MAX_INSTANCE_ATTEMPTS} instance attempts were hard, using last one")
+            # Process any remaining successful solutions from the last attempt
+            for solver_name in instance_solutions:
+                solution = instance_solutions[solver_name]
+                if solution is not None and solver_name not in current_failures:
+                    # This solution wasn't added yet, add it
+                    if solver_name not in [name for name in results[solver_name]['solutions'] if hasattr(name, 'solve_time') and abs(name.solve_time - solution.solve_time) < 0.001]:
+                        results[solver_name]['times'].append(solution.solve_time)
+                        benchmark_cost = solution.cost / max(1, instance['num_customers'])
+                        results[solver_name]['costs'].append(benchmark_cost)
+                        results[solver_name]['solutions'].append(solution)
+                        if solution.is_optimal and solver_name.startswith('exact'):
+                            results[solver_name]['optimal_count'] += 1
+        
         # If no solvers are active, stop early
+        # End MATLAB instance logging
+        matlab_logger.end_instance()
+            
         if not any_solver_active:
             logger.info("No active solvers remaining, stopping early")
             break
         
-        # Validate solutions if OR-Tools VRP succeeded and instance was accepted
-        if instance_found:
-            try:
-                ortools_solution = instance_solutions.get('exact_ortools_vrp')
-                other_solutions = {k: v for k, v in instance_solutions.items() if k != 'exact_ortools_vrp'}
+        # Validate solutions if OR-Tools VRP succeeded
+        try:
+            ortools_solution = instance_solutions.get('exact_ortools_vrp')
+            other_solutions = {k: v for k, v in instance_solutions.items() if k != 'exact_ortools_vrp'}
+            
+            if ortools_solution is not None:
+                validate_solutions(ortools_solution, other_solutions, instance, logger)
+            else:
+                logger.warning("OR-Tools VRP failed, skipping validation for this instance")
                 
-                if ortools_solution is not None:
-                    validate_solutions(ortools_solution, other_solutions, instance, logger)
-                else:
-                    logger.warning("OR-Tools VRP failed, skipping validation for this instance")
-                    
-            except ValueError as e:
-                validation_errors += 1
-                # Continue with benchmark but note the error
+        except ValueError as e:
+            validation_errors += 1
+            # Continue with benchmark but note the error
         
-        # Write CSV rows periodically (after each successful instance)
-        if csv_writer and csv_rows:
-            for row in csv_rows[-len(temp_csv_rows):]:  # Only write the newest rows
+        # Write CSV rows periodically (after each instance)
+        if csv_writer:
+            for row in csv_rows:
                 csv_writer.writerow(row)
-            # CSV rows written above
+            csv_rows = []  # Clear the buffer
     
     # Complete progress bar
-    print_progress_bar(successful_instances, successful_instances)
+    print_progress_bar(instances_max if attempted == instances_max else attempted, instances_max)
     safe_print()  # New line after progress bar
     
     # The newly disabled solvers for next N (only from consecutive failures)
@@ -885,12 +899,11 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     
     # Return both stats and newly disabled solvers
     stats['newly_disabled'] = newly_disabled
-    stats['successful_instances'] = successful_instances
     
     elapsed = time.time() - t0
     
     # Print summary
-    safe_print(f"✅ N={n} completed in {elapsed:.1f}s ({successful_instances} successful instances)")
+    safe_print(f"✅ N={n} completed in {elapsed:.1f}s")
     if validation_errors > 0:
         safe_print(f"⚠️  {validation_errors} validation errors detected!")
     
