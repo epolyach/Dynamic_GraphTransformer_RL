@@ -111,7 +111,13 @@ def _solve_brute_force_exact(instance: Dict[str, Any], time_limit: float, verbos
     solve_time = time.time() - start_time
     
     # Use standardized cost calculation for consistency across all solvers
-    standardized_cost = calculate_route_cost(best_solution, distances)
+    # Remove depot from routes before passing to calculate_route_cost
+    clean_routes = []
+    for vr in best_solution:
+        clean_route = [node for node in vr if node != 0]
+        if clean_route:
+            clean_routes.append(clean_route)
+    standardized_cost = calculate_route_cost(clean_routes, distances)
     
     if verbose:
         print(f"Brute force completed: tested {solutions_tested} solutions in {solve_time:.3f}s")
@@ -120,8 +126,8 @@ def _solve_brute_force_exact(instance: Dict[str, Any], time_limit: float, verbos
     return CVRPSolution(
         route=route,
         cost=standardized_cost,
-        num_vehicles=len(best_solution),
-        vehicle_routes=best_solution,
+        num_vehicles=len(clean_routes),
+        vehicle_routes=clean_routes,  # Return clean routes without depot
         solve_time=solve_time,
         algorithm_used='Exact-BruteForce',
         is_optimal=True  # This is now truly optimal

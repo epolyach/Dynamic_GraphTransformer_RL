@@ -3,7 +3,7 @@
 
 """
 Exact CVRP Solver Benchmark with Solution Validation
-Compares exact_ortools_vrp, exact_dp (N≤10 only), and heuristic_or solvers
+Compares exact_ortools_vrp, exact_milp, and heuristic_or solvers
 Validates solutions and logs detailed results to benchmark_exact.log
 Updated to produce CSV format compatible with plot_cpu_benchmark.py
 Modified to discard entire instance if any solver finds it too hard
@@ -164,7 +164,7 @@ class MatlabLogger:
         cpc = solution.cost / n
         
         # Format solver name for display
-        if 'exact_dp' in solver_name.lower():
+        if 'exact_milp' in solver_name.lower():
             solver_display = "Exact (MILP)"
         elif 'exact_ortools' in solver_name.lower():
             solver_display = "Metaheuristic (OR-Tools)"
@@ -239,7 +239,7 @@ def validate_config(config):
 
 # Import solvers
 import solvers.exact_ortools_vrp as exact_ortools_vrp
-import solvers.exact_dp as exact_dp
+import solvers.exact_milp as exact_milp
 import solvers.heuristic_or as heuristic_or
 
 # Import generator from research folder
@@ -419,7 +419,7 @@ def validate_solutions(ortools_solution: CVRPSolution, other_solutions: Dict[str
         # Prepare error details for both console and log
         error_lines = []
         error_lines.append(f"exact_ortools_vrp cost/route:   {ortools_cost:.4f} {format_route_with_depot(ortools_solution.vehicle_routes)}")
-        for solver_name in ['exact_dp', 'heuristic_or']:
+        for solver_name in ['exact_milp', 'heuristic_or']:
             if solver_name in error_solvers:
                 info = error_solvers[solver_name]
                 error_lines.append(f"{solver_name} cost/route: {info['cost']:.4f} {format_route_with_depot(info['routes'])}")
@@ -573,12 +573,12 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     # Results for each solver
     results = {
         'exact_ortools_vrp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
-        'exact_dp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
+        'exact_milp': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []},
         'heuristic_or': {'times': [], 'costs': [], 'optimal_count': 0, 'solutions': []}
     }
     
     solvers = {
-        'exact_dp': exact_dp,
+        'exact_milp': exact_milp,
         'exact_ortools_vrp': exact_ortools_vrp,
         'heuristic_or': heuristic_or
     }
@@ -655,12 +655,6 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
             temp_csv_rows = []
             
             for solver_name, solver_module in solvers.items():
-                # Skip exact_dp for N>10 (too expensive)
-                if solver_name == "exact_dp" and n > 10:
-                    instance_solutions[solver_name] = None
-                    logger.info(f"exact_dp: SKIPPED (N>10, too expensive for brute force)")
-                    continue
-                
                 if solver_name in disabled_solvers or solver_name in solver_disabled_this_n:
                     # Skip disabled solvers
                     instance_solutions[solver_name] = None
@@ -900,7 +894,7 @@ def run_benchmark_for_n(n, instances_min, instances_max, capacity, demand_range,
     if validation_errors > 0:
         safe_print(f"⚠️  {validation_errors} validation errors detected!")
     
-    for solver in ['exact_dp', 'exact_ortools_vrp', 'heuristic_or']:
+    for solver in ['exact_milp', 'exact_ortools_vrp', 'heuristic_or']:
         solved = stats.get(f'solved_{solver}', 0)
         optimal = stats.get(f'optimal_{solver}', 0) if solver.startswith('exact') else 'N/A'
         avg_time = stats.get(f'time_{solver}', float('nan'))
