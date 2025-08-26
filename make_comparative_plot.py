@@ -344,6 +344,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
         'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
         'DGT+RL': 'dgt_rl',
+        'Enhanced-DGT+RL': 'enhanced_dgt_rl',
         'Simplified-DGT+RL': 'simplified_dgt_rl',
         'GAT+RL': 'gat_rl',
         'GT-Greedy': 'gt_greedy',
@@ -426,6 +427,9 @@ def create_comparison_plots(results, training_times, model_params, config, scale
 # 2. Training Cost Comparison (NORMALIZED)
     ax2 = plt.subplot(2, 4, 2)
     for model_name in model_names:
+        # Skip GT-Greedy since it has no training/RL process
+        if model_name == 'GT-Greedy':
+            continue
         series = csv_series.get(model_name)
         if series and series['train_cost']:
             xs = [series['epochs'][i] for i, v in enumerate(series['train_cost']) if pd.notna(v)]
@@ -438,14 +442,15 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     _safe_legend(ax2)
     ax2.grid(True, alpha=0.3)
     
-# 3. Validation Cost vs Naive (NORMALIZED)
+# 3. Validation Cost vs Baselines (NORMALIZED)
     ax3 = plt.subplot(2, 4, 3)
-    # Plot naive baseline as background reference line
     num_epochs = config['training']['num_epochs']
-    # Annotate if depot penalty is active
-    penalty_active = isinstance(config, dict) and config.get('cost', {}).get('depot_penalty_per_visit', 0.0)
-    baseline_label = 'Naive Baseline (with penalty)' if penalty_active else 'Naive Baseline'
-    ax3.axhline(y=naive_normalized, color='lightgray', linewidth=3, linestyle='--', label=baseline_label)
+    
+    # GT-Greedy as baseline: draw a dashed horizontal line at its final validation cost
+    if 'GT-Greedy' in results:
+        gg_val = results['GT-Greedy'].get('final_val_cost', None)
+        if gg_val is not None:
+            ax3.axhline(y=gg_val, color='lightgray', linewidth=3, linestyle='--', label='GT-Greedy Baseline')
     
     # Add exact baseline if available
     if exact_normalized is not None:
@@ -464,25 +469,17 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     ax3.axhline(y=ortools_gls_avg, color='green', linewidth=2, linestyle='-', 
                 label='OR-Tools GLS', alpha=0.7)
 
-    # Plot model validation series; handle GT-Greedy specially (no training/validation curve)
+    # Plot model validation series (exclude GT-Greedy since it's now shown as baseline)
     for model_name in model_names:
         if model_name == 'GT-Greedy':
-            continue  # handle after loop
+            continue  # GT-Greedy is shown as baseline
         series = csv_series.get(model_name)
         if series and series['val_costs']:
             xs = series['val_epochs']
             ys = series['val_costs']
             ax3.plot(xs, ys, 'o-', label=model_name, linewidth=2, markersize=5, color=color_map[model_name])
 
-    # GT-Greedy: draw a dashed horizontal line at its final validation cost and a single point
-    if 'GT-Greedy' in results:
-        gg_val = results['GT-Greedy'].get('final_val_cost', None)
-        if gg_val is not None:
-            ax3.plot([0, num_epochs], [gg_val, gg_val], linestyle='--', linewidth=2, color=color_map['GT-Greedy'], label='GT-Greedy')
-            # Single marker at final epoch
-            ax3.plot([num_epochs], [gg_val], marker='o', markersize=6, color=color_map['GT-Greedy'])
-
-    ax3.set_title('Validation Cost vs Naive (Per Customer)', fontsize=12, fontweight='bold')
+    ax3.set_title('Validation Cost vs Baselines (Per Customer)', fontsize=12, fontweight='bold')
     ax3.set_xlabel('Epoch')
     ax3.set_ylabel('Average Cost per Customer')
     _safe_legend(ax3)
@@ -490,39 +487,48 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 4. Final Performance Bar Chart with Naive/Exact Baseline (NORMALIZED)
     ax4 = plt.subplot(2, 4, 4)
-    # Final costs are already per customer in saved results - handle both formats
-    final_costs_normalized = []
-    for name in model_names:
-        result = results[name]
-        if 'history' in result:
-            # New enhanced format
-            final_cost = result['history'].get('final_val_cost', 0.0)
-        else:
-            # Old format
-            final_cost = result.get('final_val_cost', 0.0)
-        final_costs_normalized.append(final_cost)
     
-    # Colors consistent with lines
-    colors = [color_map[name] for name in model_names]
+    # Define the desired order for Panel 4
+    panel4_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL', 'GT-Greedy']
     
-    # Add baselines to the comparison (normalized)
-    baseline_names = ['Naive Baseline']
-    baseline_costs = [naive_normalized]
-    baseline_colors = [(0.8, 0.2, 0.2)]  # red-like for naive
+    # Filter and reorder models based on desired order
+    ordered_names = []
+    ordered_costs = []
+    ordered_colors = []
     
+    for name in panel4_order:
+        if name in results:
+            result = results[name]
+            if 'history' in result:
+                # New enhanced format
+                final_cost = result['history'].get('final_val_cost', 0.0)
+            else:
+                # Old format
+                final_cost = result.get('final_val_cost', 0.0)
+            ordered_names.append(name)
+            ordered_costs.append(final_cost)
+            ordered_colors.append(color_map[name])
+    
+    # Add baselines in specific order: OR-Tools GLS, then Naive
+    # OR-Tools GLS
+    ordered_names.append('OR-Tools GLS')
+    ordered_costs.append(0.329127)
+    ordered_colors.append((0.0, 0.5, 0.0))  # green for OR-Tools
+    
+    # Naive Baseline
+    ordered_names.append('Naive Baseline')
+    ordered_costs.append(naive_normalized)
+    ordered_colors.append((0.8, 0.2, 0.2))  # red-like for naive
+    
+    # Add exact baseline if available (after Naive)
     if exact_normalized is not None:
-        baseline_names.append(f'Exact Baseline\n({exact_baseline_stats["num_solved"]} samples)')
-        baseline_costs.append(exact_normalized)
-        baseline_colors.append((0.6, 0.0, 0.0))  # dark red for exact
+        ordered_names.append(f'Exact Baseline\n({exact_baseline_stats["num_solved"]} samples)')
+        ordered_costs.append(exact_normalized)
+        ordered_colors.append((0.6, 0.0, 0.0))  # dark red for exact
     
-    # Add OR-Tools GLS benchmark
-    baseline_names.append('OR-Tools GLS')
-    baseline_costs.append(0.329127)
-    baseline_colors.append((0.0, 0.5, 0.0))  # green for OR-Tools
-    
-    all_names = model_names + baseline_names
-    all_costs_normalized = final_costs_normalized + baseline_costs
-    all_colors = colors + baseline_colors
+    all_names = ordered_names
+    all_costs_normalized = ordered_costs
+    all_colors = ordered_colors
     
     bars = ax4.bar(range(len(all_names)), all_costs_normalized, color=all_colors, alpha=0.85)
     title_suffix = ' vs Baselines' if exact_normalized is not None else ' vs Naive Baseline'
@@ -547,9 +553,21 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 5. Training Time Comparison (exclude GT-Greedy which has no training loop)
     plt.subplot(2, 4, 5)
-    time_models = [n for n in model_names if n != 'GT-Greedy']
-    times = [training_times[name] for name in time_models]
-    bars = plt.bar(range(len(time_models)), times, color=[color_map[n] for n in time_models], alpha=0.8)
+    # Define the desired order for Panel 5 (RL models only)
+    panel5_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    
+    # Filter and reorder models based on desired order
+    time_models = []
+    times = []
+    time_colors = []
+    
+    for name in panel5_order:
+        if name in results and name != 'GT-Greedy':  # Ensure GT-Greedy is excluded
+            time_models.append(name)
+            times.append(training_times[name])
+            time_colors.append(color_map[name])
+    
+    bars = plt.bar(range(len(time_models)), times, color=time_colors, alpha=0.8)
     plt.title('Training Time', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Time (seconds)')
@@ -564,12 +582,25 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 6. Model Complexity (Parameters)
     plt.subplot(2, 4, 6)
-    param_counts = [model_params[name] for name in model_names]
-    bars = plt.bar(range(len(model_names)), param_counts, color=[color_map[n] for n in model_names], alpha=0.8)
+    # Define the desired order for Panel 6 (include GT-Greedy)
+    panel6_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL', 'GT-Greedy']
+    
+    # Filter and reorder models based on desired order
+    complexity_models = []
+    param_counts = []
+    param_colors = []
+    
+    for name in panel6_order:
+        if name in results:
+            complexity_models.append(name)
+            param_counts.append(model_params[name])
+            param_colors.append(color_map[name])
+    
+    bars = plt.bar(range(len(complexity_models)), param_counts, color=param_colors, alpha=0.8)
     plt.title('Model Complexity', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Parameters')
-    plt.xticks(range(len(model_names)), [name.replace(' ', '\n') for name in model_names], rotation=45, ha='right')
+    plt.xticks(range(len(complexity_models)), [name.replace(' ', '\n') for name in complexity_models], rotation=45, ha='right')
     
     for bar, params in zip(bars, param_counts):
         plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + max(param_counts)*0.01,
@@ -579,23 +610,32 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 7. Learning Efficiency (Cost Improvement) - exclude GT-Greedy
     plt.subplot(2, 4, 7)
-    eff_models = [n for n in model_names if n != 'GT-Greedy']
-    improvements = []
-    for model_name in eff_models:
-        series = csv_series.get(model_name)
-        imp = 0.0
-        if series:
-            # Prefer training cost series; fallback to validation series if training is unavailable (e.g., legacy)
-            train_vals = [v for v in (series.get('train_cost') or []) if pd.notna(v)]
-            if len(train_vals) >= 2 and train_vals[0] > 0:
-                imp = ((train_vals[0] - train_vals[-1]) / train_vals[0]) * 100
-            else:
-                val_vals = [v for v in (series.get('val_costs') or []) if pd.notna(v)]
-                if len(val_vals) >= 2 and val_vals[0] > 0:
-                    imp = ((val_vals[0] - val_vals[-1]) / val_vals[0]) * 100
-        improvements.append(imp)
+    # Define the desired order for Panel 7 (RL models only)
+    panel7_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
-    bars = plt.bar(range(len(eff_models)), improvements, color=[color_map[n] for n in eff_models], alpha=0.8)
+    # Filter and reorder models based on desired order
+    eff_models = []
+    improvements = []
+    eff_colors = []
+    
+    for name in panel7_order:
+        if name in results and name != 'GT-Greedy':  # Ensure GT-Greedy is excluded
+            series = csv_series.get(name)
+            imp = 0.0
+            if series:
+                # Prefer training cost series; fallback to validation series if training is unavailable (e.g., legacy)
+                train_vals = [v for v in (series.get('train_cost') or []) if pd.notna(v)]
+                if len(train_vals) >= 2 and train_vals[0] > 0:
+                    imp = ((train_vals[0] - train_vals[-1]) / train_vals[0]) * 100
+                else:
+                    val_vals = [v for v in (series.get('val_costs') or []) if pd.notna(v)]
+                    if len(val_vals) >= 2 and val_vals[0] > 0:
+                        imp = ((val_vals[0] - val_vals[-1]) / val_vals[0]) * 100
+            eff_models.append(name)
+            improvements.append(imp)
+            eff_colors.append(color_map[name])
+    
+    bars = plt.bar(range(len(eff_models)), improvements, color=eff_colors, alpha=0.8)
     plt.title('Learning Efficiency', fontsize=12, fontweight='bold')
     plt.xlabel('Model Architecture')
     plt.ylabel('Cost Improvement (%)')
@@ -611,13 +651,34 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # 8. Performance vs Complexity Scatter (NORMALIZED)
     plt.subplot(2, 4, 8)
-    # Use the same final costs we computed above
-    # final_costs_normalized is already computed correctly above
-    for i, model_name in enumerate(model_names):
-        plt.scatter(param_counts[i], final_costs_normalized[i], 
+
+    # 8. Performance vs Complexity Scatter (NORMALIZED)
+    plt.subplot(2, 4, 8)
+    
+    # Prepare data for scatter plot: final costs and parameters for available models
+    scatter_costs = []
+    scatter_params = []
+    scatter_labels = []
+
+    for model_name in model_names: # model_names list comes from model_names = list(results.keys())
+        if model_name in results and model_name in model_params:
+            result = results[model_name]
+            # Handle both old and new enhanced formats for final_val_cost
+            if 'history' in result:
+                final_cost = result['history'].get('final_val_cost', None)
+            else:
+                final_cost = result.get('final_val_cost', None)
+
+            if final_cost is not None and model_params[model_name] > 0: # Ensure valid data for plotting
+                scatter_costs.append(final_cost)
+                scatter_params.append(model_params[model_name])
+                scatter_labels.append(model_name)
+
+    for i, model_name in enumerate(scatter_labels):
+        plt.scatter(scatter_params[i], scatter_costs[i], 
                    s=100, color=color_map[model_name], alpha=0.8, label=model_name)
         plt.annotate(model_name.replace(' ', '\n'), 
-                    (param_counts[i], final_costs_normalized[i]),
+                    (scatter_params[i], scatter_costs[i]),
                     xytext=(5, 5), textcoords='offset points', fontsize=8)
     
     plt.title('Performance vs Complexity (Per Customer)', fontsize=12, fontweight='bold')
