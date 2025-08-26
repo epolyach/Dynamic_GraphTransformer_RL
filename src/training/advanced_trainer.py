@@ -12,6 +12,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 
 from src.metrics.costs import compute_route_cost
 from src.eval.validation import validate_route
+from src.training.rollout_baseline import RolloutBaseline
 
 
 class EarlyStopping:
@@ -206,6 +207,21 @@ def advanced_train_model(
     
     start_time = time.time()
     
+    # Set up optional rollout baseline
+    baseline_cfg = config.get('baseline', {})
+    use_rollout_baseline = str(baseline_cfg.get('type', 'mean')).lower() == 'rollout'
+    baseline: Optional[RolloutBaseline] = None
+
+    if use_rollout_baseline and model_name != 'GT-Greedy':
+        # Build a fixed evaluation dataset (list of instance-batches)
+        eval_batches = int(baseline_cfg.get('eval_batches', 2))
+        eval_dataset: List[List[Dict[str, Any]]] = []
+        for i in range(eval_batches):
+            # Use fixed seeds to keep the eval set stable across epochs
+            seed_val = 123456 + i
+            eval_dataset.append(data_generator(batch_size, seed=seed_val))
+        baseline = RolloutBaseline(model, eval_dataset, config, logger_print)
+
     for epoch in range(0, num_epochs + 1):
         epoch_start = time.time()
         
@@ -257,8 +273,22 @@ def advanced_train_model(
             optimizer.zero_grad()
             
             costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
-            baseline = costs_tensor.mean().detach()
-            advantages = baseline - costs_tensor  # Lower cost -> positive advantage
+
+            # Compute baseline (rollout or mean)
+            if baseline is not None:
+                with torch.no_grad():
+                    bl_vals = baseline.eval_batch(instances)  # per-instance costs (CPU tensor)
+                # Ensure dtype/device alignment
+                bl_vals = bl_vals.to(dtype=costs_tensor.dtype)
+                if bl_vals.numel() != costs_tensor.numel():
+                    # Fallback to mean if mismatch occurs
+                    base_scalar = costs_tensor.mean().detach()
+                    advantages = base_scalar - costs_tensor
+                else:
+                    advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
+            else:
+                base_scalar = costs_tensor.mean().detach()
+                advantages = base_scalar - costs_tensor  # Lower cost -> positive advantage
             
             # Entropy regularization with adaptive coefficient
             entropy_coef = adv_config.get('entropy_coef', 0.01)
@@ -329,6 +359,13 @@ def advanced_train_model(
                     scheduler.step(val_cost)
             else:
                 scheduler.step()
+        
+        # Rollout baseline update (if enabled)
+        if baseline is not None:
+            try:
+                baseline.epoch_callback(model, epoch)
+            except Exception as e:
+                logger_print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
         
         # Early stopping check
         if early_stopping is not None and val_cost is not None:

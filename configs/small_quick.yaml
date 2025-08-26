@@ -2,19 +2,23 @@
 working_dir_path: "results/small_quick"
 
 problem:
-  num_customers: 10
+  num_customers: 20
 
 training:
-  num_instances: 512
-  batch_size: 64
-  num_epochs: 4
-  learning_rate: 1e-3
-  validation_frequency: 2
-
-# Keep advanced features on but short training
+  num_instances: 16384     
+  batch_size: 256         
+  num_epochs: 50          # Increased for deeper convergence analysis
+  
+# Override for better algorithm differentiation
 training_advanced:
-  early_stopping_patience: 5
+  # Longer patience for better convergence
+  early_stopping_patience: 25  # Increased to match longer training
+  
+  # More aggressive temperature adaptation for clear differences  
+  temp_start: 3.5          # Even higher start
+  temp_min: 0.05           # Even lower min
+  temp_adaptation_rate: 0.25   # Faster adaptation
 
+# Keep default cost penalty modest to speed learning signal; override if studying penalties
 cost:
   depot_penalty_per_visit: 0.0
-

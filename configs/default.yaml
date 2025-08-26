@@ -25,6 +25,19 @@ training:
   validation_frequency: 4  # Run validation every N epochs
 
 # =============================
+# Rollout baseline (optional)
+# =============================
+baseline:
+  type: "rollout"            # "mean" or "rollout"
+  eval_batches: 2         # number of fixed eval batches for baseline updates
+  greedy_temperature: 0.1 # temperature for greedy evaluation
+  update:
+    enabled: true
+    frequency: 1          # evaluate/update every N epochs
+    significance_test: true
+    p_value: 0.05
+
+# =============================
 # Experiment control
 # =============================
 experiment:

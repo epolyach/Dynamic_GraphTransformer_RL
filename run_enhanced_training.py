@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
+# Ensure numpy is installed: pip install numpy
 import numpy as np
 import pandas as pd
 import torch
@@ -21,12 +22,10 @@ import torch
 from src.utils.config import load_config
 from src.training.advanced_trainer import advanced_train_model
 from src.data.enhanced_generator import create_enhanced_data_generator
-from src.models.enhanced_dgt import EnhancedDynamicGraphTransformer
 from src.models.dgt import DynamicGraphTransformerNetwork as DynamicGraphTransformer
 from src.models.pointer import BaselinePointerNetwork
 from src.models.gt import GraphTransformerNetwork
 from src.models.greedy_gt import GraphTransformerGreedy
-from src.models.gat import GraphAttentionTransformer
 from src.pipelines.train import set_seeds
 
 
@@ -183,12 +182,12 @@ def build_enhanced_model(name: str, config: dict):
     ff_mult = config['model']['feedforward_multiplier']
     edge_div = config['model']['edge_embedding_divisor']
 
-    if name == 'Enhanced-DGT+RL':
-        return EnhancedDynamicGraphTransformer(
-            input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config
-        )
-    elif name == 'DGT+RL':
+    if name == 'DGT+RL':
         return DynamicGraphTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
+    elif name == 'Enhanced-DGT+RL':
+        # Enhanced DGT with multi-scale attention, geometric embeddings, and adaptive updates
+        from src.models.enhanced_dgt import EnhancedDynamicGraphTransformer
+        return EnhancedDynamicGraphTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif name == 'Pointer+RL':
         return BaselinePointerNetwork(input_dim, hidden_dim, config)
     elif name == 'GT-Greedy':
@@ -196,6 +195,8 @@ def build_enhanced_model(name: str, config: dict):
     elif name == 'GT+RL':
         return GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif name == 'GAT+RL':
+        # Import our GAT implementation that doesn't require torch_geometric
+        from src.models.gat import GraphAttentionTransformer
         return GraphAttentionTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, edge_div, config)
     else:
         raise ValueError(f'Unknown model name: {name}')
@@ -206,9 +207,9 @@ def parse_args():
     parser.add_argument('--config', type=str, default='configs/enhanced.yaml',
                        help='Path to enhanced configuration file')
     parser.add_argument('--models', nargs='+', 
-                       choices=['Enhanced-DGT+RL', 'DGT+RL', 'Pointer+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
-                       default=['Enhanced-DGT+RL', 'Pointer+RL', 'GT+RL'],
-                       help='Models to train')
+                       choices=['DGT+RL', 'Enhanced-DGT+RL', 'Pointer+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
+                       default=['GT+RL', 'DGT+RL', 'GAT+RL'],
+                       help='Models to train (DGT+RL=standard Dynamic Graph Transformer, Enhanced-DGT+RL=with multi-scale attention and geometric embeddings)')
     parser.add_argument('--use-curriculum', action='store_true',
                        help='Use curriculum learning')
     parser.add_argument('--use-augmentation', action='store_true', default=True,

@@ -20,20 +20,28 @@ This study compares 6 different neural network architectures:
 - PyTorch 2.0+
 - CPU-only (optimized)
 
-### Installation
+### One-command setup and activation
+Use the single activation script. It will create the virtual environment if it doesn't exist, install dependencies (NumPy, Pandas, PyTorch, etc.), and activate it.
+
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd Dynamic_GraphTransformer_RL
-
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
+# From the repository root
+source activate_env.sh
 ```
+
+- Run this in every new terminal session before using the project.
+- This prevents “ModuleNotFoundError: No module named 'numpy'” and similar issues by ensuring you always use the project venv.
+
+### Small-quick smoke test
+This is the fastest test to verify everything works end-to-end.
+
+```bash
+python run_enhanced_training.py --config configs/small_quick.yaml --models GT+RL
+```
+
+Results will appear under `results/small_quick/`.
+
+### Optional: Legacy GAT model
+If you later want to include the legacy GAT+RL model, it requires torch-geometric and an external repo. Keep it disabled unless needed.
 
 ## 🔄 Workflow
 
