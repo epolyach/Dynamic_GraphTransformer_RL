@@ -320,7 +320,8 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     fig = plt.figure(figsize=(20, 12))
     
     # Get naive baseline estimate
-    naive_normalized = compute_naive_baseline_cost_per_customer(config)
+    naive_normalized = 1.053
+    logger.info(f"📍 Using fixed naive baseline: {naive_normalized:.3f} per customer (no instance computation)")
     
     # Check if we have exact baseline
     exact_normalized = None

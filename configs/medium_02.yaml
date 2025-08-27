@@ -1,0 +1,21 @@
+# Medium-scale configuration (variant 02): lower base LR for steadier convergence
+working_dir_path: results/medium_02
+
+problem:
+  num_customers: 20
+
+training:
+  num_instances: 768000
+  batch_size: 512
+  num_epochs: 100
+  learning_rate: 0.00002     # down from default 5e-5
+
+training_advanced:
+  # Keep convergence-friendly settings from medium.yaml
+  early_stopping_patience: 25
+  temp_start: 3.5
+  temp_min: 0.05
+  temp_adaptation_rate: 0.25
+
+cost:
+  depot_penalty_per_visit: 0.0
