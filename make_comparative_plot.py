@@ -254,15 +254,12 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # CSV dir
     csv_dir = os.path.join(config.get('working_dir_path', 'results'), 'csv') if isinstance(config, dict) else os.path.join('results', scale, 'csv')
     
-    # Map display names to CSV keys
+    # Map display names to CSV keys - matches current model factory
     name_to_key = {
-        'GT+RL': 'gt_rl',
-        'DGT+RL': 'dgt_rl',
-        'Enhanced-DGT+RL': 'enhanced_dgt_rl',
-        'Simplified-DGT+RL': 'simplified_dgt_rl',
-        'GAT+RL': 'gat_rl',
-        'GT-Greedy': 'gt_greedy',
-        'GAT+RL (legacy)': 'gat_rl_legacy',
+        'GAT+RL': 'gat_rl',      # Legacy GAT model
+        'GT-Greedy': 'gt_greedy', # Greedy baseline
+        'GT+RL': 'gt_rl',        # Advanced Graph Transformer
+        'DGT+RL': 'dgt_rl',      # Dynamic Graph Transformer
     }
 
     def load_csv_series_for_model(model_name):
