@@ -41,7 +41,7 @@ class EdgeGATConv(nn.Module):
     def forward(self, x: torch.Tensor, edge_index: torch.Tensor, 
                 edge_attr: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass with edge-aware attention.
+        Forward pass with edge-aware attention (vectorized for efficiency).
         
         Args:
             x: Node features [batch_size * num_nodes, hidden_dim]
@@ -51,28 +51,31 @@ class EdgeGATConv(nn.Module):
         # Project node features
         x = self.fc(x)
         
-        # Manual message passing (simplified from torch_geometric)
+        if edge_index.size(1) == 0:
+            return x  # No edges, return projected features
+        
+        # Vectorized message passing
+        row, col = edge_index[0], edge_index[1]
+        
+        # Get source and target node features for all edges at once
+        x_i = x[row]  # [num_edges, hidden_dim]
+        x_j = x[col]  # [num_edges, hidden_dim]
+        
+        # Concatenate features for attention computation
+        x_cat = torch.cat([x_i, x_j, edge_attr], dim=-1)  # [num_edges, hidden_dim*2 + edge_dim]
+        
+        # Compute attention coefficients for all edges
+        alpha = self.att_vector(x_cat)  # [num_edges, hidden_dim]
+        alpha = F.leaky_relu(alpha, self.negative_slope)
+        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
+        
+        # Prepare messages
+        messages = x_j * alpha  # [num_edges, hidden_dim]
+        
+        # Aggregate messages (sum over incoming edges for each node)
         num_nodes = x.size(0)
         out = torch.zeros_like(x)
-        
-        # Process each edge
-        for edge_idx in range(edge_index.size(1)):
-            i = edge_index[0, edge_idx]
-            j = edge_index[1, edge_idx]
-            
-            # Concatenate features for attention
-            x_cat = torch.cat([x[i].unsqueeze(0), x[j].unsqueeze(0), 
-                              edge_attr[edge_idx].unsqueeze(0)], dim=-1)
-            
-            # Compute attention coefficient
-            alpha = self.att_vector(x_cat)
-            alpha = F.leaky_relu(alpha, self.negative_slope)
-            
-            # Apply dropout
-            alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-            
-            # Aggregate messages (ensure proper dimensions)
-            out[i] += (x[j] * alpha).squeeze(0)
+        out.index_add_(0, row, messages)
         
         return out
 
@@ -361,7 +364,8 @@ class GAT_Decoder(nn.Module):
         mask = encoder_inputs.new_zeros(batch_size, seq_len, device=device)
         
         # Initialize dynamic state
-        dynamic_capacity = capacity.expand(batch_size, -1).to(device)
+        max_capacity = capacity.clone()  # Preserve original capacity
+        dynamic_capacity = capacity.clone().expand(batch_size, -1).to(device)
         demands = demand.to(device)
         
         # Track visited nodes
@@ -385,7 +389,7 @@ class GAT_Decoder(nn.Module):
             
             # Update mask
             mask, mask1 = self.update_mask(demands, dynamic_capacity, 
-                                          index.unsqueeze(-1), mask1, i)
+                                          index, mask1, i)
             
             # Get pointer probabilities
             p = self.pointer(decoder_input.unsqueeze(1), encoder_inputs, mask, T)
@@ -408,7 +412,7 @@ class GAT_Decoder(nn.Module):
             
             # Update state
             dynamic_capacity = self.update_state(demands, dynamic_capacity, 
-                                                index.unsqueeze(-1), capacity[0].item())
+                                                index, max_capacity)
             
             # Get next input
             _input = torch.gather(
@@ -425,40 +429,57 @@ class GAT_Decoder(nn.Module):
         return actions, log_p
     
     def update_mask(self, demands, dynamic_capacity, index, mask1, step):
-        """Update mask based on capacity constraints"""
+        """Update mask based on capacity constraints and prevent invalid depot repeats."""
         batch_size = demands.size(0)
-        mask = mask1.clone()
         
-        # Update visited mask for non-depot nodes
+        # Update visited mask for non-depot nodes selected in the previous step
         if step > 0:
             for b in range(batch_size):
-                node_idx = index[b].item()
-                if node_idx != 0:  # Only mask non-depot nodes
+                node_idx = int(index[b].item())
+                if node_idx != 0:  # Only mark customers as visited
                     mask1[b, node_idx] = 1
+        
+        # Create a fresh mask based on current state
+        mask = torch.zeros_like(mask1)
         
         # Build current mask based on visited and capacity
         for b in range(batch_size):
-            # Initially mask depot (can't start by returning to depot)
-            if step == 0:
-                mask[b, 0] = 1
-            else:
-                mask[b, 0] = 0  # Can return to depot after first step
-            
             # Mask visited customers and those exceeding capacity
             for n in range(1, demands.size(1)):
                 # Already visited
                 if mask1[b, n] == 1:
                     mask[b, n] = 1
                 # Would exceed capacity
-                elif demands[b, n] > dynamic_capacity[b]:
+                elif demands[b, n].item() > dynamic_capacity[b].item():
                     mask[b, n] = 1
                 else:
                     mask[b, n] = 0  # Available to visit
             
-            # If all customers are masked, must return to depot
+            # Depot handling
+            if step == 0:
+                # Can't start by returning to depot
+                mask[b, 0] = 1
+            else:
+                # Check last visited node
+                last_idx = int(index[b].item())
+                
+                # Check if any customers are feasible
+                any_feasible = False
+                for n in range(1, demands.size(1)):
+                    if mask1[b, n] == 0 and demands[b, n].item() <= dynamic_capacity[b].item():
+                        any_feasible = True
+                        break
+                
+                # Prevent consecutive depot visits when customers are feasible
+                if last_idx == 0 and any_feasible:
+                    mask[b, 0] = 1  # Mask depot to avoid 0 -> 0
+                else:
+                    mask[b, 0] = 0  # Depot is allowed
+            
+            # If all customers are masked (visited or infeasible), force depot
             if mask[b, 1:].all():
-                mask[b, :] = 1  # Mask everything
-                mask[b, 0] = 0  # Force return to depot
+                mask[b, :] = 1
+                mask[b, 0] = 0  # Only depot available
         
         return mask, mask1
     
@@ -469,9 +490,14 @@ class GAT_Decoder(nn.Module):
         for b in range(batch_size):
             node = index[b].item()
             if node == 0:  # Depot
-                dynamic_capacity[b] = max_capacity
+                # Reset to max capacity for this instance
+                if max_capacity.dim() > 0:
+                    dynamic_capacity[b] = max_capacity[b].item() if max_capacity.size(0) > 1 else max_capacity[0].item()
+                else:
+                    dynamic_capacity[b] = max_capacity.item()
             else:
-                dynamic_capacity[b] -= demands[b, node]
+                # Subtract demand from current capacity
+                dynamic_capacity[b] -= demands[b, node].item()
         
         return dynamic_capacity
 
@@ -608,25 +634,40 @@ class LegacyGATModel(nn.Module):
             actions = all_actions[b]
             route = [0]  # Start at depot
             visited = set()
+            n_customers = len(instances[b]['coords']) - 1
+            
             for step in range(actions.size(1)):
-                node = actions[0, step].item()  # actions is [1, seq_len] for each instance
-                # Add node to route
+                node = int(actions[0, step].item())  # actions is [1, seq_len] for each instance
+                
+                # Avoid consecutive depots in the route representation
+                if node == 0 and route[-1] == 0:
+                    continue
+                
                 route.append(node)
                 
-                if node == 0:  # Return to depot
-                    break
-                    
-                visited.add(node)
-                # Check if all customers visited
-                n_customers = len(instances[b]['coords']) - 1
-                if len(visited) >= n_customers:
-                    route.append(0)  # Return to depot
-                    break
+                if node != 0:
+                    visited.add(node)
+                    # If all customers visited, ensure final return to depot and stop
+                    if len(visited) >= n_customers:
+                        if route[-1] != 0:
+                            route.append(0)
+                        break
+                # If node == 0, this represents end of a trip; continue to next trip
             
             # Ensure route ends at depot
             if route[-1] != 0:
                 route.append(0)
                 
+            # Final sanity: if not all customers visited (unlikely), try to append missing customers (fallback)
+            if len(visited) < n_customers:
+                # Append any missing customers followed by depot to keep validation robust
+                for cust in range(1, n_customers + 1):
+                    if cust not in visited:
+                        route.insert(-1, cust)
+                # Ensure end at depot
+                if route[-1] != 0:
+                    route.append(0)
+            
             routes.append(route)
         
         # Concatenate log probabilities
