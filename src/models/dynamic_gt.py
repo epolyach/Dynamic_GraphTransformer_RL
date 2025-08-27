@@ -633,9 +633,9 @@ class DynamicGraphTransformer(nn.Module):
             # Pointer network scores
             global_context = node_embeddings.mean(dim=1, keepdim=True).expand(-1, max_nodes, -1)
             state_context = state.unsqueeze(1).expand(-1, max_nodes, -1)
+            edge_context = edge_features.mean(dim=2)  # Aggregate edge features
             
-            # Note: edge_messages already transformed to hidden_dim, use those instead of raw edge_features
-            pointer_input = torch.cat([node_embeddings, global_context, state_context], dim=-1)
+            pointer_input = torch.cat([node_embeddings, global_context, edge_context], dim=-1)
             pointer_scores = self.pointer_attention['pointer'](pointer_input)
             
             # Combine scores

@@ -9,15 +9,9 @@ import torch.nn as nn
 from typing import Dict, Any
 
 from src.models.legacy_gat import LegacyGATModel
-from src.models.gt import GraphTransformerNetwork
+from src.models.gt import GraphTransformer
 from src.models.greedy_gt import GraphTransformerGreedy
 from src.models.dgt import DynamicGraphTransformerNetwork
-from src.models.gt_lite import GraphTransformerLite
-from src.models.gt_ultra import GraphTransformerUltra
-from src.models.gt_super import GraphTransformerSuper
-from src.models.dgt_lite import DynamicGraphTransformerLite
-from src.models.dgt_ultra import DynamicGraphTransformerUltra
-from src.models.dgt_super import DynamicGraphTransformerSuper
 
 
 def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
@@ -59,36 +53,34 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     elif model_name == 'GT-Greedy':
         return GraphTransformerGreedy(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif model_name == 'GT+RL':
-        return GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
+        return GraphTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif model_name == 'DGT+RL':
         return DynamicGraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     
-    # Lightweight variants
-    elif model_name == 'GT-Lite+RL':
-        return GraphTransformerLite(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'GT-Ultra+RL':
-        return GraphTransformerUltra(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'GT-Super+RL':
-        return GraphTransformerSuper(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'DGT-Lite+RL':
-        return DynamicGraphTransformerLite(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'DGT-Ultra+RL':
-        return DynamicGraphTransformerUltra(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'DGT-Super+RL':
-        return DynamicGraphTransformerSuper(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    
     else:
         raise ValueError(f'Unknown model name: {model_name}. Supported models: '
-                        f'GAT+RL (Legacy GAT), GT-Greedy, GT+RL, DGT+RL, '
-                        f'GT-Lite+RL, GT-Ultra+RL, GT-Super+RL, '
-                        f'DGT-Lite+RL, DGT-Ultra+RL, DGT-Super+RL')
+                        f'GAT+RL (Legacy GAT), GT-Greedy, GT+RL, DGT+RL')
 
 
 def get_supported_models():
     """Get list of supported model names."""
     return [
         'GAT+RL',  # Legacy GAT with edge features and 8-head pointer attention
-        'GT-Greedy', 'GT+RL', 'DGT+RL',
-        'GT-Lite+RL', 'GT-Ultra+RL', 'GT-Super+RL',
-        'DGT-Lite+RL', 'DGT-Ultra+RL', 'DGT-Super+RL'
+        'GT-Greedy',  # Greedy baseline
+        'GT+RL',  # Advanced Graph Transformer
+        'DGT+RL'  # Dynamic Graph Transformer (ultimate model)
     ]
+
+
+class ModelFactory:
+    """Factory class for creating CVRP models."""
+    
+    @staticmethod
+    def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
+        """Create a model instance."""
+        return create_model(model_name, config)
+    
+    @staticmethod
+    def get_supported_models():
+        """Get list of supported model names."""
+        return get_supported_models()

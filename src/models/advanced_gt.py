@@ -251,10 +251,9 @@ class MultiHeadPointerAttention(nn.Module):
         # Apply temperature scaling per head
         scores = scores / self.temperature.view(1, -1, 1)
         
-        # Compute pointer scores using values directly
-        # Reshape V for pointer network: [batch_size, num_nodes, num_heads * head_dim]
-        V_for_pointer = V.transpose(1, 2).contiguous().view(batch_size, num_nodes, -1)
-        pointer_scores = self.pointer(V_for_pointer)  # [batch_size, num_nodes, num_heads]
+        # Compute pointer scores
+        pointer_input = torch.matmul(Q, V.transpose(-2, -1)).squeeze(2)  # [batch_size, num_heads, num_nodes]
+        pointer_scores = self.pointer(pointer_input.transpose(1, 2))  # [batch_size, num_nodes, num_heads]
         
         # Combine scores across heads
         combined_scores = (scores + pointer_scores.transpose(1, 2)).mean(dim=1)
@@ -357,7 +356,7 @@ class ImprovedTransformerLayer(nn.Module):
         return x
 
 
-class GraphTransformer(nn.Module):
+class AdvancedGraphTransformer(nn.Module):
     """
     Advanced Graph Transformer with all missing components.
     A serious upgrade over legacy GAT+RL.
@@ -570,26 +569,18 @@ class GraphTransformer(nn.Module):
             all_log_probs.append(selected_log_probs)
             all_entropies.append(entropy)
             
-            # Update state (avoid in-place modifications)
-            new_current_nodes = current_nodes.clone()
-            new_remaining_capacity = remaining_capacity.clone()
-            new_visited = visited.clone()
-            
+            # Update state
             for b in range(batch_size):
                 if not batch_done[b]:
                     action = actions[b].item()
                     routes[b].append(action)
-                    new_current_nodes[b] = action
+                    current_nodes[b] = action
                     
                     if action == 0:  # Return to depot
-                        new_remaining_capacity[b] = capacities[b]
+                        remaining_capacity[b] = capacities[b]
                     else:
-                        new_visited[b, action] = True
-                        new_remaining_capacity[b] -= demands[b, action]
-            
-            current_nodes = new_current_nodes
-            remaining_capacity = new_remaining_capacity
-            visited = new_visited
+                        visited[b, action] = True
+                        remaining_capacity[b] -= demands[b, action]
         
         # Ensure all routes end at depot
         for b in range(batch_size):
@@ -639,7 +630,3 @@ class GraphTransformer(nn.Module):
                 mask[b, 0] = False
         
         return mask
-
-
-# Alias for backward compatibility
-AdvancedGraphTransformer = GraphTransformer

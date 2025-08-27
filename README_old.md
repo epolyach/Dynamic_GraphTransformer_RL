@@ -1,0 +1,855 @@
+# Dynamic Graph Transformer for Reinforcement Learning on CVRP
+
+A comprehensive comparative study implementing and comparing 6 different neural network architectures for solving the Capacitated Vehicle Routing Problem (CVRP) using reinforcement learning.
+
+## 🏗️ Architecture Comparison
+
+This study compares 6 different neural network architectures:
+
+1. **Pointer Network + RL** (~21K params) - Simple attention-based pointer mechanism
+2. **Graph Transformer (Greedy)** (~92K params) - Multi-head self-attention with greedy decoding 
+3. **Graph Transformer + RL** (~92K params) - Same as GT-Greedy but with RL training
+4. **Dynamic Graph Transformer + RL** (~92K params) - GT with dynamic state updates and gating
+5. **Graph Attention Transformer + RL** (~59K params) - GAT-style attention with edge features
+6. **GAT+RL (Legacy)** - PyTorch Geometric implementation for comparison
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.8+
+- PyTorch 2.0+
+- CPU-only (optimized)
+
+### One-command setup and activation
+Use the single activation script. It will create the virtual environment if it doesn't exist, install dependencies (NumPy, Pandas, PyTorch, etc.), and activate it.
+
+```bash
+# From the repository root
+source activate_env.sh
+```
+
+- Run this in every new terminal session before using the project.
+- This prevents “ModuleNotFoundError: No module named 'numpy'” and similar issues by ensuring you always use the project venv.
+
+### Small-quick smoke test
+This is the fastest test to verify everything works end-to-end.
+
+```bash
+python run_enhanced_training.py --config configs/small_quick.yaml --models GT+RL
+```
+
+Results will appear under `results/small_quick/`.
+
+### Optional: Legacy GAT model
+If you later want to include the legacy GAT+RL model, it requires torch-geometric and an external repo. Keep it disabled unless needed.
+
+## 🔄 Workflow
+
+The project follows a three-stage pipeline:
+
+### 1. Training Models
+```bash
+# Train all models (or only missing ones)
+python run_enhanced_training.py --config configs/small.yaml
+
+# Force retrain even if checkpoints exist
+python run_enhanced_training.py --config configs/small.yaml --force-retrain
+
+# Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
+python run_enhanced_training.py --config configs/small.yaml --include-legacy
+```
+
+### 2. Generate Comparative Plots
+```bash
+# Generate training curves and performance comparison plots
+python make_comparative_plot.py --config configs/small.yaml
+python make_comparative_plot.py --config configs/medium.yaml
+python make_comparative_plot.py --config configs/production.yaml
+
+# With exact baseline computation (solves NUM_SAMPLES random instances for rigorous comparison)
+python make_comparative_plot.py --config configs/small.yaml --exact 50
+python make_comparative_plot.py --config configs/medium.yaml --exact 100
+
+# With custom suffix for organized output files
+python make_comparative_plot.py --config configs/small.yaml --suffix final_results
+python make_comparative_plot.py --config configs/small.yaml --exact 75 --suffix with_exact_baseline
+```
+
+#### 3. Test Instance Analysis
+```bash
+# Create test instances and route visualizations
+python make_test_instance.py --config configs/small.yaml
+python make_test_instance.py --config configs/medium.yaml
+python make_test_instance.py --config configs/production.yaml
+
+# With custom seed for reproducible test instances
+python make_test_instance.py --config configs/small.yaml --seed 42
+
+# With exact optimal solution comparison (requires exact_solver.py)
+python make_test_instance.py --config configs/small.yaml --exact
+python make_test_instance.py --config configs/medium.yaml --exact --seed 12345
+```
+
+#### 4. Results Cleanup (Optional)
+```bash
+# Clean results for a specific config's working_dir_path (preserves directory structure)
+python erase_run.py --config configs/small.yaml
+
+# Dry run (preview what would be removed)
+python erase_run.py --config configs/medium.yaml --dry-run
+
+# Force cleanup without confirmation
+python erase_run.py --config configs/production.yaml --force
+
+# Clean only a single model's artifacts (checkpoint/CSV/plots)
+python erase_run.py --config configs/small.yaml --only_gt_rl
+
+# Clean by explicit path instead of config
+python erase_run.py --path results/small --force
+```
+
+## 📋 Project Structure
+
+```
+.
+├── run_train_validation.py           # Thin orchestrator for training/validation
+├── make_comparative_plot.py          # Generate performance comparison plots (with optional exact baselines)
+├── make_test_instance.py             # Create test instances and route visualizations (with optional exact solutions)
+├── exact_solver.py                   # Modern exact CVRP solver (Dynamic Programming, OR-Tools, Gurobi)
+├── erase_run.py                      # Results cleanup utility (preserves directory structure)
+├── src/
+│   ├── pipelines/
+│   │   └── train.py                  # Training loop orchestration and data generation
+│   ├── models/
+│   │   ├── pointer.py                # Pointer Network (RL)
+│   │   ├── gt.py                     # Graph Transformer (RL)
+│   │   ├── greedy_gt.py              # Graph Transformer (Greedy baseline)
+│   │   ├── dgt.py                    # Dynamic Graph Transformer (RL)
+│   │   └── gat.py                    # Graph Attention Transformer (RL)
+│   ├── utils/
+│   │   ├── costs.py                  # Route cost utilities
+│   │   ├── validation.py             # Route validation and trip decomposition
+│   │   ├── artifacts.py              # Save/load helpers for artifacts
+│   │   └── config.py                 # Config loader and validation
+│   └── (tests/ optional)
+├── src_batch/                        # Legacy compatibility layer (see below)
+├── configs/
+│   ├── small.yaml                    # Quick testing config
+│   ├── medium.yaml                   # Research experiments config
+│   ├── production.yaml               # Publication-ready config
+│   └── default.yaml                  # Default CPU configuration
+├── results/
+│   ├── small/
+│   ├── medium/
+│   └── production/
+├── plots/
+│   ├── comparative_study_results.png
+│   ├── test_route_*.png
+│   └── test_route_*.json
+├── logs/
+└── venv/
+```
+
+## 🔗 Legacy Compatibility (`src_batch/`)
+
+The `src_batch/` directory provides a compatibility layer for integrating with the legacy `GAT_RL` repository. This layer enables the project to:
+
+- **Maintain Backward Compatibility**: Use original GAT+RL implementations for comparison studies
+- **Access Legacy Training Loops**: Preserve original training algorithms and their specific behaviors
+- **Import External Components**: Dynamically load modules from the external `GAT_RL` codebase
+- **Bridge Architecture Differences**: Handle differences between the new CPU-optimized code and legacy implementations
+
+### How it Works:
+- **Dynamic Module Loading**: Uses `_legacy_loader.py` to import modules from file paths
+- **Path Management**: Automatically adds the external `GAT_RL` repository to Python's import path
+- **Transparent Imports**: Allows imports like `from src_batch.model.Model import Model` to work seamlessly
+- **Optional Dependency**: The legacy components are loaded only when needed and available
+
+### Legacy Path Structure:
+```
+src_batch/
+├── _legacy_loader.py      # Dynamic module loading utilities
+├── legacy_shim.py         # Main compatibility shim
+├── legacy_path.py         # Path management
+├── encoder/               # Legacy encoder forwarding
+├── decoder/               # Legacy decoder forwarding  
+├── model/                 # Legacy model forwarding
+└── train/                 # Legacy training forwarding
+```
+
+**Note**: The `src_batch/` layer expects an external `GAT_RL` repository at `../GAT_RL/`. If this repository is not available, the legacy GAT+RL model will be skipped automatically.
+
+## 🧹 Cleaned Project Structure
+
+This project has undergone a comprehensive cleanup to improve maintainability:
+
+### **Backup Directories:**
+- **`src/models_backup/`** - Contains experimental model implementations that were moved during cleanup
+- **`src/training_backup/`** - Contains legacy training modules that are no longer used
+
+### **Current Active Structure:**
+- **Three-stage pipeline**: Training (`run_train_validation.py`) → Plotting (`make_comparative_plot.py`) → Testing (`make_test_instance.py`)
+- **Modular codebase**: Models in `src/models/`, training pipeline in `src/pipelines/train.py`, utilities in `src/utils/`
+- **Thin CLI orchestrator**: `run_train_validation.py` delegates to modular components
+- **Separated visualization logic** in dedicated plotting and test instance scripts
+- **Legacy GAT+RL comparison** works through `src_batch/` → `../GAT_RL/` (external dependency)
+- **Clean package directories** with only essential functionality
+
+### **Restoration:**
+If you need any experimental models or training modules, they can be easily restored from the backup directories. Each backup contains detailed restoration instructions in its README file.
+
+## ⚙️ Configuration System
+
+Single source of truth configuration (no hidden defaults):
+- All parameters live in configs/default.yaml.
+- Scale configs (configs/small.yaml, configs/medium.yaml, configs/production.yaml) only override selected fields.
+- A shared loader (src/utils/config.py) deep-merges default + override, validates required sections, normalizes types, and exposes flattened convenience keys (num_customers, capacity, num_instances, batch_size, num_epochs, learning_rate, hidden_dim, num_heads, num_layers).
+- All entry points (run_train_validation.py, make_comparative_plot.py, make_test_instance.py) use the shared loader.
+
+The project uses a three-tier configuration system for different experimental scales:
+
+### 🔬 Small Scale (`configs/small.yaml`) - Quick Testing & Development
+**Purpose**: Fast iteration, debugging, and initial development
+- **Nodes**: 10 customers
+- **Epochs**: 32
+- **Dataset**: 2,048 training instances
+- **Batch Size**: 256
+- **Model**: Default (128 hidden dim, 4 layers)
+- **Results**: `results/small/`
+- **Training Time**: ~5-10 min
+
+### 🧪 Medium Scale (`configs/medium.yaml`) - Research Experiments
+**Purpose**: Balanced experiments for research validation
+- **Nodes**: 20 customers
+- **Epochs**: 64
+- **Dataset**: 32,768 training instances
+- **Batch Size**: 4,096
+- **Model**: Standard research scale (128 hidden dim, 4 layers)
+- **Results**: `results/medium/`
+- **Training Time**: ~2-4 hours
+
+### 🏭 Production Scale (`configs/production.yaml`) - Publication-Ready Results
+**Purpose**: Comprehensive evaluation for publications
+- **Nodes**: 100 customers
+- **Epochs**: 150
+- **Dataset**: 20,000 training instances
+- **Batch Size**: 64
+- **Model**: Full-scale (128 hidden dim, 4 layers)
+- **Results**: `results/production/`
+- **Training Time**: ~1-2 days
+
+## 📊 Results Organization
+
+All experimental results are automatically organized in the `results/` directory by problem scale:
+
+```
+results/
+├── small/              # ≤20 customers (5-10 min training)
+├── medium/             # 21-50 customers (2-4 hour training)
+└── production/         # >50 customers (1-2 day training)
+    ├── analysis/       # Complete study results (.pt) + test analysis (.json)
+    ├── csv/            # Training history + comparative results (.csv)
+    ├── logs/           # Training logs and diagnostics
+    ├── plots/          # Visualization plots (.png)
+    ├── pytorch/        # Individual model checkpoints (.pt files)
+    └── test_instances/ # Test CVRP instances (.npz) for detailed analysis
+```
+
+### 📑 History CSV files and keys
+
+Training/validation histories for each model are saved under `<working_dir_path>/csv/` using a fixed naming scheme. The plotting script now reads training/validation curves directly from these CSV files.
+
+- Pointer+RL → key: `pointer_rl` → `history_pointer_rl.csv`
+- GT+RL → key: `gt_rl` → `history_gt_rl.csv`
+- DGT+RL → key: `dgt_rl` → `history_dgt_rl.csv`
+- GAT+RL → key: `gat_rl` → `history_gat_rl.csv`
+- GT-Greedy → key: `gt_greedy` → `history_gt_greedy.csv`
+- GAT+RL (legacy) → key: `gat_rl_legacy` → `history_gat_rl_legacy.csv`
+
+#### 🆕 Enhanced CSV Format with Epoch 0 Support
+
+**Standard CSV columns:**
+- `epoch` — integer epoch index **starting from 0** (total epochs = num_epochs + 1)
+- `train_loss` — REINFORCE loss (may be NaN for non-RL models like GT-Greedy)
+- `train_cost` — training cost per customer
+- `val_cost` — validation cost per customer (NaN except for epochs when validation was run)
+
+**Enhanced CSV columns (when `use_advanced_features: true`):**
+- `learning_rate` — current learning rate from scheduler
+- `temperature` — current temperature for exploration control  
+- `entropy` — policy entropy for exploration monitoring
+- `best_val_cost` — best validation cost achieved so far (for tracking)
+- `patience` — early stopping patience counter
+
+**Epoch 0 Baseline**: All CSV files now start with epoch 0, containing baseline metrics before any training updates. This provides complete training analysis from initial random policy through final trained model.
+
+**Notes:**
+- Training now runs for `num_epochs + 1` total epochs (epochs 0 through num_epochs)
+- Enhanced features automatically enabled when config has `use_advanced_features: true`
+- Epoch 0 shows initial model performance; epochs 1+ show training progress
+- The plotting script handles both standard and enhanced CSV formats seamlessly
+
+### 🧪 **Test Instance Analysis** - Standalone Script
+
+The `make_test_instance.py` script runs as a **separate stage** after training and provides:
+- **Fixed Test Instance**: Creates reproducible test instance (seed=12345) for all models
+- **Route Optimization**: Solves the instance with each trained model using greedy selection
+- **Detailed Trip Analysis**: Validates capacity constraints and shows trip-by-trip breakdown
+- **Visual Route Plots**: Generates individual route visualization PNG files for each model
+- **Route Data Export**: Saves route details as JSON files for further analysis
+- **Comparison Plot**: Creates unified comparison visualization of all model routes
+- **🎯 Exact Solution Baseline**: Optional exact optimal solution using modern algorithms (Dynamic Programming, OR-Tools, Gurobi)
+- **Optimality Gap Analysis**: Computes gaps between heuristic and exact solutions when `--exact` flag is used
+
+**Outputs Generated:**
+- `test_route_<model>.png` - Individual route visualization for each model
+- `test_route_<model>.json` - Route data including coordinates, demands, and costs
+- `test_routes_comparison.png` - Side-by-side comparison of all model routes
+- `test_route_exact.png` - Exact optimal solution visualization (when `--exact` flag is used)
+- `test_route_exact.json` - Exact solution data with optimality proof
+
+**Example test instance results (20 customers, capacity=30):**
+```
+📊 TEST INSTANCE PERFORMANCE SUMMARY
+================================================================================
+Model                Route Cost   Cost/Customer  Trips  Improvement vs Baseline  Gap vs Exact
+----------------------------------------------------------------------------------------
+Exact Solver         10.847       0.542          4      +58.6% (optimal)        0.0%
+GAT+RL               11.997       0.600          4      +54.8%                  10.6%
+Pointer+RL           12.800       0.640          4      +51.2%                  18.0%
+GT-Greedy            12.930       0.647          4      +50.3%                  19.2%
+GT+RL                14.110       0.706          4      +46.8%                  30.1%
+DGT+RL               14.926       0.746          4      +43.8%                  37.6%
+GAT+RL (legacy)      26.549       1.327          20     +0.3%                   144.8%
+Naive Baseline       26.549       1.327          20     0.0%                    144.8%
+================================================================================
+
+Trip Analysis Example (GAT+RL - Best Performance):
+🚛 Trip 1: 0 → 16 → 7 → 3 → 4 → 5 → 0 | Demand: 30/30 (100.0%) ✅
+🚛 Trip 2: 0 → 12 → 9 → 19 → 1 → 0     | Demand: 30/30 (100.0%) ✅  
+🚛 Trip 3: 0 → 6 → 10 → 11 → 18 → 8 → 0 | Demand: 30/30 (100.0%) ✅
+🚛 Trip 4: 0 → 17 → 2 → 15 → 14 → 13 → 20 → 0 | Demand: 22/30 (73.3%) ✅
+```
+
+## 🔬 Scientific Validation
+
+### Rigorous Route Validation
+The comparative study includes **comprehensive CVRP constraint validation** for scientific rigor:
+
+#### ✅ **Constraint Validation**:
+1. **Route Structure**: Start/end at depot, no consecutive depot visits
+2. **Customer Coverage**: All customers visited exactly once, no duplicates
+3. **Capacity Constraints**: Vehicle load never exceeds capacity during any trip
+4. **Node Validation**: All route indices within valid range
+5. **Trip Analysis**: Route decomposition into individual depot-to-depot trips
+
+#### 🚨 **Strict Error Handling Philosophy**:
+**CRITICAL ERRORS** (immediate termination with detailed diagnostics):
+- **Configuration Issues**: Missing config sections, required keys, or invalid values
+- **Dependency Failures**: Legacy model loading failures without `--only_dgt` flag
+- **Data Corruption**: Failed CSV extraction, missing training logs, or corrupted results
+- **Route Validation**: Invalid routes, capacity violations, coverage issues, or constraint violations
+- **File System Errors**: Failed CSV exports, missing checkpoint files, or I/O failures
+- **Parameter Inference**: Failed model parameter counting or state dictionary issues
+
+**No Fallbacks or Warnings**: The pipeline prioritizes correctness over convenience. Any condition that could lead to invalid results, silent degradation, or incomplete data causes immediate termination rather than warnings or fallback behaviors.
+
+**Scientific Integrity**: All reported results are guaranteed to be based on:
+- ✅ Valid CVRP solutions that satisfy all constraints
+- ✅ Complete training data without missing epochs or corrupted logs  
+- ✅ Successful model loading and parameter counting
+- ✅ Verified file exports and result persistence
+
+```
+Example Validation Output:
+🚨 VALIDATION FAILED: DGT+RL-TRAIN
+Error: Capacity constraint violations detected!
+Vehicle capacity: 3.0
+Maximum violation: 0.5
+Violations:
+  Trip 0: Customer 5 causes load 3.5 > 3.0 (excess: 0.5)
+Route trips: [[0, 2, 5, 0], [0, 1, 3, 4, 0]]
+Full route: [0, 2, 5, 0, 1, 3, 4, 0]
+```
+
+## 🏗️ Architecture Comparison
+
+This study implements and compares 6 different neural network architectures:
+
+### 1. **Pointer Network + RL**
+- **Parameters**: ~21K
+- **Architecture**: Simple attention-based pointer mechanism
+- **Performance**: Good baseline, fast training
+- **Use case**: Quick prototyping, baseline comparisons
+
+### 2. **Graph Transformer (Greedy Attention Baseline)**  
+- **Parameters**: ~92K
+- **Architecture**: Multi-head self-attention encodes nodes; routing uses dot-product attention from current node to all nodes
+- **Selection**: Pure greedy, deterministic argmax over attention scores (capacity-aware masking, returns to depot when needed)
+- **Training**: Evaluation-only baseline (no REINFORCE updates applied)
+- **Performance**: Deterministic, good for benchmarking without learning
+
+### 3. **Graph Transformer + RL**
+- **Parameters**: ~92K  
+- **Architecture**: Same as GT-Greedy but with RL training
+- **Selection**: Probabilistic sampling during training
+- **Performance**: Better exploration than greedy
+
+### 4. **Dynamic Graph Transformer + RL**
+- **Parameters**: ~92K
+- **Architecture**: GT with dynamic state updates and gating
+- **Features**: Adaptive node embeddings based on current state
+- **Performance**: Handles complex routing constraints better
+
+### 5. **Graph Attention Transformer + RL**
+- **Parameters**: ~59K
+- **Architecture**: GAT-style attention with edge features
+- **Features**: Explicit distance and demand modeling
+- **Performance**: Good balance of complexity and performance
+
+### 6. **Hybrid Architecture + RL**
+- **Parameters**: Variable
+- **Architecture**: Combines pointer and graph attention mechanisms
+- **Features**: Best of both approaches
+- **Performance**: Most flexible, highest potential
+
+## 🧠 Data Representation Approach
+
+### Raw Tensor Batching vs PyTorch Geometric (PyG)
+
+This project uses **two different data representation approaches** for scientific comparison:
+
+#### 🔧 **Our Models**: Raw Tensor Batching
+**Models**: Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL (our implementation)
+
+**Approach**: Direct tensor manipulation with explicit batching
+```python
+# Example: [batch_size, max_nodes, features]
+node_features = torch.zeros(batch_size, max_nodes, 3)  # coords + demands
+demands_batch = torch.zeros(batch_size, max_nodes)     # demands only
+capacities = torch.zeros(batch_size)                   # vehicle capacities
+```
+
+**Why we chose raw tensors for CVRP**:
+- ✅ **CVRP-Optimized**: Complete graphs don't benefit from sparse representations
+- ✅ **Simplicity**: Direct control over data flow and transformations
+- ✅ **Performance**: Less overhead for fully-connected scenarios
+- ✅ **Debugging**: Easier to inspect intermediate tensor states
+- ✅ **Dependencies**: No external PyG dependency required
+- ✅ **CPU Efficiency**: Better performance on CPU with standard PyTorch operations
+
+#### 🌐 **Legacy GAT+RL**: PyTorch Geometric (PyG) Data
+**Model**: GAT+RL (legacy) - retained for comparison
+
+**Approach**: Graph-structured data with PyG Data objects
+```python
+# Example: PyG Data object with graph structure
+data = Data(x=node_coords, edge_index=edge_index, 
+           edge_attr=distances, demand=demands)
+```
+
+**Why PyG is retained in legacy model**:
+- 🔬 **Research Comparison**: Maintains compatibility with original implementation
+- 📊 **Baseline Preservation**: Enables fair comparison with published results
+- 🔗 **Graph Flexibility**: Demonstrates alternative approach for reference
+
+### 🎯 **Decision Rationale**
+
+For **CVRP specifically**, raw tensor batching is superior because:
+1. **Complete Connectivity**: CVRP uses complete graphs (any city → any city)
+2. **Fixed Structure**: Standardized node features (coordinates, demands) 
+3. **Performance**: PyG's sparsity advantages don't apply to complete graphs
+4. **Simplicity**: Fewer dependencies and easier deployment
+
+**PyG would be better for**:
+- Sparse road networks (only some cities connected)
+- Complex edge features (traffic, road conditions)
+- Extending to other graph problems beyond routing
+
+## 📊 Performance Results
+
+### Typical Performance (15 customers, 100 coordinate range):
+- **Naive Baseline**: ~1.04 cost/customer (depot→customer→depot for each)
+- **Pointer+RL**: ~0.64 cost/customer (38% improvement)
+- **GT-Greedy**: ~0.62 cost/customer (40% improvement)  
+- **GT+RL**: ~0.60 cost/customer (42% improvement)
+- **DGT+RL**: ~0.58 cost/customer (44% improvement)
+- **GAT+RL**: ~0.56 cost/customer (46% improvement)
+
+### Training Performance:
+- **Pointer+RL**: Fastest training (~20s), lowest memory
+- **GT-Greedy**: Fast inference, deterministic results
+- **GT+RL**: Good balance of speed and performance
+- **DGT+RL**: Best route quality, moderate training time
+- **GAT+RL**: Most parameter-efficient for performance achieved
+
+## 🎯 Exact Solver Integration
+
+### Modern Exact CVRP Algorithms
+
+The project includes a state-of-the-art exact solver (`exact_solver.py`) that automatically selects the best algorithm based on instance characteristics:
+
+#### **Algorithm Selection:**
+- **≤12 customers**: Dynamic Programming with bitmasking (Held-Karp variant for CVRP)
+- **13-16 customers**: Gurobi MILP branch-and-cut (if available)
+- **17-20 customers**: OR-Tools advanced constraint programming
+- **Fallback**: Greedy construction heuristic
+
+#### **Solver Features:**
+- **Multi-Algorithm**: DP, OR-Tools CP, Gurobi MILP with intelligent selection
+- **Time Limits**: Configurable solving time limits (default: 5 minutes)
+- **Optimality Proof**: Guarantees optimal solutions for solvable instances
+- **Performance Tracking**: Detailed solve times and success rates
+- **Robust Error Handling**: Graceful fallbacks when algorithms fail
+
+#### **Integration Points:**
+1. **Comparative Plotting**: `--exact NUM_SAMPLES` computes rigorous baseline by solving random instances
+2. **Test Instance Analysis**: `--exact` flag adds exact optimal solution to model comparisons
+3. **Research Validation**: Provides ground truth for measuring optimality gaps
+
+#### **Usage Examples:**
+```bash
+# Quick exact baseline with 25 samples (~15-30 minutes)
+python make_comparative_plot.py --config configs/small.yaml --exact 25
+
+# Thorough baseline with 100 samples (~1-2 hours) 
+python make_comparative_plot.py --config configs/medium.yaml --exact 100
+
+# Test instance with exact solution
+python make_test_instance.py --config configs/small.yaml --exact
+```
+
+#### **Scientific Benefits:**
+- **Optimality Gaps**: Measure true optimality gaps vs just naive baselines
+- **Algorithm Validation**: Verify that neural methods approach optimal performance
+- **Research Rigor**: Provide ground truth comparisons for publications
+- **Performance Benchmarking**: Establish ceiling performance for problem instances
+
+**Note**: Exact solving is computationally intensive and optional. For quick experiments, use heuristic-only comparisons (default behavior).
+
+## 🛠️ Technical Implementation
+
+### Core Features
+- **Sequential Route Generation**: All models generate complete routes through iterative decision-making
+- **REINFORCE Learning**: Proper policy gradient implementation with baseline (applied to RL models)
+- **Greedy Baseline (No RL)**: GT-Greedy uses attention-only deterministic routing with capacity-aware masking; no policy updates
+- **Rigorous Constraint Validation**: Real-time capacity and coverage constraint checking
+- **CPU Optimization**: Efficient batching and tensor operations optimized for CPU
+- **Scientific Validation**: Every training and validation route verified against CVRP constraints
+- **Trip-by-Trip Analysis**: Route decomposition for detailed constraint verification
+- **Immediate Error Reporting**: Comprehensive diagnostics for constraint violations
+
+### Data Generation
+- **Coordinates**: Random integers [0, max_distance], normalized by /100
+- **Demands**: Random integers [1, max_demand], normalized by /10
+- **Capacity**: Fixed vehicle capacity constraint
+- **Depot**: Randomly positioned (not centered)
+
+### Training Process
+1. **Instance Generation**: Create random CVRP instances
+2. **Route Generation**: Models generate complete routes sequentially
+3. **Cost Calculation**: Compute actual route costs using generated paths
+4. **REINFORCE Update**: Update policy using cost-based advantages
+5. **Validation**: Test on held-out instances with greedy selection
+
+## 🧭 Greedy decoding and the rollout baseline (summary and implementation details)
+
+There are two distinct “greedy” concepts in this codebase. They serve different purposes and behave differently during training:
+
+- GT-Greedy model (a deterministic baseline): implemented in src/models/greedy_gt.py, used for evaluation and comparisons only. It never receives RL updates and therefore does not “improve” during training.
+- Greedy rollout baseline (used inside RL training): implemented in src/training/rollout_baseline.py. It is a frozen copy of the current RL policy used to compute per-instance baseline costs via greedy decoding; it is periodically replaced by the current policy when the policy is statistically better. This baseline typically “improves” during training because it tracks a better policy over time.
+
+What the GT-Greedy model is (and why it does not improve)
+- File: src/models/greedy_gt.py (class GraphTransformerGreedy)
+- Behavior: builds node embeddings with a Transformer encoder and selects the next node strictly by argmax over attention scores with capacity/feasibility masking. It returns zero log-probabilities and zero entropies.
+- Training: the advanced trainer explicitly disables the optimizer for model_name == 'GT-Greedy' (see src/training/advanced_trainer.py). No REINFORCE step is performed, so the model serves as a static, deterministic baseline. It is expected and correct that GT-Greedy does not improve across epochs.
+
+What the greedy rollout baseline is (and why it improves)
+- File: src/training/rollout_baseline.py (class RolloutBaseline)
+- Purpose: reduce variance in REINFORCE by providing per-instance baseline costs that reflect a competitive policy.
+- How it works:
+  1) Initialization: deep-copies the current RL policy (baseline model), freezes it, and computes greedy costs on a fixed evaluation dataset; stores mean cost and per-instance values.
+  2) Per-batch baseline during training: for each training batch, evaluates the frozen baseline model greedily to obtain per-instance baseline costs (normalized by number of customers). These costs are used to compute advantages.
+  3) Periodic update: at configurable frequency, deep-copies the current policy and computes its greedy costs on the same fixed eval set. If the candidate mean < current baseline mean, it updates the baseline. If significance_test is enabled, a paired t-test is used to require statistically significant improvement.
+- Configuration (see configs/default.yaml → baseline):
+  - baseline.type: 'rollout' (otherwise a simple mean baseline is used)
+  - baseline.eval_batches: number of fixed seeded batches for the eval set
+  - baseline.greedy_temperature: temperature for greedy evaluation
+  - baseline.update.enabled / frequency / significance_test / p_value
+- Integration in the trainer (src/training/advanced_trainer.py):
+  - Baseline is created only for RL models (model_name != 'GT-Greedy').
+  - advantages = baseline_costs − costs; policy_loss = −(advantages · logp). This is equivalent to (cost − baseline) · logp, i.e., minimizing expected cost.
+  - baseline.epoch_callback(model, epoch) is invoked to perform the periodic update check.
+- Why it improves: because the baseline model is replaced by the current policy once the policy is better on a fixed eval set, its mean cost drops over epochs. This yields stronger baselines and more informative advantages during training.
+
+Greedy decoding in each model (used for both validation and rollout baseline)
+All RL-capable models expose a unified forward signature: forward(instances, max_steps, temperature, greedy, config). When greedy=True, they pick argmax actions (deterministically) under the current masking; when greedy=False, they sample from softmax(logits/temperature) and return log-probabilities and entropies for REINFORCE.
+- Pointer+RL: src/models/pointer.py → _generate_routes(...). Greedy uses argmax over log_probs; masking enforces feasibility and termination.
+- GT+RL: src/models/gt.py → _generate_routes(...). Argmax over log_probs for greedy; returns combined log_probs and entropies.
+- DGT+RL: src/models/dgt.py → _generate_routes_dynamic(...). Adds dynamic state features; same greedy/sampling behavior.
+- Enhanced-DGT+RL: src/models/enhanced_dgt.py → _generate_routes_enhanced(...). Multi-scale attention + geometric/state features; same greedy/sampling interface. Enabled via run_enhanced_training.py.
+- GAT+RL: src/models/gat.py → _generate_routes_gat(...). Same greedy/sampling interface.
+
+Important distinctions and practical notes
+- GT-Greedy vs rollout baseline: GT-Greedy is a separate fixed architecture that never trains; the rollout baseline is a greedy evaluation of the current RL policy used for variance reduction and is updated as the policy improves.
+- Fixed eval set: The rollout baseline uses a fixed evaluation dataset (built with fixed seeds) so candidate vs baseline comparisons are paired and statistically meaningful.
+- Normalization: All costs used for training/validation/baselines are computed per customer (total cost divided by number of customers).
+- Termination and validity: During both training and baseline evaluation, routes are validated strictly (see src/eval/validation.py). Any invalid route raises immediately to preserve scientific integrity.
+- When to disable: To fall back to the mean baseline, set baseline.type: 'mean' in your config. This disables the greedy rollout mechanism.
+
+Minimal sanity check
+- Script: test_rollout_minimal.py prints baseline configuration and validates trainer integration points (import, instantiation, per-batch eval, epoch callback).
+
+## 🔧 Configuration Options
+
+### Command Line Arguments:
+
+#### Training Orchestrator (`run_train_validation.py` / `run_train_validation_enhanced.py`):
+```bash
+--config <path>         # Configuration file (small/medium/production)
+--include-legacy        # Include legacy GAT+RL (requires ../GAT_RL and torch-geometric)
+--force-retrain         # Retrain even if artifacts already exist
+--disable-enhanced      # Disable enhanced features (enhanced script only)
+```
+
+#### Comparative Plot Generation (`make_comparative_plot.py`):
+```bash
+--config <path>         # Configuration file (small/medium/production)
+--suffix <text>         # Custom suffix for output filenames
+--exact <num_samples>   # Compute exact baseline by solving NUM_SAMPLES random instances (0=disabled)
+```
+
+#### Test Instance Analysis (`make_test_instance.py`):
+```bash
+--config <path>         # Configuration file (small/medium/production)  
+--seed <number>         # Random seed for reproducible test instances
+--exact                 # Include exact optimal solution using modern algorithms
+```
+
+To change problem size, epochs, instances, batch size, etc., edit the corresponding YAML in `configs/` (the loader deep-merges with `configs/default.yaml`).
+
+### CPU-Optimized Configuration:
+The system is now fully CPU-optimized with:
+- Multi-threaded CPU execution using all available cores
+- Optimized tensor operations for CPU
+- Memory-efficient batching
+- Works out of the box on standard CPUs
+
+## 🧪 Experimental Features
+
+### Recent Improvements
+- **🧪 Test Instance Analysis**: Reproducible test instances with detailed model comparison
+- **📂 Organized Directory Structure**: Clean scale-based organization (small/medium/production)
+- **🚨 Rigorous Scientific Validation**: Comprehensive CVRP constraint validation with detailed error reporting
+- **🧹 Modular Refactor**: Training orchestrator + modular models/pipeline/utilities for clarity and testability
+- **⏭️ Skip-Retrain Logic**: Automatically skip models with existing checkpoint + history CSV; use --force-retrain to override
+- **🎯 Targeted Cleanup**: Per-model erase via training-style flags (e.g., `--only_gt_rl`, `--only_gat_rl`)
+- **✅ Fixed REINFORCE Implementation**: Correct advantage calculation and policy gradients
+- **🧭 Pure Greedy Attention Baseline**: GT-Greedy now performs attention-based deterministic routing without RL training
+- **🛣️ Proper Route Generation**: Sequential decision-making matching CVRP requirements  
+- **⚡ CPU Optimization**: Full CPU-only operation with optimized multi-threading
+- **🔍 Enhanced Route Validation**: Capacity constraints, trip analysis, and constraint verification
+- **📊 Comprehensive Output**: Structured results with plots, CSVs, model checkpoints, and test analysis
+
+### Architecture Evolution
+The project evolved from single-action classification models to proper sequential route generation models with rigorous scientific validation:
+
+1. **🛣️ Sequential Route Generation**: Fixed fundamental architectural issues for proper CVRP solving
+2. **🚨 Comprehensive Validation**: Added strict constraint checking for scientific integrity
+3. **📂 Project Reorganization**: Clean scale-based structure (small/medium/production)
+4. **🧪 Test Instance Framework**: Reproducible test instances with detailed model comparison
+5. **📊 Enhanced Logging**: Organized results with plots, CSVs, and comprehensive analysis
+6. **🔍 Scientific Rigor**: Every route validated against CVRP constraints during training and evaluation
+7. **🧹 Directory Cleanup**: Removed unused directories, consolidated data in analysis/
+
+## 🧹 Results Cleanup Utility (`erase_run.py`)
+
+The `erase_run.py` script provides a safe and efficient way to clean up experimental results while preserving the directory structure:
+
+### Key Features
+- **Scale-Aware Cleanup**: Automatically detects scale (small/medium/production) from config files
+- **Structure Preservation**: Removes files while keeping directory structure intact
+- **Selective Cleaning**: Clean specific scales or all scales at once
+- **Safety Features**: Dry-run mode and confirmation prompts
+- **Empty Directory Cleanup**: Optionally removes empty subdirectories
+- **Detailed Reporting**: Shows what will be removed before taking action
+
+### Usage Examples
+```bash
+# Clean based on config's working_dir_path
+python erase_run.py --config configs/small.yaml
+
+# Preview (dry-run)
+python erase_run.py --config configs/medium.yaml --dry-run
+
+# Force cleanup without confirmation prompts
+python erase_run.py --config configs/production.yaml --force
+
+# Remove only a single model's artifacts
+python erase_run.py --config configs/small.yaml --only_gat_rl
+
+# Preserve empty subdirectories
+python erase_run.py --config configs/small.yaml --no-clean-empty
+```
+
+### What Gets Cleaned
+- **Files Removed**: All `.pt`, `.png`, `.csv`, `.json`, `.log`, `.npz` files
+- **Structure Preserved**: Main directories (`analysis/`, `plots/`, `csv/`, `pytorch/`, etc.)
+- **Empty Directories**: Removed by default (can be disabled with `--no-clean-empty`)
+
+### Safety Features
+- **Confirmation Prompts**: Asks before permanent deletion (unless `--force`)
+- **Dry Run Mode**: `--dry-run` shows what would be removed without actually deleting
+- **Detailed Reporting**: Lists file counts and directory structure before cleanup
+- **Error Handling**: Safe handling of missing directories and file permission issues
+
+### Example Output
+```bash
+🧹 RESULTS FOLDER CLEANUP
+==================================================
+📋 Scales to clean: small
+💥 Mode: ACTIVE CLEANUP
+
+🎯 Cleaning scale: small
+------------------------------
+🎯 Target: results/small/
+   📁 Directory structure: 8 subdirectories
+   📄 Files to remove: 23
+   🗑️  Removed: 23 files
+   📁 Preserved: 8 directories
+   🧹 Cleaned: 2 empty subdirectories
+   ✅ small: Complete
+
+📊 SUMMARY
+====================
+✅ Successfully cleaned: 1/1 scales
+🎉 All cleanup operations completed successfully!
+```
+
+### When to Use
+- **Between Experiments**: Clean old results before running new experiments
+- **Disk Space Management**: Free up storage while keeping project structure
+- **Fresh Start**: Reset specific scales for new parameter combinations
+- **Development Workflow**: Quick cleanup during iterative development
+
+## 🚨 Common Issues & Solutions
+
+### Installation Issues
+```bash
+# If PyTorch installation fails
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Memory Issues
+```bash
+# Use small configuration for limited resources
+python run_train_validation.py --config configs/small.yaml
+
+# To reduce resource usage, edit the config file to reduce:
+# - batch_size (in training section)
+# - num_customers (in problem section)
+# - num_instances (in training section)
+```
+
+### Performance Issues
+- **Slow training**: Reduce instances or customers
+- **Poor convergence**: Increase epochs or adjust learning rate
+- **Route validation errors**: Check constraint parameters
+
+## 📈 Development History
+
+### Key Milestones
+1. **Initial Implementation**: Basic pointer network with single-step decisions
+2. **Architecture Expansion**: Added 5 additional model architectures
+3. **Batching Optimization**: Created an optimized version with efficient batching
+4. **Critical Fixes**: Fixed REINFORCE advantages and route generation
+5. **CPU Migration**: Full transition to CPU-only optimized implementation
+6. **Scientific Validation**: Added rigorous CVRP constraint validation
+7. **Project Reorganization**: Clean scale-based structure (small/medium/production)
+8. **Test Instance Framework**: Reproducible test instances for model comparison
+9. **Directory Cleanup**: Removed unused directories, consolidated analysis data
+10. **Enhanced Validation**: Comprehensive route validation with detailed error reporting
+11. **Performance Validation**: Achieved 38-46% improvements over naive baseline
+
+### Lessons Learned
+- **🛣️ Sequential vs Single-step**: CVRP requires sequential decision-making, not classification
+- **🚨 Scientific Validation**: Rigorous constraint checking is essential for research integrity
+- **🔍 Route Validation**: Real-time validation during training prevents invalid solution learning
+- **⚡ REINFORCE Implementation**: Advantage calculation direction matters significantly
+- **🏗️ Architecture Matters**: Different approaches excel in different scenarios
+- **💻 CPU Optimization**: Efficient CPU parallelism can provide excellent performance
+- **📂 Project Organization**: Scale-based structure (small/medium/production) improves workflow
+- **🧪 Test Instance Value**: Reproducible test instances enable consistent model comparison
+- **🧹 Directory Cleanup**: Removing unused directories reduces complexity and confusion
+- **📊 Comprehensive Analysis**: Consolidated data in analysis/ directory improves accessibility
+
+## ✅ Critical Bug Fixes Applied (December 2024)
+
+**UPDATE**: The following critical bugs have been fixed:
+
+### 1. **Dataset Size Bug** ✅ FIXED
+- **Previous Issue**: Training only used `batch_size` instances per epoch instead of `num_instances`
+- **Fix Applied**: Proper batch iteration implemented in `src/pipelines/train.py` and `src/training/advanced_trainer.py`
+- **Result**: Models now process all configured training instances (e.g., 768K for medium config)
+- **Impact**: Training time will increase significantly but results will be valid
+
+### 2. **GAT+RL Sampling Bug** ✅ FIXED  
+- **Previous Issue**: Double softmax computation during action sampling
+- **Fix Applied**: Modified `src/models/gat.py` line 103 to use pre-computed probabilities
+- **Result**: Correct probability distributions and proper gradient flow
+
+### 3. **Missing Edge Features in GAT** ⚠️ NOT FIXED
+- **Note**: This matches the legacy implementation and was intentionally kept as-is
+- **Impact**: GAT model doesn't use edge features, but this is consistent with the original design
+
+### 4. **Expected Training Times After Fixes**
+- **Small config (2K instances)**: ~30-60 minutes
+- **Medium config (768K instances)**: ~10-15 hours  
+- **Production config (20K instances)**: ~1-2 days
+
+For implementation details, see commit history and `GAT_ANALYSIS_REPORT.md`.
+
+## 🎯 Future Work
+
+### Potential Improvements
+- **Attention Mechanisms**: More sophisticated attention patterns
+- **Multi-Vehicle Support**: Extend to multiple vehicle scenarios  
+- **Dynamic Constraints**: Time windows, pickup/delivery constraints
+- **Meta-Learning**: Adaptation to new problem instances
+- **Hybrid Methods**: Combine with classical optimization
+
+### Research Directions
+- **Larger Scale**: Test on 50+ customer instances
+- **Real-World Data**: Use actual delivery scenarios
+- **Transfer Learning**: Pre-training on related routing problems
+- **Architecture Search**: Automated neural architecture search
+- **Interpretability**: Understanding learned routing strategies
+
+## 📝 Citation
+
+If you use this work in your research, please cite:
+
+```bibtex
+@misc{dynamic_graph_transformer_cvrp,
+  title={Dynamic Graph Transformer for Reinforcement Learning on CVRP},
+  author={Your Name},
+  year={2024},
+  howpublished={\url{https://github.com/your-repo}}
+}
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📞 Contact
+
+For questions or issues, please open a GitHub issue or contact [your-email].
+
+---
+
+**Note**: This project represents a comprehensive study of neural approaches to vehicle routing problems, with careful attention to proper implementation of reinforcement learning and sequential decision-making for combinatorial optimization.
