@@ -370,15 +370,12 @@ class GAT_Decoder(nn.Module):
         # Collect actions and log probabilities
         log_ps = []
         actions = []
+        _input = encoder_inputs[:, 0, :]  # Start from depot
         
         for i in range(n_steps):
             # Check if all nodes visited
             if not mask1[:, 1:].eq(0).any():
                 break
-            
-            if i == 0:
-                # Start from depot
-                _input = encoder_inputs[:, 0, :]
             
             # Prepare decoder input with capacity
             decoder_input = torch.cat([_input, dynamic_capacity], -1)
@@ -386,10 +383,9 @@ class GAT_Decoder(nn.Module):
             pool_processed = self.fc1(pool.to(device))
             decoder_input = decoder_input + pool_processed
             
-            # Update mask for first step
-            if i == 0:
-                mask, mask1 = self.update_mask(demands, dynamic_capacity, 
-                                              index.unsqueeze(-1), mask1, i)
+            # Update mask
+            mask, mask1 = self.update_mask(demands, dynamic_capacity, 
+                                          index.unsqueeze(-1), mask1, i)
             
             # Get pointer probabilities
             p = self.pointer(decoder_input.unsqueeze(1), encoder_inputs, mask, T)
@@ -413,8 +409,6 @@ class GAT_Decoder(nn.Module):
             # Update state
             dynamic_capacity = self.update_state(demands, dynamic_capacity, 
                                                 index.unsqueeze(-1), capacity[0].item())
-            mask, mask1 = self.update_mask(demands, dynamic_capacity, 
-                                          index.unsqueeze(-1), mask1, i)
             
             # Get next input
             _input = torch.gather(
@@ -435,22 +429,36 @@ class GAT_Decoder(nn.Module):
         batch_size = demands.size(0)
         mask = mask1.clone()
         
-        # Can't visit nodes that exceed capacity
-        for b in range(batch_size):
-            for n in range(demands.size(1)):
-                if demands[b, n] > dynamic_capacity[b]:
-                    mask[b, n] = 1
-        
-        # Can't revisit nodes (except depot)
+        # Update visited mask for non-depot nodes
         if step > 0:
             for b in range(batch_size):
-                mask1[b, index[b]] = 1
-                mask[b, index[b]] = 1
+                node_idx = index[b].item()
+                if node_idx != 0:  # Only mask non-depot nodes
+                    mask1[b, node_idx] = 1
         
-        # Must return to depot when all visited or no capacity
+        # Build current mask based on visited and capacity
         for b in range(batch_size):
-            if mask[b, 1:].all():  # All customers masked
-                mask[b, 0] = 0  # Allow depot
+            # Initially mask depot (can't start by returning to depot)
+            if step == 0:
+                mask[b, 0] = 1
+            else:
+                mask[b, 0] = 0  # Can return to depot after first step
+            
+            # Mask visited customers and those exceeding capacity
+            for n in range(1, demands.size(1)):
+                # Already visited
+                if mask1[b, n] == 1:
+                    mask[b, n] = 1
+                # Would exceed capacity
+                elif demands[b, n] > dynamic_capacity[b]:
+                    mask[b, n] = 1
+                else:
+                    mask[b, n] = 0  # Available to visit
+            
+            # If all customers are masked, must return to depot
+            if mask[b, 1:].all():
+                mask[b, :] = 1  # Mask everything
+                mask[b, 0] = 0  # Force return to depot
         
         return mask, mask1
     
@@ -569,24 +577,60 @@ class LegacyGATModel(nn.Module):
         graph_embedding = node_embeddings.mean(dim=1)
         
         # Prepare demands and capacity for decoder
-        demand_matrix = demands.reshape(batch_size, max_nodes)
+        # Only use actual nodes, not padding
+        actual_embeddings = []
+        actual_demands = []
+        for i in range(batch_size):
+            n_nodes = len(instances[i]['coords'])
+            actual_embeddings.append(node_embeddings[i, :n_nodes, :])
+            actual_demands.append(torch.tensor(instances[i]['demands'], dtype=torch.float32, device=device))
         
-        # Decode routes
-        actions, log_p = self.decoder(
-            node_embeddings, graph_embedding, capacities,
-            demand_matrix, max_steps, temperature, greedy
-        )
+        # Process each instance separately since they may have different sizes
+        all_actions = []
+        all_log_ps = []
+        for i in range(batch_size):
+            embed = actual_embeddings[i].unsqueeze(0)  # [1, n_nodes, hidden_dim]
+            graph_embed = embed.mean(dim=1)  # [1, hidden_dim]
+            demand = actual_demands[i].unsqueeze(0)  # [1, n_nodes]
+            cap = capacities[i:i+1]  # [1, 1]
+            
+            # Decode routes for this instance
+            actions, log_p = self.decoder(
+                embed, graph_embed, cap,
+                demand, max_steps, temperature, greedy
+            )
+            all_actions.append(actions)
+            all_log_ps.append(log_p)
         
         # Convert actions to routes format
         routes = []
         for b in range(batch_size):
+            actions = all_actions[b]
             route = [0]  # Start at depot
+            visited = set()
             for step in range(actions.size(1)):
-                node = actions[b, step].item()
+                node = actions[0, step].item()  # actions is [1, seq_len] for each instance
+                # Add node to route
                 route.append(node)
+                
                 if node == 0:  # Return to depot
                     break
+                    
+                visited.add(node)
+                # Check if all customers visited
+                n_customers = len(instances[b]['coords']) - 1
+                if len(visited) >= n_customers:
+                    route.append(0)  # Return to depot
+                    break
+            
+            # Ensure route ends at depot
+            if route[-1] != 0:
+                route.append(0)
+                
             routes.append(route)
+        
+        # Concatenate log probabilities
+        log_p = torch.cat(all_log_ps, dim=0)
         
         # Calculate dummy entropy for interface compatibility
         entropy = torch.zeros(batch_size, device=device)
