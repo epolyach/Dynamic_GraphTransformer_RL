@@ -333,6 +333,9 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     model_names = list(results.keys())
     palette = sns.color_palette("tab10", n_colors=len(model_names))
     color_map = {name: palette[i] for i, name in enumerate(model_names)}
+    # Override GT-Greedy to grey
+    if 'GT-Greedy' in color_map:
+        color_map['GT-Greedy'] = (0.5, 0.5, 0.5)  # Grey color
 
     logger.info(f"🎨 Creating plots for {len(model_names)} models")
     logger.info(f"   Models: {model_names}")
@@ -450,8 +453,16 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # GT-Greedy as baseline: draw a dashed horizontal line at its final validation cost
     if 'GT-Greedy' in results:
         gg_val = results['GT-Greedy'].get('final_val_cost', None)
+        gg_std = results['GT-Greedy'].get('val_cost_std', results['GT-Greedy'].get('history', {}).get('val_cost_std', None))
         if gg_val is not None:
-            ax3.axhline(y=gg_val, color='lightgray', linewidth=3, linestyle='--', label='GT-Greedy Baseline')
+            # Add confidence band if std is available
+            if gg_std is not None:
+                ax3.fill_between([0, num_epochs], 
+                                 gg_val - gg_std, 
+                                 gg_val + gg_std,
+                                 color='grey', alpha=0.15, label='GT-Greedy (±1 std)')
+            # Plot middle line
+            ax3.axhline(y=gg_val, color='grey', linewidth=2.5, linestyle='--', label='GT-Greedy Baseline')
     
     # Add exact baseline if available
     if exact_normalized is not None:
@@ -555,7 +566,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 5. Training Time Comparison
     plt.subplot(2, 4, 5)
     # Define the desired order for Panel 5 (RL models only)
-    panel5_order = ['GT-Greedy', 'GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    panel5_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     time_models = []
@@ -563,7 +574,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     time_colors = []
     
     for name in panel5_order:
-        if name in results:
+        if name in results and name != 'GT-Greedy':
             time_models.append(name)
             times.append(training_times.get(name, 0.0))
             time_colors.append(color_map[name])
