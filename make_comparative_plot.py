@@ -490,7 +490,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     ax4 = plt.subplot(2, 4, 4)
     
     # Define the desired order for Panel 4
-    panel4_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL', 'GT-Greedy']
+    panel4_order = ['GT-Greedy', 'GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     ordered_names = []
@@ -552,10 +552,10 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     ax4.grid(True, alpha=0.3, axis='y')
     
-    # 5. Training Time Comparison (exclude GT-Greedy which has no training loop)
+    # 5. Training Time Comparison
     plt.subplot(2, 4, 5)
     # Define the desired order for Panel 5 (RL models only)
-    panel5_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    panel5_order = ['GT-Greedy', 'GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     time_models = []
@@ -563,9 +563,9 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     time_colors = []
     
     for name in panel5_order:
-        if name in results and name != 'GT-Greedy':  # Ensure GT-Greedy is excluded
+        if name in results:
             time_models.append(name)
-            times.append(training_times[name])
+            times.append(training_times.get(name, 0.0))
             time_colors.append(color_map[name])
     
     bars = plt.bar(range(len(time_models)), times, color=time_colors, alpha=0.8)
@@ -584,7 +584,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 6. Model Complexity (Parameters)
     plt.subplot(2, 4, 6)
     # Define the desired order for Panel 6 (include GT-Greedy)
-    panel6_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL', 'GT-Greedy']
+    panel6_order = ['GT-Greedy', 'GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     complexity_models = []
