@@ -303,7 +303,24 @@ class PointerAttention(nn.Module):
         
         # Apply mask and compute softmax
         x = x.masked_fill(mask.bool(), float("-inf"))
+        
+        # Handle case where all values are masked (avoid NaN)
+        # Check if all values in a row are -inf
+        all_masked = (x == float("-inf")).all(dim=-1, keepdim=True)
+        if all_masked.any():
+            # If all are masked, unmask the depot (index 0) as fallback
+            x = torch.where(all_masked, torch.zeros_like(x), x)
+            x[:, 0] = torch.where(all_masked.squeeze(-1), torch.zeros_like(x[:, 0]), x[:, 0])
+        
         scores = F.softmax(x / T, dim=-1)
+        
+        # Additional safety check for NaN
+        if torch.isnan(scores).any():
+            # Fallback: uniform distribution over unmasked nodes, or depot if all masked
+            scores = torch.where(torch.isnan(scores), 
+                                torch.ones_like(scores) / scores.size(-1), 
+                                scores)
+            scores = scores / scores.sum(dim=-1, keepdim=True)  # Renormalize
         
         return scores
 
