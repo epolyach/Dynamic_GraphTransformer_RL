@@ -101,8 +101,8 @@ class GraphAttentionTransformer(nn.Module):
                     if greedy:
                         actions[b] = log_probs[b].argmax()
                     else:
-                        probs_b = torch.softmax(scores[b] / temperature, dim=-1)
-                        actions[b] = torch.multinomial(probs_b, 1).squeeze()
+                        # Use already computed probabilities, don't recompute softmax
+                        actions[b] = torch.multinomial(probs[b], 1).squeeze()
                     selected_log_probs[b] = log_probs[b, actions[b]]
             all_log_probs.append(selected_log_probs)
             all_entropies.append(step_entropy)

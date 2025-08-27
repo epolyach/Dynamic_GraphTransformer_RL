@@ -205,6 +205,12 @@ def advanced_train_model(
     learning_rates: List[float] = []
     temperatures: List[float] = []
     
+    # Calculate total number of batches to process all instances
+    num_instances = config['training'].get('num_instances', batch_size * num_epochs)
+    batches_per_epoch = max(1, num_instances // (batch_size * (num_epochs + 1)))  # +1 because we have epoch 0
+    logger_print(f"[{model_name}] Training with {num_instances} total instances over {num_epochs + 1} epochs")
+    logger_print(f"[{model_name}] Batches per epoch: {batches_per_epoch}, batch size: {batch_size}")
+    
     start_time = time.time()
     
     # Set up optional rollout baseline
@@ -224,9 +230,8 @@ def advanced_train_model(
 
     for epoch in range(0, num_epochs + 1):
         epoch_start = time.time()
-        
-        # Generate batch
-        instances = data_generator(batch_size, epoch)
+        epoch_losses = []
+        epoch_costs = []
         
         # Current temperature (adaptive or scheduled)
         if temp_scheduler:
@@ -240,88 +245,100 @@ def advanced_train_model(
         
         temperatures.append(current_temp)
         
-        # Forward pass
-        routes, logp, ent = model(
-            instances,
-            max_steps=len(instances[0]['coords']) * config['inference']['max_steps_multiplier'],
-            temperature=current_temp,
-            greedy=False,
-            config=config
-        )
-        
-        # Compute costs and validate routes
-        batch_costs = []
-        for b in range(len(instances)):
-            r = routes[b]
-            validate_route(r, len(instances[b]['coords']) - 1, f"{model_name}-TRAIN", instances[b])
-            c = compute_route_cost(r, instances[b]['distances']) / (len(instances[b]['coords']) - 1)
-            batch_costs.append(c)
-        
-        train_cost = float(np.mean(batch_costs))
-        train_costs.append(train_cost)
-        
-        # Update metrics
-        metrics.update(
-            cost=train_cost,
-            cost_std=np.std(batch_costs),
-            route_length=np.mean([len(r) for r in routes]),
-            entropy=ent.mean().item() if hasattr(ent, 'mean') else float(ent.mean() if torch.is_tensor(ent) else 0.0)
-        )
-        
-        # REINFORCE update for RL models
-        if optimizer is not None and model_name != 'GT-Greedy':
-            optimizer.zero_grad()
+        # Process multiple batches per epoch
+        for batch_idx in range(batches_per_epoch):
+            # Generate batch with unique seed
+            batch_seed = epoch * batches_per_epoch * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            instances = data_generator(batch_size, epoch=epoch, seed=batch_seed)
             
-            costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
-
-            # Compute baseline (rollout or mean)
-            if baseline is not None:
-                with torch.no_grad():
-                    bl_vals = baseline.eval_batch(instances)  # per-instance costs (CPU tensor)
-                # Ensure dtype/device alignment
-                bl_vals = bl_vals.to(dtype=costs_tensor.dtype)
-                if bl_vals.numel() != costs_tensor.numel():
-                    # Fallback to mean if mismatch occurs
-                    base_scalar = costs_tensor.mean().detach()
-                    advantages = base_scalar - costs_tensor
-                else:
-                    advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
-            else:
-                base_scalar = costs_tensor.mean().detach()
-                advantages = base_scalar - costs_tensor  # Lower cost -> positive advantage
-            
-            # Entropy regularization with adaptive coefficient
-            entropy_coef = adv_config.get('entropy_coef', 0.01)
-            entropy_min = adv_config.get('entropy_min', 0.0)
-            if num_epochs > 1:
-                cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (num_epochs - 1)))
-                entropy_coef = entropy_min + (entropy_coef - entropy_min) * cosine_factor
-            
-            # Policy loss with entropy regularization
-            policy_loss = -(advantages * logp).mean()
-            entropy_loss = -entropy_coef * ent.mean()
-            total_loss = policy_loss + entropy_loss
-            
-            total_loss.backward()
-            
-            # Adaptive gradient clipping
-            grad_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), 
-                adv_config.get('gradient_clip_norm', 2.0)
+            # Forward pass
+            routes, logp, ent = model(
+                instances,
+                max_steps=len(instances[0]['coords']) * config['inference']['max_steps_multiplier'],
+                temperature=current_temp,
+                greedy=False,
+                config=config
             )
             
-            optimizer.step()
+            # Compute costs and validate routes
+            batch_costs = []
+            for b in range(len(instances)):
+                r = routes[b]
+                validate_route(r, len(instances[b]['coords']) - 1, f"{model_name}-TRAIN", instances[b])
+                c = compute_route_cost(r, instances[b]['distances']) / (len(instances[b]['coords']) - 1)
+                batch_costs.append(c)
             
-            train_losses.append(float(total_loss.detach().cpu()))
+            batch_cost = float(np.mean(batch_costs))
+            epoch_costs.append(batch_cost)
+            
+            # Update metrics
             metrics.update(
-                loss=total_loss.item(),
-                policy_loss=policy_loss.item(),
-                entropy_loss=entropy_loss.item(),
-                grad_norm=grad_norm.item(),
-                entropy_coef=entropy_coef
+                cost=batch_cost,
+                cost_std=np.std(batch_costs),
+                route_length=np.mean([len(r) for r in routes]),
+                entropy=ent.mean().item() if hasattr(ent, 'mean') else float(ent.mean() if torch.is_tensor(ent) else 0.0)
             )
-        else:
-            train_losses.append(float('nan'))
+            
+            # REINFORCE update for RL models
+            if optimizer is not None and model_name != 'GT-Greedy':
+                optimizer.zero_grad()
+                
+                costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
+
+                # Compute baseline (rollout or mean)
+                if baseline is not None:
+                    with torch.no_grad():
+                        bl_vals = baseline.eval_batch(instances)  # per-instance costs (CPU tensor)
+                    # Ensure dtype/device alignment
+                    bl_vals = bl_vals.to(dtype=costs_tensor.dtype)
+                    if bl_vals.numel() != costs_tensor.numel():
+                        # Fallback to mean if mismatch occurs
+                        base_scalar = costs_tensor.mean().detach()
+                        advantages = base_scalar - costs_tensor
+                    else:
+                        advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
+                else:
+                    base_scalar = costs_tensor.mean().detach()
+                    advantages = base_scalar - costs_tensor  # Lower cost -> positive advantage
+                
+                # Entropy regularization with adaptive coefficient
+                entropy_coef = adv_config.get('entropy_coef', 0.01)
+                entropy_min = adv_config.get('entropy_min', 0.0)
+                if num_epochs > 1:
+                    cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (num_epochs - 1)))
+                    entropy_coef = entropy_min + (entropy_coef - entropy_min) * cosine_factor
+                
+                # Policy loss with entropy regularization
+                policy_loss = -(advantages * logp).mean()
+                entropy_loss = -entropy_coef * ent.mean()
+                total_loss = policy_loss + entropy_loss
+                
+                total_loss.backward()
+                
+                # Adaptive gradient clipping
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), 
+                    adv_config.get('gradient_clip_norm', 2.0)
+                )
+                
+                optimizer.step()
+                
+                epoch_losses.append(float(total_loss.detach().cpu()))
+                metrics.update(
+                    loss=total_loss.item(),
+                    policy_loss=policy_loss.item(),
+                    entropy_loss=entropy_loss.item(),
+                    grad_norm=grad_norm.item(),
+                    entropy_coef=entropy_coef
+                )
+            else:
+                epoch_losses.append(float('nan'))
+        
+        # Average costs and losses over all batches in epoch
+        train_cost = float(np.mean(epoch_costs)) if epoch_costs else 0.0
+        train_loss = float(np.nanmean(epoch_losses)) if epoch_losses else float('nan')
+        train_costs.append(train_cost)
+        train_losses.append(train_loss)
         
         # Learning rate tracking
         current_lr = optimizer.param_groups[0]['lr'] if optimizer else 0.0

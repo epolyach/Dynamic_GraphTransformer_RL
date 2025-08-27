@@ -8,11 +8,10 @@ configurations and parameter handling.
 import torch.nn as nn
 from typing import Dict, Any
 
-from src.models.pointer import BaselinePointerNetwork
+from src.models.legacy_gat import LegacyGATModel
 from src.models.gt import GraphTransformerNetwork
 from src.models.greedy_gt import GraphTransformerGreedy
 from src.models.dgt import DynamicGraphTransformerNetwork
-from src.models.gat import GraphAttentionTransformer
 from src.models.gt_lite import GraphTransformerLite
 from src.models.gt_ultra import GraphTransformerUltra
 from src.models.gt_super import GraphTransformerSuper
@@ -45,16 +44,24 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     edge_div = config['model']['edge_embedding_divisor']
     
     # Create model based on name
-    if model_name == 'Pointer+RL':
-        return BaselinePointerNetwork(input_dim, hidden_dim, config)
+    if model_name == 'GAT+RL':
+        # Legacy GAT model with exact architecture from GAT_RL project
+        return LegacyGATModel(
+            node_input_dim=input_dim,
+            edge_input_dim=1,  # Edge features are distances
+            hidden_dim=hidden_dim,
+            edge_dim=16,  # Legacy default
+            layers=4,  # Legacy uses 4 layers
+            negative_slope=0.2,  # Legacy default
+            dropout=0.6,  # Legacy default
+            config=config
+        )
     elif model_name == 'GT-Greedy':
         return GraphTransformerGreedy(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif model_name == 'GT+RL':
         return GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif model_name == 'DGT+RL':
         return DynamicGraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif model_name == 'GAT+RL':
-        return GraphAttentionTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, edge_div, config)
     
     # Lightweight variants
     elif model_name == 'GT-Lite+RL':
@@ -72,7 +79,7 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     
     else:
         raise ValueError(f'Unknown model name: {model_name}. Supported models: '
-                        f'Pointer+RL, GT-Greedy, GT+RL, DGT+RL, GAT+RL, '
+                        f'GAT+RL (Legacy GAT), GT-Greedy, GT+RL, DGT+RL, '
                         f'GT-Lite+RL, GT-Ultra+RL, GT-Super+RL, '
                         f'DGT-Lite+RL, DGT-Ultra+RL, DGT-Super+RL')
 
@@ -80,7 +87,8 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
 def get_supported_models():
     """Get list of supported model names."""
     return [
-        'Pointer+RL', 'GT-Greedy', 'GT+RL', 'DGT+RL', 'GAT+RL',
+        'GAT+RL',  # Legacy GAT with edge features and 8-head pointer attention
+        'GT-Greedy', 'GT+RL', 'DGT+RL',
         'GT-Lite+RL', 'GT-Ultra+RL', 'GT-Super+RL',
         'DGT-Lite+RL', 'DGT-Ultra+RL', 'DGT-Super+RL'
     ]

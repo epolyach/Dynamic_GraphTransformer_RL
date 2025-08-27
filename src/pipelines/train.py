@@ -56,52 +56,71 @@ def train_one_model(model: nn.Module, model_name: str, config: Dict[str, Any], l
     train_losses: List[float] = []
     train_costs: List[float] = []
     val_costs: List[float] = []
+    
+    # Calculate total number of batches to process all instances
+    num_instances = config['training'].get('num_instances', batch_size * num_epochs)
+    batches_per_epoch = max(1, num_instances // (batch_size * num_epochs))
+    logger_print(f"[{model_name}] Training with {num_instances} total instances over {num_epochs} epochs")
+    logger_print(f"[{model_name}] Batches per epoch: {batches_per_epoch}, batch size: {batch_size}")
 
     start_time = time.time()
 
     for epoch in range(0, num_epochs + 1):
-        # Generate a batch of instances (simple iid generation by seed)
-        instances: List[Dict[str, Any]] = []
-        for i in range(batch_size):
-            instance = generate_cvrp_instance(n_customers, capacity, coord_range, demand_range, seed=epoch * 1000 + i)
-            instances.append(instance)
+        epoch_losses = []
+        epoch_costs = []
+        
+        # Process multiple batches per epoch to use all configured instances
+        for batch_idx in range(batches_per_epoch):
+            # Generate a batch of instances with unique seeds
+            instances: List[Dict[str, Any]] = []
+            base_seed = epoch * batches_per_epoch * 1000 + batch_idx * 1000
+            for i in range(batch_size):
+                instance = generate_cvrp_instance(n_customers, capacity, coord_range, demand_range, seed=base_seed + i)
+                instances.append(instance)
 
-        # Forward (sample) with gradients enabled for policy (logp, ent)
-        routes, logp, ent = model(instances, max_steps=n_customers * config['inference']['max_steps_multiplier'],
-                                  temperature=config['inference']['default_temperature'], greedy=False, config=config)
-        # Compute average cost per customer over batch
-        batch_costs = []
-        for b in range(len(instances)):
-            r = routes[b]
-            validate_route(r, n_customers, f"{model_name}-TRAIN", instances[b])
-            c = compute_route_cost(r, instances[b]['distances']) / n_customers
-            batch_costs.append(c)
-        train_cost = float(np.mean(batch_costs)) if batch_costs else 0.0
-        train_costs.append(train_cost)
+            # Forward (sample) with gradients enabled for policy (logp, ent)
+            routes, logp, ent = model(instances, max_steps=n_customers * config['inference']['max_steps_multiplier'],
+                                      temperature=config['inference']['default_temperature'], greedy=False, config=config)
+            # Compute average cost per customer over batch
+            batch_costs = []
+            for b in range(len(instances)):
+                r = routes[b]
+                validate_route(r, n_customers, f"{model_name}-TRAIN", instances[b])
+                c = compute_route_cost(r, instances[b]['distances']) / n_customers
+                batch_costs.append(c)
+            
+            batch_cost = float(np.mean(batch_costs)) if batch_costs else 0.0
+            epoch_costs.append(batch_cost)
 
-        # Real REINFORCE-style update (aligned with legacy snapshot)
-        if optimizer is not None and model_name != 'GT-Greedy':
-            optimizer.zero_grad()
-            # Build per-sample cost tensor (per-customer already)
-            costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
-            baseline = costs_tensor.mean().detach()
-            advantages = baseline - costs_tensor  # lower cost -> positive advantage
-            # Entropy regularization schedule (cosine decay)
-            start_c = float(config.get('training_advanced', {}).get('entropy_coef', 0.0))
-            end_c = float(config.get('training_advanced', {}).get('entropy_min', 0.0))
-            if num_epochs > 1:
-                cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (num_epochs - 1)))
+            # Real REINFORCE-style update (aligned with legacy snapshot)
+            if optimizer is not None and model_name != 'GT-Greedy':
+                optimizer.zero_grad()
+                # Build per-sample cost tensor (per-customer already)
+                costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
+                baseline = costs_tensor.mean().detach()
+                advantages = baseline - costs_tensor  # lower cost -> positive advantage
+                # Entropy regularization schedule (cosine decay)
+                start_c = float(config.get('training_advanced', {}).get('entropy_coef', 0.0))
+                end_c = float(config.get('training_advanced', {}).get('entropy_min', 0.0))
+                if num_epochs > 1:
+                    cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (num_epochs - 1)))
+                else:
+                    cosine_factor = 0.0
+                entropy_coef = end_c + (start_c - end_c) * cosine_factor
+                # logp and ent come per-sample from model forward
+                loss = (-(advantages) * logp).mean() - entropy_coef * ent.mean()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(config.get('training_advanced', {}).get('gradient_clip_norm', 1.0)))
+                optimizer.step()
+                epoch_losses.append(float(loss.detach().cpu().numpy()))
             else:
-                cosine_factor = 0.0
-            entropy_coef = end_c + (start_c - end_c) * cosine_factor
-            # logp and ent come per-sample from model forward
-            loss = (-(advantages) * logp).mean() - entropy_coef * ent.mean()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), float(config.get('training_advanced', {}).get('gradient_clip_norm', 1.0)))
-            optimizer.step()
-            train_losses.append(float(loss.detach().cpu().numpy()))
-        else:
-            train_losses.append(float('nan'))
+                epoch_losses.append(float('nan'))
+        
+        # Average losses and costs over all batches in epoch
+        train_cost = float(np.mean(epoch_costs)) if epoch_costs else 0.0
+        train_loss = float(np.nanmean(epoch_losses)) if epoch_losses else float('nan')
+        train_costs.append(train_cost)
+        train_losses.append(train_loss)
 
         # Validation every N epochs
         if (epoch % config['training']['validation_frequency']) == 0 or epoch == num_epochs:
@@ -118,7 +137,7 @@ def train_one_model(model: nn.Module, model_name: str, config: Dict[str, Any], l
                     costs.append(c)
                 val_cost = float(np.mean(costs)) if costs else train_cost
                 val_costs.append(val_cost)
-                logger_print(f"[{model_name}] Epoch {epoch:03d}: train={train_cost:.4f}, val={val_cost:.4f}")
+                logger_print(f"[{model_name}] Epoch {epoch:03d}: train={train_cost:.4f}, val={val_cost:.4f}, batches={batches_per_epoch}")
 
     training_time = time.time() - start_time
 

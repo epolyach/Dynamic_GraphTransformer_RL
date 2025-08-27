@@ -345,7 +345,6 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     # Map display names to CSV keys
     name_to_key = {
-        'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
         'DGT+RL': 'dgt_rl',
         'Enhanced-DGT+RL': 'enhanced_dgt_rl',
@@ -501,7 +500,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     ax4 = plt.subplot(2, 4, 4)
     
     # Define the desired order for Panel 4
-    panel4_order = ['GT-Greedy', 'GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    panel4_order = ['GT-Greedy', 'GAT+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     ordered_names = []
@@ -566,7 +565,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 5. Training Time Comparison
     plt.subplot(2, 4, 5)
     # Define the desired order for Panel 5 (RL models only)
-    panel5_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    panel5_order = ['GAT+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     time_models = []
@@ -623,7 +622,7 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     # 7. Learning Efficiency (Cost Improvement) - exclude GT-Greedy
     plt.subplot(2, 4, 7)
     # Define the desired order for Panel 7 (RL models only)
-    panel7_order = ['GAT+RL', 'Pointer+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
+    panel7_order = ['GAT+RL', 'GT+RL', 'DGT+RL', 'Enhanced-DGT+RL']
     
     # Filter and reorder models based on desired order
     eff_models = []

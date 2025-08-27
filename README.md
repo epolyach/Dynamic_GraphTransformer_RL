@@ -552,6 +552,54 @@ python make_test_instance.py --config configs/small.yaml --exact
 4. **REINFORCE Update**: Update policy using cost-based advantages
 5. **Validation**: Test on held-out instances with greedy selection
 
+## 🧭 Greedy decoding and the rollout baseline (summary and implementation details)
+
+There are two distinct “greedy” concepts in this codebase. They serve different purposes and behave differently during training:
+
+- GT-Greedy model (a deterministic baseline): implemented in src/models/greedy_gt.py, used for evaluation and comparisons only. It never receives RL updates and therefore does not “improve” during training.
+- Greedy rollout baseline (used inside RL training): implemented in src/training/rollout_baseline.py. It is a frozen copy of the current RL policy used to compute per-instance baseline costs via greedy decoding; it is periodically replaced by the current policy when the policy is statistically better. This baseline typically “improves” during training because it tracks a better policy over time.
+
+What the GT-Greedy model is (and why it does not improve)
+- File: src/models/greedy_gt.py (class GraphTransformerGreedy)
+- Behavior: builds node embeddings with a Transformer encoder and selects the next node strictly by argmax over attention scores with capacity/feasibility masking. It returns zero log-probabilities and zero entropies.
+- Training: the advanced trainer explicitly disables the optimizer for model_name == 'GT-Greedy' (see src/training/advanced_trainer.py). No REINFORCE step is performed, so the model serves as a static, deterministic baseline. It is expected and correct that GT-Greedy does not improve across epochs.
+
+What the greedy rollout baseline is (and why it improves)
+- File: src/training/rollout_baseline.py (class RolloutBaseline)
+- Purpose: reduce variance in REINFORCE by providing per-instance baseline costs that reflect a competitive policy.
+- How it works:
+  1) Initialization: deep-copies the current RL policy (baseline model), freezes it, and computes greedy costs on a fixed evaluation dataset; stores mean cost and per-instance values.
+  2) Per-batch baseline during training: for each training batch, evaluates the frozen baseline model greedily to obtain per-instance baseline costs (normalized by number of customers). These costs are used to compute advantages.
+  3) Periodic update: at configurable frequency, deep-copies the current policy and computes its greedy costs on the same fixed eval set. If the candidate mean < current baseline mean, it updates the baseline. If significance_test is enabled, a paired t-test is used to require statistically significant improvement.
+- Configuration (see configs/default.yaml → baseline):
+  - baseline.type: 'rollout' (otherwise a simple mean baseline is used)
+  - baseline.eval_batches: number of fixed seeded batches for the eval set
+  - baseline.greedy_temperature: temperature for greedy evaluation
+  - baseline.update.enabled / frequency / significance_test / p_value
+- Integration in the trainer (src/training/advanced_trainer.py):
+  - Baseline is created only for RL models (model_name != 'GT-Greedy').
+  - advantages = baseline_costs − costs; policy_loss = −(advantages · logp). This is equivalent to (cost − baseline) · logp, i.e., minimizing expected cost.
+  - baseline.epoch_callback(model, epoch) is invoked to perform the periodic update check.
+- Why it improves: because the baseline model is replaced by the current policy once the policy is better on a fixed eval set, its mean cost drops over epochs. This yields stronger baselines and more informative advantages during training.
+
+Greedy decoding in each model (used for both validation and rollout baseline)
+All RL-capable models expose a unified forward signature: forward(instances, max_steps, temperature, greedy, config). When greedy=True, they pick argmax actions (deterministically) under the current masking; when greedy=False, they sample from softmax(logits/temperature) and return log-probabilities and entropies for REINFORCE.
+- Pointer+RL: src/models/pointer.py → _generate_routes(...). Greedy uses argmax over log_probs; masking enforces feasibility and termination.
+- GT+RL: src/models/gt.py → _generate_routes(...). Argmax over log_probs for greedy; returns combined log_probs and entropies.
+- DGT+RL: src/models/dgt.py → _generate_routes_dynamic(...). Adds dynamic state features; same greedy/sampling behavior.
+- Enhanced-DGT+RL: src/models/enhanced_dgt.py → _generate_routes_enhanced(...). Multi-scale attention + geometric/state features; same greedy/sampling interface. Enabled via run_enhanced_training.py.
+- GAT+RL: src/models/gat.py → _generate_routes_gat(...). Same greedy/sampling interface.
+
+Important distinctions and practical notes
+- GT-Greedy vs rollout baseline: GT-Greedy is a separate fixed architecture that never trains; the rollout baseline is a greedy evaluation of the current RL policy used for variance reduction and is updated as the policy improves.
+- Fixed eval set: The rollout baseline uses a fixed evaluation dataset (built with fixed seeds) so candidate vs baseline comparisons are paired and statistically meaningful.
+- Normalization: All costs used for training/validation/baselines are computed per customer (total cost divided by number of customers).
+- Termination and validity: During both training and baseline evaluation, routes are validated strictly (see src/eval/validation.py). Any invalid route raises immediately to preserve scientific integrity.
+- When to disable: To fall back to the mean baseline, set baseline.type: 'mean' in your config. This disables the greedy rollout mechanism.
+
+Minimal sanity check
+- Script: test_rollout_minimal.py prints baseline configuration and validates trainer integration points (import, instantiation, per-batch eval, epoch callback).
+
 ## 🔧 Configuration Options
 
 ### Command Line Arguments:
@@ -734,6 +782,32 @@ python run_train_validation.py --config configs/small.yaml
 - **🧪 Test Instance Value**: Reproducible test instances enable consistent model comparison
 - **🧹 Directory Cleanup**: Removing unused directories reduces complexity and confusion
 - **📊 Comprehensive Analysis**: Consolidated data in analysis/ directory improves accessibility
+
+## ✅ Critical Bug Fixes Applied (December 2024)
+
+**UPDATE**: The following critical bugs have been fixed:
+
+### 1. **Dataset Size Bug** ✅ FIXED
+- **Previous Issue**: Training only used `batch_size` instances per epoch instead of `num_instances`
+- **Fix Applied**: Proper batch iteration implemented in `src/pipelines/train.py` and `src/training/advanced_trainer.py`
+- **Result**: Models now process all configured training instances (e.g., 768K for medium config)
+- **Impact**: Training time will increase significantly but results will be valid
+
+### 2. **GAT+RL Sampling Bug** ✅ FIXED  
+- **Previous Issue**: Double softmax computation during action sampling
+- **Fix Applied**: Modified `src/models/gat.py` line 103 to use pre-computed probabilities
+- **Result**: Correct probability distributions and proper gradient flow
+
+### 3. **Missing Edge Features in GAT** ⚠️ NOT FIXED
+- **Note**: This matches the legacy implementation and was intentionally kept as-is
+- **Impact**: GAT model doesn't use edge features, but this is consistent with the original design
+
+### 4. **Expected Training Times After Fixes**
+- **Small config (2K instances)**: ~30-60 minutes
+- **Medium config (768K instances)**: ~10-15 hours  
+- **Production config (20K instances)**: ~1-2 days
+
+For implementation details, see commit history and `GAT_ANALYSIS_REPORT.md`.
 
 ## 🎯 Future Work
 

@@ -23,7 +23,7 @@ from src.utils.config import load_config
 from src.training.advanced_trainer import advanced_train_model
 from src.data.enhanced_generator import create_enhanced_data_generator
 from src.models.dgt import DynamicGraphTransformerNetwork as DynamicGraphTransformer
-from src.models.pointer import BaselinePointerNetwork
+# Pointer+RL removed - using Legacy GAT as benchmark
 from src.models.gt import GraphTransformerNetwork
 from src.models.greedy_gt import GraphTransformerGreedy
 from src.pipelines.train import set_seeds
@@ -43,7 +43,6 @@ def setup_logging(config=None):
 
 def model_key(name: str) -> str:
     mapping = {
-        'Pointer+RL': 'pointer_rl',
         'GT+RL': 'gt_rl',
         'DGT+RL': 'dgt_rl',
         'Enhanced-DGT+RL': 'enhanced_dgt_rl',
@@ -188,16 +187,23 @@ def build_enhanced_model(name: str, config: dict):
         # Enhanced DGT with multi-scale attention, geometric embeddings, and adaptive updates
         from src.models.enhanced_dgt import EnhancedDynamicGraphTransformer
         return EnhancedDynamicGraphTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
-    elif name == 'Pointer+RL':
-        return BaselinePointerNetwork(input_dim, hidden_dim, config)
     elif name == 'GT-Greedy':
         return GraphTransformerGreedy(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif name == 'GT+RL':
         return GraphTransformerNetwork(input_dim, hidden_dim, num_heads, num_layers, dropout, ff_mult, config)
     elif name == 'GAT+RL':
-        # Import our GAT implementation that doesn't require torch_geometric
-        from src.models.gat import GraphAttentionTransformer
-        return GraphAttentionTransformer(input_dim, hidden_dim, num_heads, num_layers, dropout, edge_div, config)
+        # Use Legacy GAT with exact architecture from GAT_RL project
+        from src.models.legacy_gat import LegacyGATModel
+        return LegacyGATModel(
+            node_input_dim=input_dim,
+            edge_input_dim=1,
+            hidden_dim=hidden_dim,
+            edge_dim=16,
+            layers=4,
+            negative_slope=0.2,
+            dropout=0.6,
+            config=config
+        )
     else:
         raise ValueError(f'Unknown model name: {name}')
 
@@ -207,9 +213,9 @@ def parse_args():
     parser.add_argument('--config', type=str, default='configs/enhanced.yaml',
                        help='Path to enhanced configuration file')
     parser.add_argument('--models', nargs='+', 
-                       choices=['DGT+RL', 'Enhanced-DGT+RL', 'Pointer+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
+                       choices=['DGT+RL', 'Enhanced-DGT+RL', 'GT-Greedy', 'GT+RL', 'GAT+RL'],
                        default=['GT+RL', 'DGT+RL', 'GAT+RL'],
-                       help='Models to train (DGT+RL=standard Dynamic Graph Transformer, Enhanced-DGT+RL=with multi-scale attention and geometric embeddings)')
+                       help='Models to train (DGT+RL=standard Dynamic Graph Transformer, GAT+RL=Legacy GAT benchmark)')
     parser.add_argument('--use-curriculum', action='store_true',
                        help='Use curriculum learning')
     parser.add_argument('--use-augmentation', action='store_true', default=True,
