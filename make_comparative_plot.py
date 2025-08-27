@@ -14,10 +14,7 @@ Creates plots/comparative_study_results.png with 8 subplots showing:
 8. Performance vs Complexity Scatter
 
 Usage:
-    python make_comparative_plot.py [--config CONFIG_PATH] [--suffix SUFFIX] [--exact NUM_SAMPLES]
-    
-    --exact NUM_SAMPLES: Compute exact baseline by solving NUM_SAMPLES random instances
-                         with exact algorithms (can be time-consuming)
+    python make_comparative_plot.py [--config CONFIG_PATH] [--suffix SUFFIX]
 """
 
 import os
@@ -222,89 +219,9 @@ def compute_naive_baseline_cost_per_customer(config):
     
     return naive_normalized
 
-def compute_exact_baseline_cost_per_customer(config, num_samples=100):
-    """Compute exact baseline cost per customer by solving a random sample of instances"""
-    logger = setup_logging()
-    logger.info(f"🎯 Computing exact baseline from {num_samples} random instances...")
-    
-    try:
-        from exact_solver import ExactCVRPSolver
-    except ImportError:
-        logger.error("❌ exact_solver.py not found. Please ensure it's in the project directory.")
-        return None
-    
-    # Use the same parameters as training
-    if 'problem' in config:
-        num_customers = config['problem']['num_customers']
-        capacity = config['problem']['vehicle_capacity']
-        coord_range = config['problem']['coord_range']
-        demand_range = config['problem']['demand_range']
-    else:
-        num_customers = config['num_customers']
-        capacity = config['capacity']
-        coord_range = config['coord_range']
-        demand_range = config['demand_range']
-    
-    # Initialize exact solver
-    solver = ExactCVRPSolver(time_limit=60.0, verbose=False)  # 1 min per instance
-    
-    exact_costs = []
-    solve_times = []
-    failed_instances = 0
-    
-    logger.info(f"   📋 Problem size: {num_customers} customers, capacity={capacity}")
-    logger.info(f"   🔍 Using random seeds {num_samples} to {num_samples + num_samples - 1}")
-    
-    from tqdm import tqdm
-    
-    # Use different random seeds than training to get independent samples
-    for i in tqdm(range(num_samples), desc="Solving exact instances"):
-        try:
-            # Use higher seed range to avoid overlap with training instances
-            seed = 10000 + i  
-            instance = generate_cvrp_instance(
-                num_customers, capacity, coord_range, demand_range, seed=seed
-            )
-            
-            # Solve exactly
-            solution = solver.solve(instance)
-            
-            if solution.cost < float('inf'):
-                exact_costs.append(solution.cost)
-                solve_times.append(solution.solve_time)
-            else:
-                failed_instances += 1
-                logger.warning(f"   ⚠️ Failed to solve instance {i}")
-                
-        except Exception as e:
-            failed_instances += 1
-            logger.warning(f"   ⚠️ Error solving instance {i}: {e}")
-    
-    if not exact_costs:
-        logger.error("❌ No instances solved successfully")
-        return None
-    
-    exact_avg_cost = np.mean(exact_costs)
-    exact_normalized = exact_avg_cost / num_customers
-    exact_std = np.std(exact_costs) / num_customers
-    avg_solve_time = np.mean(solve_times)
-    
-    success_rate = (num_samples - failed_instances) / num_samples
-    
-    logger.info(f"   ✅ Exact baseline: {exact_avg_cost:.3f} ({exact_normalized:.3f}±{exact_std:.3f}/cust)")
-    logger.info(f"   📊 Success rate: {success_rate:.1%}, avg solve time: {avg_solve_time:.1f}s")
-    logger.info(f"   🔬 Solved {len(exact_costs)}/{num_samples} instances successfully")
-    
-    return {
-        'cost_per_customer': exact_normalized,
-        'std_per_customer': exact_std,
-        'success_rate': success_rate,
-        'avg_solve_time': avg_solve_time,
-        'num_solved': len(exact_costs),
-        'num_requested': num_samples
-    }
+# NOTE: Exact baseline computation removed - solver implementation was incomplete
 
-def create_comparison_plots(results, training_times, model_params, config, scale, suffix='', exact_baseline_stats=None):
+def create_comparison_plots(results, training_times, model_params, config, scale, suffix=''):
     """Create comprehensive comparison plots with normalized costs (per customer)
     Now reads per-epoch series (loss, train_cost, val_cost) directly from CSV history files.
     """
@@ -319,15 +236,9 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     plt.style.use('seaborn-v0_8')
     fig = plt.figure(figsize=(20, 12))
     
-    # Get naive baseline estimate
+    # Get naive baseline estimate (hardcoded based on previous experiments)
     naive_normalized = 1.053
-    logger.info(f"📍 Using fixed naive baseline: {naive_normalized:.3f} per customer (no instance computation)")
-    
-    # Check if we have exact baseline
-    exact_normalized = None
-    if exact_baseline_stats:
-        exact_normalized = exact_baseline_stats['cost_per_customer']
-        logger.info(f"📍 Using exact baseline: {exact_normalized:.3f}/customer")
+    logger.info(f"📍 Using fixed naive baseline: {naive_normalized:.3f} per customer")
     
     # Build consistent color map for all figures (lines and bars)
     model_names = list(results.keys())
@@ -463,10 +374,6 @@ def create_comparison_plots(results, training_times, model_params, config, scale
             # Plot middle line
             ax3.axhline(y=gg_val, color='grey', linewidth=2.5, linestyle='--', label='GT-Greedy Baseline')
     
-    # Add exact baseline if available
-    if exact_normalized is not None:
-        ax3.axhline(y=exact_normalized, color='red', linewidth=3, linestyle=':', 
-                   label=f'Exact Baseline ({exact_baseline_stats["num_solved"]} samples)', alpha=0.8)
     
     # Add OR-Tools GLS benchmark with transparent strap (confidence band)
     ortools_gls_avg = 0.329127
@@ -531,18 +438,13 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     ordered_costs.append(naive_normalized)
     ordered_colors.append((0.8, 0.2, 0.2))  # red-like for naive
     
-    # Add exact baseline if available (after Naive)
-    if exact_normalized is not None:
-        ordered_names.append(f'Exact Baseline\n({exact_baseline_stats["num_solved"]} samples)')
-        ordered_costs.append(exact_normalized)
-        ordered_colors.append((0.6, 0.0, 0.0))  # dark red for exact
     
     all_names = ordered_names
     all_costs_normalized = ordered_costs
     all_colors = ordered_colors
     
     bars = ax4.bar(range(len(all_names)), all_costs_normalized, color=all_colors, alpha=0.85)
-    title_suffix = ' vs Baselines' if exact_normalized is not None else ' vs Naive Baseline'
+    title_suffix = ' vs Baselines'
     ax4.set_title(f'Final Performance{title_suffix} (Per Customer)', fontsize=12, fontweight='bold')
     ax4.set_xlabel('Approach')
     ax4.set_ylabel('Average Cost per Customer')
@@ -713,12 +615,12 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     logger.info(f"📊 Comparison plots saved to {output_path}")
     
     # Create performance summary
-    create_performance_summary(results, training_times, model_params, config, naive_normalized, scale, suffix, exact_baseline_stats)
+    create_performance_summary(results, training_times, model_params, config, naive_normalized, scale, suffix)
     
     # Don't show the plot in non-interactive mode
     # plt.show()
 
-def create_performance_summary(results, training_times, model_params, config, naive_baseline_per_customer, scale, suffix='', exact_baseline_stats=None):
+def create_performance_summary(results, training_times, model_params, config, naive_baseline_per_customer, scale, suffix=''):
     """Create a detailed performance summary table and save to CSV
     All costs are reported per customer for consistency across models (including legacy).
     """
@@ -746,11 +648,6 @@ def create_performance_summary(results, training_times, model_params, config, na
         
         improvement_vs_naive = ((naive_baseline_per_customer - final_val_cost_per_customer) / naive_baseline_per_customer) * 100
         
-        # Calculate improvement vs exact baseline if available
-        improvement_vs_exact = None
-        if exact_baseline_stats:
-            exact_baseline = exact_baseline_stats['cost_per_customer']
-            improvement_vs_exact = ((exact_baseline - final_val_cost_per_customer) / exact_baseline) * 100
         
         # Calculate learning efficiency (percent change unaffected by normalization)
         if len(train_costs) >= 2:
@@ -777,9 +674,6 @@ def create_performance_summary(results, training_times, model_params, config, na
             'Val Cost Std/Customer': val_cost_std_per_customer
         }
         
-        if improvement_vs_exact is not None:
-            row_data['Improvement vs Exact (%)'] = improvement_vs_exact
-            
         data.append(row_data)
     
     df = pd.DataFrame(data)
@@ -796,28 +690,21 @@ def create_performance_summary(results, training_times, model_params, config, na
     
     # Print formatted table to console
     logger.info("\n📊 DETAILED PERFORMANCE COMPARISON")
-    if exact_baseline_stats:
-        logger.info(f"📍 Baselines: Naive={naive_baseline_per_customer:.4f}/cust, Exact={exact_baseline_stats['cost_per_customer']:.4f}±{exact_baseline_stats['std_per_customer']:.4f}/cust")
+    logger.info(f"📍 Baseline: Naive={naive_baseline_per_customer:.4f}/customer")
     logger.info("=" * 120)
     
     # Create nicely formatted table
-    has_exact = exact_baseline_stats is not None
     col_widths = {
         'Model': max(len('Model'), max(len(model) for model in df['Model'])),
         'Parameters': 11,
         'Time (s)': 9,
         'Val/Cust': 9,
-        'vs Naive': 9,
-        'vs Exact': 9 if has_exact else 0
+        'vs Naive': 9
     }
     
     # Header
-    if has_exact:
-        header = f"| {'Model':<{col_widths['Model']}} | {'Parameters':>{col_widths['Parameters']}} | {'Time (s)':>{col_widths['Time (s)']}} | {'Val/Cust':>{col_widths['Val/Cust']}} | {'vs Naive':>{col_widths['vs Naive']}} | {'vs Exact':>{col_widths['vs Exact']}} |"
-        separator = "|" + "-" * (col_widths['Model'] + 2) + "|" + "-" * (col_widths['Parameters'] + 2) + "|" + "-" * (col_widths['Time (s)'] + 2) + "|" + "-" * (col_widths['Val/Cust'] + 2) + "|" + "-" * (col_widths['vs Naive'] + 2) + "|" + "-" * (col_widths['vs Exact'] + 2) + "|"
-    else:
-        header = f"| {'Model':<{col_widths['Model']}} | {'Parameters':>{col_widths['Parameters']}} | {'Time (s)':>{col_widths['Time (s)']}} | {'Val/Cust':>{col_widths['Val/Cust']}} | {'vs Naive':>{col_widths['vs Naive']}} |"
-        separator = "|" + "-" * (col_widths['Model'] + 2) + "|" + "-" * (col_widths['Parameters'] + 2) + "|" + "-" * (col_widths['Time (s)'] + 2) + "|" + "-" * (col_widths['Val/Cust'] + 2) + "|" + "-" * (col_widths['vs Naive'] + 2) + "|"
+    header = f"| {'Model':<{col_widths['Model']}} | {'Parameters':>{col_widths['Parameters']}} | {'Time (s)':>{col_widths['Time (s)']}} | {'Val/Cust':>{col_widths['Val/Cust']}} | {'vs Naive':>{col_widths['vs Naive']}} |"
+    separator = "|" + "-" * (col_widths['Model'] + 2) + "|" + "-" * (col_widths['Parameters'] + 2) + "|" + "-" * (col_widths['Time (s)'] + 2) + "|" + "-" * (col_widths['Val/Cust'] + 2) + "|" + "-" * (col_widths['vs Naive'] + 2) + "|"
     
     print(header)
     print(separator)
@@ -829,19 +716,12 @@ def create_performance_summary(results, training_times, model_params, config, na
         val_per_cust = f"{row['Final Val Cost/Customer']:.4f}"
         improvement_naive = f"{row['Improvement vs Naive (%)']:+.1f}%"
         
-        if has_exact:
-            improvement_exact = f"{row.get('Improvement vs Exact (%)', 0):+.1f}%" 
-            row_str = f"| {model_name:<{col_widths['Model']}} | {params:>{col_widths['Parameters']}} | {time_s:>{col_widths['Time (s)']}} | {val_per_cust:>{col_widths['Val/Cust']}} | {improvement_naive:>{col_widths['vs Naive']}} | {improvement_exact:>{col_widths['vs Exact']}} |"
-        else:
-            row_str = f"| {model_name:<{col_widths['Model']}} | {params:>{col_widths['Parameters']}} | {time_s:>{col_widths['Time (s)']}} | {val_per_cust:>{col_widths['Val/Cust']}} | {improvement_naive:>{col_widths['vs Naive']}} |"
+        row_str = f"| {model_name:<{col_widths['Model']}} | {params:>{col_widths['Parameters']}} | {time_s:>{col_widths['Time (s)']}} | {val_per_cust:>{col_widths['Val/Cust']}} | {improvement_naive:>{col_widths['vs Naive']}} |"
         print(row_str)
     
     print("=" * 120)
     best_model = df.iloc[0]
-    if has_exact:
-        print(f"🏆 Best model: {best_model['Model']} ({best_model['Final Val Cost/Customer']:.4f}/customer, {best_model['Improvement vs Naive (%)']:+.1f}% vs naive, {best_model.get('Improvement vs Exact (%)', 0):+.1f}% vs exact)")
-    else:
-        print(f"🏆 Best model: {best_model['Model']} ({best_model['Final Val Cost/Customer']:.4f}/customer, {best_model['Improvement vs Naive (%)']:+.1f}% vs naive)")
+    print(f"🏆 Best model: {best_model['Model']} ({best_model['Final Val Cost/Customer']:.4f}/customer, {best_model['Improvement vs Naive (%)']:+.1f}% vs naive)")
     
 
 def _deep_merge_dict(a: dict, b: dict) -> dict:
@@ -871,8 +751,6 @@ def parse_args():
                        help='Path to YAML configuration file (reads working_dir_path)')
     parser.add_argument('--suffix', type=str, default='', 
                        help='Suffix to add to output filename')
-    parser.add_argument('--exact', type=int, default=0, metavar='NUM_SAMPLES',
-                       help='Compute exact baseline by solving NUM_SAMPLES random instances with exact algorithms (0 = disabled)')
     return parser.parse_args()
 
 def main():
@@ -892,19 +770,11 @@ def main():
         # Load saved results
         results, training_times, model_params, loaded_config = load_results(base_dir)
         
-        # Compute exact baseline if requested
-        exact_baseline_stats = None
-        if args.exact > 0:
-            logger.info(f"🎯 Computing exact baseline with {args.exact} samples...")
-            exact_baseline_stats = compute_exact_baseline_cost_per_customer(loaded_config, args.exact)
-            if exact_baseline_stats is None:
-                logger.warning("⚠️ Failed to compute exact baseline, proceeding without it")
-        
         # Create plots
         suffix = f"_{args.suffix}" if args.suffix else ""
         # Derive a label (for file locations only) from working_dir_path leaf
         label = Path(base_dir).name
-        create_comparison_plots(results, training_times, model_params, loaded_config, label, suffix, exact_baseline_stats)
+        create_comparison_plots(results, training_times, model_params, loaded_config, label, suffix)
         
         logger.info("✅ Comparative plots generated successfully!")
         logger.info(f"📊 Output: {base_dir}/plots/comparative_study_results{suffix}.png")
