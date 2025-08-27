@@ -7,8 +7,9 @@ problem:
 training:
   num_instances: 131072     
   batch_size: 512         
-  num_epochs: 64          # Increased for deeper convergence analysis
-  
+  num_epochs: 64          
+  learning_rate: 0.0001 
+
 # Override for better algorithm differentiation
 training_advanced:
   # Longer patience for better convergence

@@ -122,7 +122,8 @@ def advanced_train_model(
     config: Dict[str, Any],
     data_generator: Callable,
     logger_print: Callable = print,
-    use_advanced_features: bool = True
+    use_advanced_features: bool = True,
+    epoch_callback: Optional[Callable] = None
 ) -> Tuple[Dict[str, Any], float, Dict[str, Any]]:
     """
     Advanced training with modern techniques:
@@ -131,6 +132,7 @@ def advanced_train_model(
     - Adaptive temperature
     - Advanced metrics tracking
     - Gradient clipping with adaptive norms
+    - Optional epoch callback for incremental logging
     """
     device = torch.device('cpu')
     model.to(device)
@@ -390,6 +392,36 @@ def advanced_train_model(
                 logger_print(f"[{model_name}] Early stopping triggered at epoch {epoch}")
                 early_stopping.restore_best_model(model)
                 break
+        
+        # Compute baseline value for this epoch
+        baseline_value = None
+        if epoch_costs:
+            # Use mean baseline by default, or rollout baseline value if available
+            if use_rollout_baseline and baseline is not None:
+                # Rollout baseline provides an average baseline value
+                try:
+                    # Get a representative baseline value from the rollout
+                    test_instances = data_generator(batch_size, seed=999999 + epoch)
+                    with torch.no_grad():
+                        baseline_costs = baseline.eval_batch(test_instances)
+                    baseline_value = float(baseline_costs.mean())
+                except:
+                    baseline_value = float(np.mean(epoch_costs))
+            else:
+                # Mean baseline
+                baseline_value = float(np.mean(epoch_costs))
+        
+        # Call epoch callback for incremental CSV writing
+        if epoch_callback is not None:
+            epoch_callback(
+                epoch=epoch,
+                train_loss=train_loss,
+                train_cost=train_cost,
+                val_cost=val_cost,
+                learning_rate=current_lr,
+                temperature=current_temp,
+                baseline_value=baseline_value
+            )
         
         # Epoch summary
         epoch_time = time.time() - epoch_start

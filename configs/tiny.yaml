@@ -1,14 +1,15 @@
 # Small-fast config to sanity-check pipeline quickly
-working_dir_path: "results/small_quick"
+working_dir_path: "results/tiny"
 
 problem:
-  num_customers: 20
+  num_customers: 7
 
 training:
-  num_instances: 16384     
-  batch_size: 256         
-  num_epochs: 50          # Increased for deeper convergence analysis
-  
+  num_instances: 131072     
+  batch_size: 512         
+  num_epochs: 64          
+  learning_rate: 0.0001 
+
 # Override for better algorithm differentiation
 training_advanced:
   # Longer patience for better convergence
