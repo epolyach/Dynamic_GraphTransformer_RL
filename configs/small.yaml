@@ -5,9 +5,9 @@ problem:
   num_customers: 10
 
 training:
-  num_instances: 775680
+  num_batches_per_epoch: 15  # 15 batches per epoch  
   batch_size: 512         
-  num_epochs: 100         
+  num_epochs: 100
   learning_rate: 0.0001 
 
 # Override for better algorithm differentiation

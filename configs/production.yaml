@@ -5,7 +5,7 @@ problem:
   num_customers: 100
 
 training:
-  num_instances: 20000
+  num_batches_per_epoch: 2  # 2 batches per epoch
   batch_size: 64
   num_epochs: 150
   learning_rate: 1e-4

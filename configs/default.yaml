@@ -17,7 +17,7 @@ problem:
 # Training parameters
 # =============================
 training:
-  num_instances: 4096      # Default dataset size
+  num_batches_per_epoch: 2  # Default batches per epoch
   batch_size: 128          # Default batch size
   num_epochs: 32           # Default number of epochs
   learning_rate: 5e-5      # Base LR

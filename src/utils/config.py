@@ -56,6 +56,14 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     cfg = _deep_merge_dict(base_cfg, override_cfg)
 
+    # Calculate num_instances from num_batches_per_epoch if provided
+    if 'training' in cfg and 'num_batches_per_epoch' in cfg['training']:
+        batch_size = cfg['training'].get('batch_size', 128)
+        num_epochs = cfg['training'].get('num_epochs', 100)
+        num_batches = cfg['training']['num_batches_per_epoch']
+        # Formula: num_instances = num_batches * (num_epochs + 1) * batch_size
+        cfg['training']['num_instances'] = num_batches * (num_epochs + 1) * batch_size
+
     # Validate presence of required sections
     if 'problem' not in cfg:
         raise ValueError("Missing 'problem' section in configuration file")
