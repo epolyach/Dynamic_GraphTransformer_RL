@@ -127,3 +127,10 @@ research/runs/
 research/**/tensorboard/
 # Optional: ignore large experimental results (keep curated results under results/)
 # research/results/**
+
+# Keep curated artifacts in results/small even though *.csv and *.pt are ignored globally
+!results/small/
+!results/small/*.csv
+!results/small/*.pt
+!results/small/**/*.csv
+!results/small/**/*.pt
