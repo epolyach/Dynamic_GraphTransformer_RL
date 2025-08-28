@@ -128,6 +128,8 @@ def parse_args():
                        choices=['GAT+RL', 'GT+RL', 'DGT+RL', 'GT-Greedy'],
                        default='GT+RL',
                        help='Model to train (default: GT+RL)')
+    parser.add_argument('--all', action='store_true',
+                       help='Train all available models sequentially')
     parser.add_argument('--force-retrain', action='store_true',
                        help='Force retraining even if saved model exists')
     parser.add_argument('--output-dir', type=str, default=None,
@@ -153,7 +155,12 @@ def main():
     logger.info("CVRP MODEL TRAINING")
     logger.info("="*60)
     logger.info(f"Configuration: {args.config}")
-    logger.info(f"Model: {args.model}")
+    # Determine which models to train
+    if args.all:
+        models_to_train = ['GAT+RL', 'GT+RL', 'DGT+RL', 'GT-Greedy']
+    else:
+        models_to_train = [args.model]
+    logger.info(f"Models to train: {', '.join(models_to_train)}")
     
     # Setup environment
     set_seeds(config.get('experiment', {}).get('random_seed', 42))
@@ -171,9 +178,7 @@ def main():
     logger.info(f"Output directory: {base_dir}")
     
     # Check for existing model
-    if not args.force_retrain and check_existing_model(args.model, base_dir):
-        logger.info(f"Model {args.model} already exists. Use --force-retrain to retrain.")
-        return
+    # We'll check for existing models inside the training loop
     
     # Create data generator
     logger.info("\nSetting up data generator...")
@@ -191,64 +196,69 @@ def main():
     logger.info("STARTING TRAINING")
     logger.info("="*60)
     
-    model_name = args.model
-    logger.info(f"\nTraining {model_name}")
-    logger.info("-"*40)
+    # Train each model
+    for model_name in models_to_train:
+        # Check for existing model
+        if not args.force_retrain and check_existing_model(model_name, base_dir):
+            logger.info(f"Model {model_name} already exists. Use --force-retrain to retrain.")
+            continue
+        
+        logger.info("-"*40)
     
-    try:
-        # Create model
-        model = ModelFactory.create_model(model_name, config)
-        model = model.to(device)
+        try:
+            # Create model
+            model = ModelFactory.create_model(model_name, config)
+            model = model.to(device)
         
-        # Log model info
-        total_params = sum(p.numel() for p in model.parameters())
-        logger.info(f"Model architecture: {model.__class__.__name__}")
-        logger.info(f"Total parameters: {total_params:,}")
+            # Log model info
+            total_params = sum(p.numel() for p in model.parameters())
+            logger.info(f"Model architecture: {model.__class__.__name__}")
+            logger.info(f"Total parameters: {total_params:,}")
         
-        # Create CSV writer for incremental logging
-        csv_writer = IncrementalCSVWriter(model_name, base_dir, config, logger)
+            # Create CSV writer for incremental logging
+            csv_writer = IncrementalCSVWriter(model_name, base_dir, config, logger)
         
-        # Train model with CSV callback
-        start_time = time.time()
-        history, training_time, artifacts = advanced_train_model(
-            model=model,
-            model_name=model_name,
-            config=config,
-            data_generator=data_generator,
-            logger_print=logger.info,
-            use_advanced_features=use_advanced,
-            epoch_callback=csv_writer.write_epoch
-        )
+            # Train model with CSV callback
+            start_time = time.time()
+            history, training_time, artifacts = advanced_train_model(
+                model=model,
+                model_name=model_name,
+                config=config,
+                data_generator=data_generator,
+                logger_print=logger.info,
+                use_advanced_features=use_advanced,
+                epoch_callback=csv_writer.write_epoch
+            )
         
-        # Finalize CSV
-        csv_writer.finalize()
+            # Finalize CSV
+            csv_writer.finalize()
         
-        # Store results
-        results = {
-            'history': history,
-            'artifacts': artifacts
-        }
+            # Store results
+            results = {
+                'history': history,
+                'artifacts': artifacts
+            }
         
-        # Save model
-        save_model(model_name, model, results, training_time, config, base_dir, logger)
+            # Save model
+            save_model(model_name, model, results, training_time, config, base_dir, logger)
         
-        # Log summary
-        final_val = history.get('final_val_cost', float('inf'))
-        best_val = artifacts.get('best_val_cost', final_val)
-        convergence_epoch = artifacts.get('convergence_epoch', 'N/A')
-        baseline_type = config.get('baseline', {}).get('type', 'mean')
+            # Log summary
+            final_val = history.get('final_val_cost', float('inf'))
+            best_val = artifacts.get('best_val_cost', final_val)
+            convergence_epoch = artifacts.get('convergence_epoch', 'N/A')
+            baseline_type = config.get('baseline', {}).get('type', 'mean')
         
-        logger.info(f"\nTraining Complete:")
-        logger.info(f"  Training time: {training_time:.1f}s")
-        logger.info(f"  Final validation cost: {final_val:.4f}")
-        logger.info(f"  Best validation cost: {best_val:.4f}")
-        logger.info(f"  Convergence epoch: {convergence_epoch}")
-        logger.info(f"  Baseline type: {baseline_type}")
+            logger.info(f"\nTraining Complete:")
+            logger.info(f"  Training time: {training_time:.1f}s")
+            logger.info(f"  Final validation cost: {final_val:.4f}")
+            logger.info(f"  Best validation cost: {best_val:.4f}")
+            logger.info(f"  Convergence epoch: {convergence_epoch}")
+            logger.info(f"  Baseline type: {baseline_type}")
         
-    except Exception as e:
-        logger.error(f"Failed to train {model_name}: {e}")
-        import traceback
-        traceback.print_exc()
+        except Exception as e:
+            logger.error(f"Failed to train {model_name}: {e}")
+            import traceback
+            traceback.print_exc()
     
 
 
