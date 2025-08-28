@@ -1,0 +1,85 @@
+============================================================
+CVRP MODEL TRAINING
+============================================================
+Configuration: configs/tiny.yaml
+Model: GAT+RL
+Device: cpu
+Output directory: results/tiny
+
+Setting up data generator...
+
+============================================================
+STARTING TRAINING
+============================================================
+
+Training GAT+RL
+----------------------------------------
+Model architecture: LegacyGATModel
+Total parameters: 1,265,472
+Created CSV history file: results/tiny/csv/history_gat_rl.csv
+[GAT+RL] Training with 131072 total instances over 65 epochs
+[GAT+RL] Batches per epoch: 3, batch size: 512
+[RolloutBaseline] Initialized at epoch 0 with mean=0.714934 over 1024 eval samples
+Traceback (most recent call last):
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/run_training.py", line 256, in <module>
+    main()
+    ~~~~^^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/run_training.py", line 213, in main
+    history, training_time, artifacts = advanced_train_model(
+                                        ~~~~~~~~~~~~~~~~~~~~^
+        model=model,
+        ^^^^^^^^^^^^
+    ...<5 lines>...
+        epoch_callback=csv_writer.write_epoch
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/src/training/advanced_trainer.py", line 257, in advanced_train_model
+    routes, logp, ent = model(
+                        ~~~~~^
+        instances,
+        ^^^^^^^^^^
+    ...<3 lines>...
+        config=config
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/src/models/legacy_gat.py", line 641, in forward
+    actions, log_p = self.decoder(
+                     ~~~~~~~~~~~~^
+        embed, graph_embed, cap,
+        ^^^^^^^^^^^^^^^^^^^^^^^^
+        demand, max_steps, temperature, greedy
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/src/models/legacy_gat.py", line 412, in forward
+    p = self.pointer(decoder_input.unsqueeze(1), encoder_inputs, mask, T)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/src/models/legacy_gat.py", line 290, in forward
+    x = self.mhalayer(state_t, context, mask)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/src/models/legacy_gat.py", line 244, in forward
+    out_put = self.fc(out_put)
+  File "/Users/evgeny.polyachenko/WORK/EUROSENDER/Conf_Papers/ICORES/Dynamic_GraphTransformer_RL/venv/lib/python3.13/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

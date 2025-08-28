@@ -2,12 +2,12 @@
 working_dir_path: "results/small"
 
 problem:
-  num_customers: 20
+  num_customers: 10
 
 training:
-  num_instances: 131072     
+  num_instances: 775680
   batch_size: 512         
-  num_epochs: 64          
+  num_epochs: 100         
   learning_rate: 0.0001 
 
 # Override for better algorithm differentiation

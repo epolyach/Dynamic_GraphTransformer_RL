@@ -1,0 +1,25 @@
+# Quick benchmark configuration for performance testing
+working_dir_path: "results/benchmark_test"
+
+problem:
+  num_customers: 7
+  vehicle_capacity: 30
+  demand_range: [1, 10]
+  coord_range: 100
+
+training:
+  num_instances: 8192      # Reduced for quick test
+  batch_size: 512         
+  num_epochs: 4            # Very short for benchmark
+  learning_rate: 0.0001 
+  validation_frequency: 2
+
+baseline:
+  type: mean               # Faster than rollout
+  
+experiment:
+  device: "cpu"            # Will be overridden in optimized version
+  strict_validation: false
+  use_advanced_features: true
+
+# Use defaults for everything else
