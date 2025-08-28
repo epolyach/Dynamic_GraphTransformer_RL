@@ -350,12 +350,16 @@ def advanced_train_model(
         val_cost = None
         if (epoch % config['training']['validation_frequency']) == 0 or epoch == num_epochs:
             with torch.no_grad():
-                val_instances = data_generator(batch_size, seed=42 + epoch)
+                # Use different seed range for validation (1M offset from training)
+                val_seed = 1000000 + epoch * batch_size  # Ensures no overlap with training seeds
+                val_instances = data_generator(batch_size, seed=val_seed)
                 routes_g, _, _ = model(
                     val_instances,
                     max_steps=len(val_instances[0]['coords']) * config['inference']['max_steps_multiplier'],
-                    temperature=0.1,  # Low temperature for validation
-                    greedy=True,
+                    # Use same temperature as training for consistent validation
+                    # Research shows "validate what you train" principle is important
+                    temperature=current_temp,  # Match training temperature
+                    greedy=False,  # Sample from distribution, don't use greedy
                     config=config
                 )
                 val_batch_costs = []
