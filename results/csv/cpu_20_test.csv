@@ -1,5 +1,0 @@
-n_customers,solver,instance_id,status,time,cpc
-20,exact_ortools_vrp,1,success,0.1035757064819336,0.3741654922794886
-20,exact_ortools_vrp,2,success,0.06837654113769531,0.37999711250908885
-20,exact_ortools_vrp,3,success,0.05128359794616699,0.3311533819492209
-20,exact_ortools_vrp,4,success,0.05240821838378906,0.2666119890070991

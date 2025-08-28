@@ -38,11 +38,10 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
     
     # Convert distances to integer (OR-Tools works better with integers)
     # Scale by 10000 to preserve 4 decimal places
-    dist_scale = 100000
-    scaled_distances = np.rint(distances * dist_scale).astype(int)
-    demand_scale = 1000
-    scaled_demands = np.rint(demands * demand_scale).astype(int)
-    scaled_capacity = int(np.rint(capacity * demand_scale))
+    scale = 10000
+    scaled_distances = (distances * scale).astype(int)
+    scaled_demands = demands.astype(int)
+    scaled_capacity = int(capacity)
     
     # Create the routing index manager
     manager = pywrapcp.RoutingIndexManager(n, n_customers, 0)  # n nodes, max n_customers vehicles, depot=0
@@ -94,8 +93,8 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
     search_parameters.use_full_propagation = True
     
     # Note: use_depth_first_search can help but may slow down for larger instances
-    # Only enable for very small instances (<= 8 customers)
-    if n_customers <= 8:
+    # Only enable for very small instances (< 10 customers)
+    if n_customers <= 10:
         search_parameters.use_depth_first_search = True
     
     # Set time limit
@@ -109,7 +108,7 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
     solution = routing.SolveWithParameters(search_parameters)
     
     if solution:
-        total_cost = solution.ObjectiveValue() / dist_scale  # Convert back to original scale
+        total_cost = solution.ObjectiveValue() / scale  # Convert back to original scale
         solve_time = time.time() - start_time
         
         # Extract routes
@@ -141,12 +140,7 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
         is_optimal = (n_customers <= 10)
         
         # Use standardized cost calculation for consistency across all solvers
-        cleaned_routes = []
-        for vr in vehicle_routes:
-            customers_only = [node for node in vr if node != 0]
-            if customers_only:
-                cleaned_routes.append(customers_only)
-        standardized_cost = calculate_route_cost(cleaned_routes, distances)
+        standardized_cost = calculate_route_cost(vehicle_routes, distances)
         
         if verbose:
             print(f"OR-Tools VRP (exact) found solution: cost={standardized_cost:.4f}, vehicles={num_vehicles}, time={solve_time:.3f}s")
