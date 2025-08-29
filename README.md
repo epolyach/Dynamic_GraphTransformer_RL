@@ -36,17 +36,17 @@ source ./activate_env.sh
 
 #### Train a Single Model
 ```bash
-python run_training.py --model DGT+RL --config configs/small.yaml
+python3 run_training.py --model DGT+RL --config configs/small.yaml
 ```
 
 #### Train All Models (NEW)
 ```bash
-python run_training.py --all --config configs/small.yaml
+python3 run_training.py --all --config configs/small.yaml
 ```
 
 #### Force Retrain Existing Models
 ```bash
-python run_training.py --all --force-retrain --config configs/small.yaml
+python3 run_training.py --all --force-retrain --config configs/small.yaml
 ```
 
 ### Available Configurations
@@ -58,7 +58,7 @@ python run_training.py --all --force-retrain --config configs/small.yaml
 ### Command Line Options
 
 ```bash
-python run_training.py --help
+python3 run_training.py --help
 
 Options:
   --config CONFIG       Path to configuration file
@@ -117,7 +117,7 @@ This ensures we "validate what we train" - testing the same stochastic policy be
 ### Generate Comparative Plots
 After training, generate comparison plots:
 ```bash
-python make_comparative_plot.py
+python3 make_comparative_plot.py --config configs/small.yaml
 ```
 
 Note on required analysis artifact
@@ -143,7 +143,12 @@ Generate the analysis artifact from existing checkpoints
 python run_training.py --all --config configs/small.yaml
 ```
 
-2) Build enhanced_comparative_study.pt from saved models:
+2) Build enhanced_comparative_study.pt from saved models (new script):
+```bash
+python3 build_analysis_artifact.py --config configs/small.yaml
+```
+
+Advanced (optional): one-liner alternative if you prefer inline:
 ```bash
 python3 - <<'PY'
 import os
@@ -177,7 +182,7 @@ PY
 
 3) Generate plots:
 ```bash
-python make_comparative_plot.py --config configs/small.yaml
+python3 make_comparative_plot.py --config configs/small.yaml
 ```
 
 The plotter will also read per-epoch series (loss/cost) directly from results/<scale>/csv/history_*.csv to enrich the figures.
@@ -185,7 +190,7 @@ The plotter will also read per-epoch series (loss/cost) directly from results/<s
 ### Analyze Validation Strategies
 Compare different validation approaches:
 ```bash
-python analyze_validation_strategies.py
+python3 analyze_validation_strategies.py
 ```
 
 ## Key Files
