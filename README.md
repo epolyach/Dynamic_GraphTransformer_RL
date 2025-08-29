@@ -120,6 +120,68 @@ After training, generate comparison plots:
 python make_comparative_plot.py
 ```
 
+Note on required analysis artifact
+
+make_comparative_plot.py loads a consolidated analysis file from your working directory:
+- results/<scale>/analysis/enhanced_comparative_study.pt (preferred), or
+- results/<scale>/analysis/comparative_study_complete.pt (legacy)
+
+This file is a small Torch checkpoint containing:
+- results: per-model histories (train_costs, val_costs, final_val_cost, etc.)
+- training_times: per-model training time in seconds
+- config: the configuration dict used for training (to infer problem size, etc.)
+
+Which script produces it?
+
+Historically this was created by a comparative study runner (run_comparative_study.py), referenced in src/models/__init__.py and src/training/__init__.py. That runner is not present in this CPU branch. Instead, you can generate the artifact from the saved model checkpoints that run_training.py writes under results/<scale>/pytorch/.
+
+Generate the analysis artifact from existing checkpoints
+
+1) Train models (single or all):
+```bash
+# Train all models with the selected config
+python run_training.py --all --config configs/small.yaml
+```
+
+2) Build enhanced_comparative_study.pt from saved models:
+```bash
+python3 - <<'PY'
+import os
+from pathlib import Path
+import torch
+
+scale = 'small'  # change to medium/production as needed
+base_dir = Path(f'results/{scale}')
+pytorch_dir = base_dir/'pytorch'
+analysis_dir = base_dir/'analysis'
+analysis_dir.mkdir(parents=True, exist_ok=True)
+
+results = {}
+training_times = {}
+config = None
+
+for f in sorted(pytorch_dir.glob('model_*.pt')):
+    m = torch.load(f, map_location='cpu', weights_only=False)
+    name = m.get('model_name') or f.stem.replace('model_','').replace('_',' ').replace('plus','+')
+    # Minimal structure expected by the plotter
+    results[name] = {'history': m['history']}
+    training_times[name] = m.get('training_time', 0.0)
+    if config is None:
+        config = m.get('config', {})
+
+out_path = analysis_dir/'enhanced_comparative_study.pt'
+torch.save({'results': results, 'training_times': training_times, 'config': config}, out_path)
+print('Wrote', out_path)
+PY
+```
+
+3) Generate plots:
+```bash
+python make_comparative_plot.py --config configs/small.yaml
+```
+
+The plotter will also read per-epoch series (loss/cost) directly from results/<scale>/csv/history_*.csv to enrich the figures.
+
 ### Analyze Validation Strategies
 Compare different validation approaches:
 ```bash
