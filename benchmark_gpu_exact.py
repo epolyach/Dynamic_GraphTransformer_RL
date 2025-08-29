@@ -9,7 +9,6 @@ def generate_instance(n_customers, seed):
     np.random.seed(seed)
     n = n_customers + 1
     coords = np.random.uniform(0, 1, size=(n, 2))
-    coords[0] = [0.5, 0.5]
     demands = np.zeros(n, dtype=np.float32)
     demands[1:] = np.random.uniform(1, 10, size=n_customers)
     capacity = max(demands.sum() / 2, demands.max() * 2)
