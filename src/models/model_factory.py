@@ -9,6 +9,7 @@ import torch.nn as nn
 from typing import Dict, Any
 
 from src.models.legacy_gat import LegacyGATModel
+from src.models.legacy_gat_fixed import FixedLegacyGATModel
 from src.models.gt import GraphTransformer
 from src.models.greedy_gt import GraphTransformerGreedy
 from src.models.dgt import DynamicGraphTransformerNetwork
@@ -35,11 +36,22 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     num_layers = config['model']['num_layers']
     dropout = config['model']['transformer_dropout']
     ff_mult = config['model']['feedforward_multiplier']
-    edge_div = config['model']['edge_embedding_divisor']
     
     # Create model based on name
     if model_name == 'GAT+RL':
-        # Legacy GAT model with exact architecture from GAT_RL project
+        # Use fixed version of GAT model with improved convergence
+        return FixedLegacyGATModel(
+            node_input_dim=input_dim,
+            edge_input_dim=1,  # Edge features are distances
+            hidden_dim=hidden_dim,
+            edge_dim=16,  # Legacy default
+            layers=4,  # Legacy uses 4 layers
+            negative_slope=0.2,  # Legacy default
+            dropout=0.6,  # Legacy default
+            config=config
+        )
+    elif model_name == 'GAT+RL-Original':
+        # Original Legacy GAT model (for comparison)
         return LegacyGATModel(
             node_input_dim=input_dim,
             edge_input_dim=1,  # Edge features are distances
@@ -65,7 +77,8 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
 def get_supported_models():
     """Get list of supported model names."""
     return [
-        'GAT+RL',  # Legacy GAT with edge features and 8-head pointer attention
+        'GAT+RL',  # Fixed GAT with improved convergence
+        'GAT+RL-Original',  # Original Legacy GAT (for comparison)
         'GT-Greedy',  # Greedy baseline
         'GT+RL',  # Advanced Graph Transformer
         'DGT+RL'  # Dynamic Graph Transformer (ultimate model)

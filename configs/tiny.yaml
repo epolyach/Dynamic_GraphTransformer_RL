@@ -4,22 +4,37 @@ working_dir_path: "results/tiny"
 problem:
   num_customers: 7
 
+# Current tiny.yaml has these values - CHANGE TO:
 training:
-  num_batches_per_epoch: 5  # 5 batches per epoch
-  batch_size: 512         
-  num_epochs: 64
-  learning_rate: 0.0001 
+  num_batches_per_epoch: 5
+  batch_size: 128         # Reduced from 256 - smaller batches for faster updates
+  num_epochs: 80
+  learning_rate: 0.0003   # Increased from 0.0001 - faster learning for small models
 
-# Override for better algorithm differentiation
+baseline:
+  eval_batches: 3         # Reduced from default 5 - less eval overhead
+  update:
+    frequency: 2          # Check every 2 epochs instead of 4
+    significance_test: false  # Disable statistical test - update if mean improves
+    p_value: 0.10         # More lenient if re-enabled later
+
 training_advanced:
-  # Longer patience for better convergence
-  early_stopping_patience: 25  # Increased to match longer training
+  early_stopping_patience: 25
+  # Gentler temperature schedule for small models
+  temp_start: 5.0         # Reduced from 3.5 - less initial chaos
+  temp_min: 0.2           # Raised from 0.05 - avoid too greedy too fast  
+  temp_adaptation_rate: 0.15  # Slower from 0.25 - more stable learning
   
-  # More aggressive temperature adaptation for clear differences  
-  temp_start: 3.5          # Even higher start
-  temp_min: 0.05           # Even lower min
-  temp_adaptation_rate: 0.25   # Faster adaptation
+  # Higher entropy for exploration
+  entropy_coef: 0.05      # Increased from 0.02
+  entropy_min: 0.005      # Increased from 0.001
+  
+  # Smaller gradient clipping for stability
+  gradient_clip_norm: 1.0  # Reduced from 2.0
 
-# Keep default cost penalty modest to speed learning signal; override if studying penalties
-cost:
-  depot_penalty_per_visit: 0.0
+model:
+  hidden_dim: 128    # explicitly use the small model
+  num_heads: 4       # 64 is divisible by 4 (head_dim=16)
+  num_layers: 3      # optional: slightly shallower for speed/stability on CPU
+  transformer_dropout: 0.1
+  feedforward_multiplier: 2

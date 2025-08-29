@@ -352,6 +352,14 @@ def create_enhanced_data_generator(config: Dict[str, Any],
         coord_range = config['problem']['coord_range']
         demand_range = config['problem']['demand_range']
         
+        # Get configured instance types
+        config_types = config['problem'].get('instance_types', ['random'])
+        configured_instance_types = []
+        for type_str in config_types:
+            type_str = type_str.upper()
+            if hasattr(InstanceType, type_str):
+                configured_instance_types.append(getattr(InstanceType, type_str))
+        
         # Apply curriculum if enabled
         if curriculum is not None:
             difficulty_params = curriculum.get_difficulty_params(epoch)
@@ -361,7 +369,8 @@ def create_enhanced_data_generator(config: Dict[str, Any],
             capacity = int(capacity * difficulty_params['capacity_scaling'])
         else:
             num_customers = base_customers
-            instance_types = [InstanceType.RANDOM, InstanceType.CLUSTERED, InstanceType.RADIAL]
+            # Use configured instance types or default to RANDOM only
+            instance_types = configured_instance_types if configured_instance_types else [InstanceType.RANDOM]
             augmentation_prob = 0.3
         
         # Generate batch

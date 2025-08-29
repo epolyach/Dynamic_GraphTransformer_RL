@@ -125,9 +125,9 @@ def parse_args():
     parser.add_argument('--config', type=str, default='configs/default.yaml',
                        help='Path to configuration file')
     parser.add_argument('--model', type=str,
-                       choices=['GAT+RL', 'GT+RL', 'DGT+RL', 'GT-Greedy'],
+                       choices=['GAT+RL', 'GAT+RL-Original', 'GT+RL', 'DGT+RL', 'GT-Greedy'],
                        default='GT+RL',
-                       help='Model to train (default: GT+RL)')
+                       help='Model to train (default: GT+RL, GAT+RL uses fixed version)')
     parser.add_argument('--all', action='store_true',
                        help='Train all available models sequentially')
     parser.add_argument('--force-retrain', action='store_true',
@@ -157,7 +157,7 @@ def main():
     logger.info(f"Configuration: {args.config}")
     # Determine which models to train
     if args.all:
-        models_to_train = ['GAT+RL', 'GT+RL', 'DGT+RL', 'GT-Greedy']
+        models_to_train = ['GAT+RL', 'GT+RL', 'DGT+RL', 'GT-Greedy']  # Uses fixed GAT by default
     else:
         models_to_train = [args.model]
     logger.info(f"Models to train: {', '.join(models_to_train)}")

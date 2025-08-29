@@ -1,0 +1,86 @@
+# Patch to fix GAT+RL convergence issues
+# Apply this to src/models/legacy_gat.py
+
+# CHANGE 1: Fix the PointerAttention class (around line 300-302)
+# Find these lines:
+        # Apply tanh and scale (legacy specific)
+        x = torch.tanh(compatibility)
+        x = x * 10  # Scale by 10 as in legacy
+        
+# Replace with:
+        # Use standard scaling without aggressive tanh + 10x
+        x = compatibility.squeeze(1) / math.sqrt(self.hidden_dim)
+        # OR if you want to keep some non-linearity (gentler):
+        # x = torch.tanh(compatibility / 2.0) * 2.0
+
+
+# CHANGE 2: Add advantage normalization in advanced_trainer.py (after line 302)
+# Find these lines in advanced_trainer.py:
+                    else:
+                        advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
+                else:
+                    base_scalar = costs_tensor.mean().detach()
+                    advantages = base_scalar - costs_tensor  # Lower cost -> positive advantage
+                
+# Add right after (for GAT only):
+                # Special handling for GAT models
+                if 'GAT' in model_name:
+                    # Normalize advantages for better gradient flow
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    # Optional: Clip advantages to prevent extreme values
+                    advantages = torch.clamp(advantages, -5.0, 5.0)
+
+
+# CHANGE 3: Create a GAT-specific config file (configs/gat_optimized.yaml)
+working_dir_path: "results/tiny"
+
+problem:
+  num_customers: 7
+
+training:
+  num_batches_per_epoch: 5
+  batch_size: 128
+  num_epochs: 80
+  learning_rate: 0.001  # Higher for GAT (was 0.0003)
+
+baseline:
+  eval_batches: 3
+  update:
+    frequency: 4  # Update baseline every 4 epochs
+    significance_test: false
+    p_value: 0.10
+
+training_advanced:
+  early_stopping_patience: 30  # More patience for GAT
+  # Gentler temperature for GAT (already has internal scaling issues)
+  temp_start: 2.0  # Reduced from 5.0
+  temp_min: 0.5    # Raised from 0.2
+  temp_adaptation_rate: 0.05  # Slower adaptation
+  
+  # Different entropy for GAT
+  entropy_coef: 0.01  # Lower than default
+  entropy_min: 0.001
+  
+  # Proper gradient clipping
+  gradient_clip_norm: 1.0  # Match other models
+
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+  transformer_dropout: 0.1
+  feedforward_multiplier: 2
+
+
+# CHANGE 4: Alternative quick fix - just change line 302 in legacy_gat.py
+# FROM:
+        x = x * 10  # Scale by 10 as in legacy
+# TO:
+        x = x * 2.0  # Reduced scaling to prevent gradient saturation
+
+
+# To apply these changes:
+# 1. First try just changing the scaling from 10 to 2 (simplest fix)
+# 2. Test with: python run_training.py --config configs/gat_optimized.yaml --model GAT+RL --force-retrain
+# 3. If still not converging, apply the advantage normalization
+# 4. Monitor the loss - it should become negative like GT/DGT

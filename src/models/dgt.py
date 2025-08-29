@@ -561,13 +561,14 @@ class DynamicGraphTransformer(nn.Module):
             # === Dynamic Graph Updates ===
             # 1. Process edges dynamically
             edge_features, edge_messages = self.edge_processor(node_embeddings, distance_matrix, visited)
-            node_embeddings = node_embeddings + edge_messages * 0.1  # Soft edge influence
+            node_embeddings = node_embeddings + edge_messages * 0.5  # Increased influence
             
             # 2. Adapt graph structure
             adjacency = self.graph_adapter(node_embeddings, visited, remaining_capacity)
             
-            # 3. Apply multi-scale temporal attention
-            node_embeddings = node_embeddings + self.temporal_attention(node_embeddings, visited, step)
+            # 3. Apply multi-scale temporal attention (reduced influence)
+            temporal_update = self.temporal_attention(node_embeddings, visited, step)
+            node_embeddings = node_embeddings + temporal_update * 0.3
             
             # 4. Progressive refinement based on progress
             for refinement_layer in self.refinement_layers[:2]:  # Use only first 2 layers during decoding
@@ -600,24 +601,30 @@ class DynamicGraphTransformer(nn.Module):
             state_input = torch.cat([current_emb, memory_read, state_features], dim=-1)
             state = self.state_encoder(state_input)
             
-            # === Learned Update Schedule ===
-            update_strength = self.update_schedule(torch.tensor([[progress]], device=device))
-            
             # === Dynamic Node Embedding Updates ===
+            # Always compute update but scale by progress
+            progress_tensor = torch.full((batch_size, 1), progress, device=device)
+            update_strength = self.update_schedule(progress_tensor)
+            update_strength = torch.clamp(update_strength, 0.0, 0.5)
+            
+            # Compute update with graph structure awareness
+            state_expanded = state.unsqueeze(1).expand(-1, max_nodes, -1)
+            adjacency_weighted = torch.matmul(adjacency, node_embeddings)
+            
+            update_input = torch.cat([node_embeddings, state_expanded, adjacency_weighted], dim=-1)
+            update = self.graph_updater(update_input)
+            
+            # Apply update with learned schedule (scale by step to be gentle early)
+            step_scale = min(1.0, step / 3.0)  # Ramp up over first 3 steps
+            # Properly broadcast update_strength [batch_size, 1] -> [batch_size, num_nodes, 1]
+            update_strength_expanded = update_strength.unsqueeze(1).expand(-1, max_nodes, 1)
+            node_embeddings = node_embeddings + update * update_strength_expanded * step_scale
+            
             if step > 0:
-                # Compute update with graph structure awareness
-                state_expanded = state.unsqueeze(1).expand(-1, max_nodes, -1)
-                adjacency_weighted = torch.matmul(adjacency, node_embeddings)
-                
-                update_input = torch.cat([node_embeddings, state_expanded, adjacency_weighted], dim=-1)
-                update = self.graph_updater(update_input)
-                
-                # Apply update with learned schedule
-                node_embeddings = node_embeddings + update * update_strength
                 
                 # Light transformer pass for coherence
                 for i in range(min(1, len(self.transformer_layers))):
-                    node_embeddings = self.transformer_layers[i](node_embeddings, distance_matrix, visited)
+                    node_embeddings = self.transformer_layers[i](node_embeddings, distance_matrix)
             
             # === Enhanced Pointer Attention ===
             # Multi-head pointer with memory augmentation

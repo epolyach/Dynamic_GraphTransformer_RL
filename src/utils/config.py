@@ -75,7 +75,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
     # Required keys
     required_problem = ['num_customers', 'vehicle_capacity', 'coord_range', 'demand_range']
     required_training = ['num_instances', 'batch_size', 'num_epochs', 'learning_rate']
-    required_model = ['input_dim', 'hidden_dim', 'num_heads', 'num_layers', 'transformer_dropout', 'feedforward_multiplier', 'edge_embedding_divisor']
+    required_model = ['input_dim', 'hidden_dim', 'num_heads', 'num_layers', 'transformer_dropout', 'feedforward_multiplier']
 
     for k in required_problem:
         if k not in cfg['problem']:
@@ -112,7 +112,6 @@ def load_config(config_path: str) -> Dict[str, Any]:
     m['num_layers'] = _to_int(m['num_layers'])
     m['transformer_dropout'] = float(m['transformer_dropout'])
     m['feedforward_multiplier'] = _to_int(m['feedforward_multiplier'])
-    m['edge_embedding_divisor'] = _to_int(m['edge_embedding_divisor'])
 
     # training_advanced
     ta = cfg.get('training_advanced', {})

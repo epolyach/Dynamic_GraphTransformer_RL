@@ -218,6 +218,7 @@ def advanced_train_model(
     # Set up optional rollout baseline
     baseline_cfg = config.get('baseline', {})
     use_rollout_baseline = str(baseline_cfg.get('type', 'mean')).lower() == 'rollout'
+    baseline_update_frequency = int(baseline_cfg.get('update', {}).get('frequency', 1))
     baseline: Optional[RolloutBaseline] = None
 
     if use_rollout_baseline and model_name != 'GT-Greedy':
@@ -397,22 +398,25 @@ def advanced_train_model(
                 early_stopping.restore_best_model(model)
                 break
         
-        # Compute baseline value for this epoch
+        # Compute baseline value for this epoch (CSV logging only).
+        # To reduce runtime, only compute rollout-baseline value on scheduled update epochs.
         baseline_value = None
         if epoch_costs:
-            # Use mean baseline by default, or rollout baseline value if available
             if use_rollout_baseline and baseline is not None:
-                # Rollout baseline provides an average baseline value
-                try:
-                    # Get a representative baseline value from the rollout
-                    test_instances = data_generator(batch_size, seed=999999 + epoch)
-                    with torch.no_grad():
-                        baseline_costs = baseline.eval_batch(test_instances)
-                    baseline_value = float(baseline_costs.mean())
-                except:
-                    baseline_value = float(np.mean(epoch_costs))
+                # Only compute when the baseline update is scheduled (every baseline_update_frequency epochs)
+                if (epoch % baseline_update_frequency) == 0:
+                    try:
+                        # Get a representative baseline value from the rollout
+                        test_instances = data_generator(batch_size, seed=999999 + epoch)
+                        with torch.no_grad():
+                            baseline_costs = baseline.eval_batch(test_instances)
+                        baseline_value = float(baseline_costs.mean())
+                    except:
+                        baseline_value = float(np.mean(epoch_costs))
+                else:
+                    baseline_value = None  # Skip computing on non-update epochs to save time
             else:
-                # Mean baseline
+                # Mean baseline (cheap)
                 baseline_value = float(np.mean(epoch_costs))
         
         # Call epoch callback for incremental CSV writing
