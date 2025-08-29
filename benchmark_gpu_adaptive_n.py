@@ -9,6 +9,7 @@ import time
 import sys
 import json
 import csv
+import os
 from datetime import datetime
 sys.path.append('research/benchmark_exact')
 from enhanced_generator import EnhancedCVRPGenerator, InstanceType
@@ -143,8 +144,8 @@ def run_benchmark_for_n(n_customers, csv_writer=None):
     return mean_cpc, std_cpc, sem, relative_error, num_instances
 
 def main():
-    """Run benchmarks for N=5 through N=10 with adaptive instance counts"""
-    n_values = [5, 6, 7, 8, 9, 10]
+    """Run benchmarks for N=5 through N=20 with adaptive instance counts"""
+    n_values = list(range(5, 21))  # N from 5 to 20
     
     # Show instance counts preview
     print("Instance counts based on formula: int(10^(7-N/5))")
@@ -169,6 +170,7 @@ def main():
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         csvfile.flush()
+        os.fsync(csvfile.fileno())
         
         # Results storage for summary table
         results = []
@@ -179,6 +181,7 @@ def main():
             mean, std, sem, rel_err, num_inst = run_benchmark_for_n(n, writer)
             results.append((n, num_inst, mean, std, sem, rel_err))
             csvfile.flush()  # Save results immediately after each N
+            os.fsync(csvfile.fileno())
         
         total_time = time.time() - start_time
         
