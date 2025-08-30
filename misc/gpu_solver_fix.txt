@@ -1,0 +1,38 @@
+                try:
+                    # Convert GPU arrays to CPU for compatibility with exact solvers
+                    coords_cpu = cp.asnumpy(coords_gpu)  
+                    demands_cpu = cp.asnumpy(demands_gpu)
+                    distances_cpu = np.sqrt(((coords_cpu[:, np.newaxis] - coords_cpu[np.newaxis, :]) ** 2).sum(axis=2))
+                    
+                    # Create instance dictionary for exact solvers
+                    instance = {
+                        'coords': coords_cpu,
+                        'demands': demands_cpu,
+                        'distances': distances_cpu,
+                        'capacity': capacity
+                    }
+                    
+                    # Call the appropriate real solver
+                    if solver_name == "exact_ortools_vrp":
+                        solver_solution = exact_ortools_vrp.solve(instance, time_limit=30.0, verbose=False)
+                    elif solver_name == "exact_milp":
+                        solver_solution = exact_milp.solve(instance, time_limit=30.0, verbose=False)
+                    elif solver_name == "exact_dp":
+                        solver_solution = exact_dp.solve(instance, time_limit=30.0, verbose=False)
+                    elif solver_name == "exact_pulp":
+                        solver_solution = exact_pulp.solve(instance, time_limit=30.0, verbose=False)
+                    elif solver_name == "heuristic_or":
+                        solver_solution = self._gpu_heuristic_solver(coords_gpu, demands_gpu, capacity)
+                        # Convert to expected format
+                        solution = solver_solution
+                    else:
+                        raise ValueError(f"Unknown solver: {solver_name}")
+                    
+                    # Convert solver solution to GPU format (for exact solvers)
+                    if solver_name != "heuristic_or":
+                        solution = CVRPSolution(
+                            cost=solver_solution.cost,
+                            vehicle_routes=solver_solution.vehicle_routes,
+                            optimal=getattr(solver_solution, "is_optimal", True),
+                            solve_time=time.time() - start_time
+                        )
