@@ -385,7 +385,7 @@ class GATDecoder(nn.Module):
     
     def forward(self, encoder_inputs: torch.Tensor, pool: torch.Tensor, 
                 capacity: torch.Tensor, demand: torch.Tensor, 
-                max_steps: int, temperature: float, greedy: bool) -> Tuple[torch.Tensor, torch.Tensor]:
+                max_steps: int, temperature: float, greedy: bool) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Generate routes using pointer attention with improved stability.
         
@@ -401,6 +401,7 @@ class GATDecoder(nn.Module):
         Returns:
             actions: Selected nodes [batch_size, seq_len]
             log_p: Log probabilities [batch_size]
+            entropy: Entropy values [batch_size]
         """
         device = encoder_inputs.device
         batch_size = encoder_inputs.size(0)
@@ -417,9 +418,10 @@ class GATDecoder(nn.Module):
         # Track current node index
         index = torch.zeros(batch_size, dtype=torch.long, device=device)
         
-        # Collect actions and log probabilities
+        # Collect actions, log probabilities, and entropies
         log_ps = []
         actions = []
+        entropies = []
         
         # IMPORTANT: Add depot (0) as the first action to ensure route starts at depot
         actions.append(torch.zeros(batch_size, 1, dtype=torch.long, device=device))
@@ -482,6 +484,7 @@ class GATDecoder(nn.Module):
                 dist = Categorical(probs)
                 action = dist.sample()
                 log_ps.append(dist.log_prob(action))
+                entropies.append(dist.entropy())  # Track entropy for this step
             
             actions.append(action.unsqueeze(1))
             
@@ -515,15 +518,18 @@ class GATDecoder(nn.Module):
             if all_done:
                 break
         
-        # Stack actions and log probabilities
+        # Stack actions, log probabilities, and entropies
         actions = torch.cat(actions, dim=1)
         
-        if not greedy:
+        if not greedy and log_ps:
             log_p = torch.stack(log_ps, dim=1).sum(dim=1)
+            # Average entropy across all steps
+            entropy = torch.stack(entropies, dim=1).mean(dim=1) if entropies else torch.zeros(batch_size, device=device)
         else:
             log_p = torch.zeros(batch_size, device=device)
+            entropy = torch.zeros(batch_size, device=device)
         
-        return actions, log_p
+        return actions, log_p, entropy
 
 
 class GATModel(nn.Module):
@@ -625,7 +631,7 @@ class GATModel(nn.Module):
         edge_attr = torch.tensor(edge_attr_list, dtype=torch.float32, device=device).unsqueeze(-1)
         
         # Call the original GAT forward
-        actions, log_p = self._gat_forward(
+        actions, log_p, entropy = self._gat_forward(
             x, edge_index, edge_attr, demand, capacity,
             max_steps, temperature, greedy, batch_size
         )
@@ -651,14 +657,12 @@ class GATModel(nn.Module):
                 clean_route.append(0)
             routes.append(clean_route)
         
-        # Compute entropy (placeholder for consistency)
-        entropy = torch.zeros(batch_size, dtype=torch.float32, device=device)
-        
+        # Return the entropy computed in _gat_forward
         return routes, log_p, entropy
     
     def _gat_forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor,
                      demand: torch.Tensor, capacity: torch.Tensor, max_steps: int,
-                     temperature: float, greedy: bool, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
+                     temperature: float, greedy: bool, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Original GAT forward pass.
         """
@@ -684,9 +688,9 @@ class GATModel(nn.Module):
         demand_reshaped = demand.reshape(batch_size, num_nodes)
         
         # Decode
-        actions, log_p = self.decoder(
+        actions, log_p, entropy = self.decoder(
             node_embeddings, pool, capacity, demand_reshaped,
             max_steps, temperature, greedy
         )
         
-        return actions, log_p
+        return actions, log_p, entropy

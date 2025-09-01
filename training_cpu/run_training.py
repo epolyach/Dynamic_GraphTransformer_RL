@@ -10,11 +10,15 @@ Supported models:
 """
 
 import os
+import sys
 import time
 import argparse
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+
+# Add parent directory to path to find src module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import pandas as pd
@@ -147,7 +151,19 @@ def check_existing_model(model_name: str, base_dir: str) -> bool:
 def main():
     """Main training function."""
     args = parse_args()
-    config = load_config(args.config)
+    
+    # Save current directory and change to project root for config loading
+    original_cwd = os.getcwd()
+    project_root = Path(__file__).parent.parent
+    os.chdir(project_root)
+    
+    # Convert config path to absolute before changing directory
+    config_path = Path(original_cwd) / args.config if not Path(args.config).is_absolute() else Path(args.config)
+    config = load_config(str(config_path))
+    
+    # Change back to original directory
+    os.chdir(original_cwd)
+    
     logger = setup_logging(config)
     
     # Print training configuration
@@ -172,8 +188,17 @@ def main():
     # Setup output directory
     if args.output_dir:
         base_dir = args.output_dir
+    elif 'working_dir_path' in config:
+        # Use working_dir_path from config
+        working_dir = Path(config['working_dir_path'])
+        if not working_dir.is_absolute():
+            # If relative, it's relative to project root
+            base_dir = project_root / working_dir
+        else:
+            base_dir = working_dir
+        base_dir = str(base_dir)
     else:
-        # Use local results directory within training_cpu
+        # Fallback to local results directory within training_cpu
         base_dir = os.path.join(os.path.dirname(__file__), 'results')
     os.makedirs(base_dir, exist_ok=True)
     logger.info(f"Output directory: {base_dir}")

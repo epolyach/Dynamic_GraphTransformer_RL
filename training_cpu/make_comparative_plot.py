@@ -129,7 +129,33 @@ def load_results(base_dir):
     filtered_params = {name: model_params[name] for name in available_models}
     filtered_times = {name: training_times.get(name, 0.0) for name in available_models}
     
-    logger.info(f"✅ Loaded data for {len(available_models)} models: {list(available_models)}")
+    # Process results to extract final_val_cost from tuple format if needed
+    for name in available_models:
+        result = filtered_results[name]
+        if 'history' in result and 'val_costs' in result['history']:
+            val_costs = result['history']['val_costs']
+            # Check if val_costs are in tuple format (epoch, cost)
+            if val_costs and isinstance(val_costs[0], tuple):
+                # Extract just the costs from tuples
+                val_costs_only = [cost for epoch, cost in val_costs]
+                result['history']['val_costs_raw'] = val_costs  # Keep original for reference
+                result['history']['val_costs'] = val_costs_only
+                result['history']['val_epochs'] = [epoch for epoch, cost in val_costs]
+                # Set final_val_cost from the last validation cost
+                if val_costs_only:
+                    result['history']['final_val_cost'] = val_costs_only[-1]
+            elif val_costs:
+                # Already in list format, set final_val_cost
+                result['history']['final_val_cost'] = val_costs[-1]
+        
+        # Process train_costs similarly if in tuple format
+        if 'history' in result and 'train_costs' in result['history']:
+            train_costs = result['history']['train_costs']
+            if train_costs and isinstance(train_costs[0], tuple):
+                train_costs_only = [cost for epoch, cost in train_costs]
+                result['history']['train_costs'] = train_costs_only
+    
+    logger.info(f"\n✅ Loaded data for {len(available_models)} models: {list(available_models)}")
     
     return filtered_results, filtered_times, filtered_params, config
 
@@ -256,8 +282,15 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     logger.info(f"🎨 Creating plots for {len(model_names)} models")
     logger.info(f"   Models: {model_names}")
 
-    # CSV dir
-    csv_dir = os.path.join(config.get('working_dir_path', 'results'), 'csv') if isinstance(config, dict) else os.path.join('results', scale, 'csv')
+    # CSV dir - use base_dir if provided
+    if base_dir:
+        csv_dir = os.path.join(base_dir, 'csv')
+    elif isinstance(config, dict) and 'working_dir_path' in config:
+        csv_dir = os.path.join(config['working_dir_path'], 'csv')
+    else:
+        csv_dir = os.path.join('results', scale, 'csv')
+    
+    logger.info(f"📂 Looking for CSV files in: {csv_dir}")
     
     # Map display names to CSV keys - matches current model factory
     name_to_key = {
@@ -270,12 +303,15 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     def load_csv_series_for_model(model_name):
         key = name_to_key.get(model_name)
         if not key:
+            logger.warning(f"   ⚠️ No CSV key mapping for model: {model_name}")
             return None
         fpath = os.path.join(csv_dir, f"history_{key}.csv")
         if not os.path.exists(fpath):
+            logger.warning(f"   ⚠️ CSV file not found: {fpath}")
             return None
         try:
             df = pd.read_csv(fpath)
+            logger.info(f"   ✅ Loaded CSV for {model_name}: {len(df)} rows")
         except Exception as e:
             logger.warning(f"   ⚠️ Failed to read CSV for {model_name}: {e}")
             return None
