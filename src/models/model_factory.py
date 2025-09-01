@@ -8,8 +8,7 @@ configurations and parameter handling.
 import torch.nn as nn
 from typing import Dict, Any
 
-from src.models.legacy_gat import LegacyGATModel
-from src.models.legacy_gat_fixed import FixedLegacyGATModel
+from src.models.gat import GATModel
 from src.models.gt import GraphTransformer
 from src.models.greedy_gt import GraphTransformerGreedy
 from src.models.dgt import DynamicGraphTransformerNetwork
@@ -37,29 +36,23 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     dropout = config['model']['transformer_dropout']
     ff_mult = config['model']['feedforward_multiplier']
     
+    # GAT-specific parameters (with defaults for backward compatibility)
+    gat_edge_dim = config['model'].get('gat_edge_dim', 16)
+    gat_dropout = config['model'].get('gat_dropout', 0.6)
+    gat_negative_slope = config['model'].get('gat_negative_slope', 0.2)
+    
     # Create model based on name
     if model_name == 'GAT+RL':
-        # Use fixed version of GAT model with improved convergence
-        return FixedLegacyGATModel(
+        # GAT model with improved convergence
+        # Uses GAT-specific parameters from config
+        return GATModel(
             node_input_dim=input_dim,
             edge_input_dim=1,  # Edge features are distances
             hidden_dim=hidden_dim,
-            edge_dim=16,  # Legacy default
-            layers=4,  # Legacy uses 4 layers
-            negative_slope=0.2,  # Legacy default
-            dropout=0.6,  # Legacy default
-            config=config
-        )
-    elif model_name == 'GAT+RL-Original':
-        # Original Legacy GAT model (for comparison)
-        return LegacyGATModel(
-            node_input_dim=input_dim,
-            edge_input_dim=1,  # Edge features are distances
-            hidden_dim=hidden_dim,
-            edge_dim=16,  # Legacy default
-            layers=4,  # Legacy uses 4 layers
-            negative_slope=0.2,  # Legacy default
-            dropout=0.6,  # Legacy default
+            edge_dim=gat_edge_dim,  # From config (default: 16)
+            layers=num_layers,  # From config
+            negative_slope=gat_negative_slope,  # From config (default: 0.2)
+            dropout=gat_dropout,  # From config (default: 0.6)
             config=config
         )
     elif model_name == 'GT-Greedy':
@@ -71,14 +64,13 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     
     else:
         raise ValueError(f'Unknown model name: {model_name}. Supported models: '
-                        f'GAT+RL (Legacy GAT), GT-Greedy, GT+RL, DGT+RL')
+                        f'GAT+RL, GT-Greedy, GT+RL, DGT+RL')
 
 
 def get_supported_models():
     """Get list of supported model names."""
     return [
-        'GAT+RL',  # Fixed GAT with improved convergence
-        'GAT+RL-Original',  # Original Legacy GAT (for comparison)
+        'GAT+RL',  # GAT with improved convergence
         'GT-Greedy',  # Greedy baseline
         'GT+RL',  # Advanced Graph Transformer
         'DGT+RL'  # Dynamic Graph Transformer (ultimate model)

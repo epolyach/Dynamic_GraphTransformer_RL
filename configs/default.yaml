@@ -12,7 +12,6 @@ problem:
   vehicle_capacity: 30      # Integer capacity
   demand_range: [1, 10]     # Integer demands [min, max]
   coord_range: 100          # Coordinates 0..coord_range, then normalized to [0,1]
-  instance_types: ["random"]  # Instance types: random, clustered, radial, grid, mixed
 
 # =============================
 # Training parameters
@@ -44,6 +43,7 @@ experiment:
   random_seed: 42
   device: "cpu"
   use_advanced_features: true
+  strict_validation: true
 
 # =============================
 # Model architecture (shared)
@@ -55,6 +55,10 @@ model:
   num_layers: 4
   transformer_dropout: 0.1
   feedforward_multiplier: 2
+  # GAT-specific parameters
+  gat_edge_dim: 16         # Edge feature dimension for GAT
+  gat_dropout: 0.6         # Higher dropout for GAT (prevents overfitting)
+  gat_negative_slope: 0.2  # LeakyReLU slope for GAT attention
 
 
 # === NEW ENHANCED FEATURES ===
@@ -98,3 +102,10 @@ inference:
 logging:
   level: "INFO"
   format: "%(message)s"
+
+# =============================
+# Benchmark settings
+# =============================
+benchmark:
+  scaling:
+    distance_scale: 100000  # Used by GPU/CPU internals for integer distance scaling (results scaled back)
