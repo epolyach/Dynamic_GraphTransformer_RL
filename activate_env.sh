@@ -27,6 +27,10 @@ if [ ! -d "venv" ]; then
     echo "📦 Installing requirements from requirements.txt..."
     pip install -r requirements.txt --quiet
     
+    # Install OR-Tools for benchmark_cpu
+    echo "🔧 Installing OR-Tools for CPU benchmarking..."
+    pip install ortools --quiet
+    
     echo ""
     echo "✅ Setup complete! Environment is now activated."
     echo ""

@@ -1,5 +1,5 @@
 # Small-fast config to sanity-check pipeline quickly
-working_dir_path: "results/tiny"
+working_dir_path: "training_cpu/results/tiny"
 
 problem:
   num_customers: 7

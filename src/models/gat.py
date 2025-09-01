@@ -271,7 +271,8 @@ class ImprovedPointerAttention(nn.Module):
         
         # Linear projections
         self.k = nn.Linear(input_dim, hidden_dim, bias=False)
-        self.mhalayer = TransformerAttention(n_heads, 1, input_dim, hidden_dim)
+        # cat=3 because state_t has 3 concatenated hidden_dim vectors
+        self.mhalayer = TransformerAttention(n_heads, 3, input_dim, hidden_dim)
         
         # Optional: Add layer normalization for stability
         self.layer_norm = nn.LayerNorm(hidden_dim)
@@ -302,13 +303,15 @@ class ImprovedPointerAttention(nn.Module):
             Probability distribution [batch_size, n_nodes]
         """
         # Apply multi-head attention
-        x = self.mhalayer(state_t, context, mask)
+        x = self.mhalayer(state_t, context, mask)  # [batch_size, 1, hidden_dim]
         
         batch_size, n_nodes, input_dim = context.size()
         
         # Apply layer norm for stability (optional but helpful)
-        x_norm = self.layer_norm(x.reshape(batch_size, -1))
-        Q = x_norm.reshape(batch_size, 1, -1)
+        # x has shape [batch_size, 1, hidden_dim], squeeze the middle dimension for layer norm
+        x_squeezed = x.squeeze(1)  # [batch_size, hidden_dim]
+        x_norm = self.layer_norm(x_squeezed)  # [batch_size, hidden_dim]
+        Q = x_norm.unsqueeze(1)  # [batch_size, 1, hidden_dim]
         
         # Project keys
         K = self.k(context).reshape(batch_size, n_nodes, -1)
@@ -382,7 +385,7 @@ class GATDecoder(nn.Module):
     
     def forward(self, encoder_inputs: torch.Tensor, pool: torch.Tensor, 
                 capacity: torch.Tensor, demand: torch.Tensor, 
-                n_steps: int, T: float, greedy: bool) -> Tuple[torch.Tensor, torch.Tensor]:
+                max_steps: int, temperature: float, greedy: bool) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Generate routes using pointer attention with improved stability.
         
@@ -391,8 +394,8 @@ class GATDecoder(nn.Module):
             pool: Graph embedding [batch_size, hidden_dim]
             capacity: Vehicle capacities [batch_size, 1]
             demand: Node demands [batch_size, n_nodes]
-            n_steps: Maximum steps
-            T: Temperature
+            max_steps: Maximum steps
+            temperature: Temperature for sampling
             greedy: Whether to use greedy selection
         
         Returns:
@@ -403,16 +406,15 @@ class GATDecoder(nn.Module):
         batch_size = encoder_inputs.size(0)
         seq_len = encoder_inputs.size(1)
         
-        # Initialize masks
-        mask1 = encoder_inputs.new_zeros(batch_size, seq_len, device=device)
-        mask = encoder_inputs.new_zeros(batch_size, seq_len, device=device)
+        # Initialize visited mask to track which nodes have been visited
+        visited = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=device)
         
         # Initialize dynamic state
         max_capacity = capacity.clone()
         dynamic_capacity = capacity.clone().expand(batch_size, -1).to(device)
         demands = demand.to(device)
         
-        # Track visited nodes
+        # Track current node index
         index = torch.zeros(batch_size, dtype=torch.long, device=device)
         
         # Collect actions and log probabilities
@@ -424,10 +426,38 @@ class GATDecoder(nn.Module):
         
         _input = encoder_inputs[:, 0, :]  # Start from depot
         
-        for i in range(n_steps):
-            # Update masks based on capacity and visited status
-            mask1 = demands > dynamic_capacity.expand_as(demands)
-            mask = mask1.clone()
+        for i in range(max_steps):
+            # Create mask for infeasible nodes
+            # Mask nodes that exceed capacity
+            capacity_mask = demands > dynamic_capacity.expand_as(demands)
+            
+            # Combine with visited mask (don't revisit customers, but can return to depot)
+            mask = visited.clone()
+            mask[:, 0] = False  # Depot is initially available
+            
+            # Apply capacity constraints
+            mask = mask | capacity_mask
+            
+            # Prevent consecutive depot visits when feasible customers exist
+            for b in range(batch_size):
+                # Check if previous action was depot
+                if index[b] == 0:
+                    # Check if any customers are feasible (unvisited and within capacity)
+                    any_feasible = False
+                    for n in range(1, seq_len):
+                        if not visited[b, n] and demands[b, n] <= dynamic_capacity[b, 0]:
+                            any_feasible = True
+                            break
+                    # If feasible customers exist, prevent returning to depot immediately
+                    if any_feasible:
+                        mask[b, 0] = True  # Mask depot to avoid consecutive depot visits
+            
+            # If all customers are visited, only allow depot
+            customers_visited = visited[:, 1:].all(dim=1)
+            for b in range(batch_size):
+                if customers_visited[b]:
+                    mask[b, 1:] = True  # Mask all customers
+                    mask[b, 0] = False  # Only depot available
             
             # State preparation
             _input = torch.cat([_input, dynamic_capacity / max_capacity], dim=1)
@@ -437,11 +467,13 @@ class GATDecoder(nn.Module):
                 _input = _input + pool  # Residual connection
             
             # Prepare state for attention
-            state_t = torch.cat([_input.unsqueeze(1), encoder_inputs[:, 0, :].unsqueeze(1), 
-                                encoder_inputs[:, index, :]], dim=1)
+            # Gather current node embeddings and ensure correct dimensions
+            current_embeds = encoder_inputs[torch.arange(batch_size), index]  # [batch_size, hidden_dim]
+            # Concatenate along last dimension to form [batch_size, 1, hidden_dim*3]
+            state_t = torch.cat([_input, encoder_inputs[:, 0, :], current_embeds], dim=-1).unsqueeze(1)
             
             # Get probabilities from pointer attention
-            probs = self.pointer(state_t, encoder_inputs, mask, T)
+            probs = self.pointer(state_t, encoder_inputs, mask, temperature)
             
             # Sample or select greedily
             if greedy:
@@ -457,6 +489,12 @@ class GATDecoder(nn.Module):
             index = action
             _input = encoder_inputs[torch.arange(batch_size), index]
             
+            # Mark nodes as visited (except depot)
+            for b in range(batch_size):
+                node_idx = action[b].item()
+                if node_idx != 0:  # Don't mark depot as visited
+                    visited[b, node_idx] = True
+            
             # Update capacity
             dynamic_capacity = dynamic_capacity - demands[torch.arange(batch_size), index].unsqueeze(1)
             
@@ -466,6 +504,16 @@ class GATDecoder(nn.Module):
                 max_capacity,
                 dynamic_capacity
             )
+            
+            # Check if all instances have completed their routes  
+            # An instance is complete when all its customers are visited and it's at the depot
+            all_done = True
+            for b in range(batch_size):
+                if not (visited[b, 1:].all() and index[b] == 0):
+                    all_done = False
+                    break
+            if all_done:
+                break
         
         # Stack actions and log probabilities
         actions = torch.cat(actions, dim=1)
@@ -506,28 +554,114 @@ class GATModel(nn.Module):
         # Graph pooling
         self.pool_layer = nn.Linear(hidden_dim, hidden_dim)
         
-    def forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor,
-                demand: torch.Tensor, capacity: torch.Tensor, n_steps: int,
-                T: float = 1.0, greedy: bool = False) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, instances: List[Dict], max_steps: Optional[int] = None,
+                temperature: Optional[float] = None, greedy: bool = False,
+                config: Optional[Dict] = None) -> Tuple[List[List[int]], torch.Tensor, torch.Tensor]:
         """
-        Forward pass through the complete model.
+        Forward pass through the complete model with standard interface.
         
         Args:
-            x: Node coordinates [batch_size * num_nodes, 2]
-            edge_index: Edge connectivity [2, num_edges]
-            edge_attr: Edge distances [num_edges, 1]
-            demand: Node demands [batch_size * num_nodes, 1]
-            capacity: Vehicle capacities [batch_size, 1]
-            n_steps: Maximum decoding steps
-            T: Temperature for sampling
+            instances: List of instance dictionaries with 'coords', 'demands', 'capacity'
+            max_steps: Maximum decoding steps
+            temperature: Temperature for sampling
             greedy: Whether to use greedy decoding
+            config: Configuration dictionary
         
         Returns:
-            actions: Selected node sequences [batch_size, seq_len]
+            routes: List of routes for each instance
             log_p: Log probabilities [batch_size]
+            entropy: Entropy values [batch_size]
         """
-        batch_size = capacity.size(0)
+        config = config or {}
+        batch_size = len(instances)
         
+        if batch_size == 0:
+            return [], torch.tensor([]), torch.tensor([])
+        
+        if max_steps is None:
+            max_steps = len(instances[0]['coords']) * config.get('inference', {}).get('max_steps_multiplier', 2)
+        if temperature is None:
+            temperature = config.get('inference', {}).get('default_temperature', 1.0)
+        
+        # Prepare data and call the original forward method
+        device = next(self.parameters()).device
+        
+        # Convert instances to tensors needed by GAT
+        max_nodes = max(len(inst['coords']) for inst in instances)
+        total_nodes = batch_size * max_nodes
+        
+        # Prepare node features (coordinates)
+        x = torch.zeros(total_nodes, 2, device=device)
+        demand = torch.zeros(total_nodes, 1, device=device)
+        capacity = torch.zeros(batch_size, 1, device=device)
+        
+        # Create edge index for fully connected graph per instance
+        edge_list = []
+        edge_attr_list = []
+        
+        for i, inst in enumerate(instances):
+            n_nodes = len(inst['coords'])
+            offset = i * max_nodes
+            
+            # Fill node features
+            coords_tensor = torch.tensor(inst['coords'], dtype=torch.float32, device=device)
+            x[offset:offset+n_nodes] = coords_tensor
+            
+            demands_tensor = torch.tensor(inst['demands'], dtype=torch.float32, device=device)
+            demand[offset:offset+n_nodes, 0] = demands_tensor
+            
+            capacity[i] = inst['capacity']
+            
+            # Create fully connected edges for this instance
+            for j in range(n_nodes):
+                for k in range(n_nodes):
+                    if j != k:
+                        edge_list.append([offset + j, offset + k])
+                        # Compute distance as edge attribute
+                        dist = torch.norm(coords_tensor[j] - coords_tensor[k])
+                        edge_attr_list.append(dist)
+        
+        edge_index = torch.tensor(edge_list, dtype=torch.long, device=device).t()
+        edge_attr = torch.tensor(edge_attr_list, dtype=torch.float32, device=device).unsqueeze(-1)
+        
+        # Call the original GAT forward
+        actions, log_p = self._gat_forward(
+            x, edge_index, edge_attr, demand, capacity,
+            max_steps, temperature, greedy, batch_size
+        )
+        
+        # Convert actions to routes format
+        routes = []
+        for b in range(batch_size):
+            route = actions[b].cpu().numpy().tolist()
+            # Clean up route - remove consecutive depot visits and trailing depots
+            clean_route = []
+            prev_node = -1
+            for node in route:
+                if node >= len(instances[b]['coords']):
+                    continue  # Skip padding
+                # Skip consecutive depot visits
+                if node == 0 and prev_node == 0:
+                    continue
+                clean_route.append(node)
+                prev_node = node
+            
+            # Ensure route ends at depot
+            if len(clean_route) == 0 or clean_route[-1] != 0:
+                clean_route.append(0)
+            routes.append(clean_route)
+        
+        # Compute entropy (placeholder for consistency)
+        entropy = torch.zeros(batch_size, dtype=torch.float32, device=device)
+        
+        return routes, log_p, entropy
+    
+    def _gat_forward(self, x: torch.Tensor, edge_index: torch.Tensor, edge_attr: torch.Tensor,
+                     demand: torch.Tensor, capacity: torch.Tensor, max_steps: int,
+                     temperature: float, greedy: bool, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Original GAT forward pass.
+        """
         # Encode
         node_embeddings = self.encoder(x, edge_index, edge_attr, demand, batch_size)
         
@@ -536,12 +670,23 @@ class GATModel(nn.Module):
         
         # Reshape demand for decoder
         num_nodes = node_embeddings.size(1)
+        total_nodes = demand.size(0)
+        expected_nodes = batch_size * num_nodes
+        
+        # Handle potential padding issues
+        if total_nodes != expected_nodes:
+            # Pad or truncate demand to match expected size
+            demand_padded = torch.zeros(expected_nodes, 1, device=demand.device, dtype=demand.dtype)
+            actual_size = min(total_nodes, expected_nodes)
+            demand_padded[:actual_size] = demand[:actual_size]
+            demand = demand_padded
+        
         demand_reshaped = demand.reshape(batch_size, num_nodes)
         
         # Decode
         actions, log_p = self.decoder(
             node_embeddings, pool, capacity, demand_reshaped,
-            n_steps, T, greedy
+            max_steps, temperature, greedy
         )
         
         return actions, log_p

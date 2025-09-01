@@ -20,6 +20,11 @@ Usage:
 import os
 import sys
 import argparse
+
+# Add the project root to the Python path to allow importing 'src'
+current_script_path = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_script_path, '..'))
+sys.path.insert(0, project_root)
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -221,7 +226,7 @@ def compute_naive_baseline_cost_per_customer(config):
 
 # NOTE: Exact baseline computation removed - solver implementation was incomplete
 
-def create_comparison_plots(results, training_times, model_params, config, scale, suffix=''):
+def create_comparison_plots(results, training_times, model_params, config, scale='small', suffix='', base_dir=None):
     """Create comprehensive comparison plots with normalized costs (per customer)
     Now reads per-epoch series (loss, train_cost, val_cost) directly from CSV history files.
     """
@@ -634,8 +639,10 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     
     plt.tight_layout()
     
-    # Ensure plots directory exists - use local results directory
-    plots_dir = os.path.join(os.path.dirname(__file__), 'results', 'plots')
+    # Ensure plots directory exists - use base_dir parameter if provided
+    if base_dir is None:
+        base_dir = os.path.join(os.path.dirname(__file__), 'results')
+    plots_dir = os.path.join(base_dir, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
     
     # Save plot
@@ -645,12 +652,12 @@ def create_comparison_plots(results, training_times, model_params, config, scale
     logger.info(f"📊 Comparison plots saved to {output_path}")
     
     # Create performance summary
-    create_performance_summary(results, training_times, model_params, config, naive_normalized, scale, suffix)
+    create_performance_summary(results, training_times, model_params, config, naive_normalized, scale, suffix, base_dir)
     
     # Don't show the plot in non-interactive mode
     # plt.show()
 
-def create_performance_summary(results, training_times, model_params, config, naive_baseline_per_customer, scale, suffix=''):
+def create_performance_summary(results, training_times, model_params, config, naive_baseline_per_customer, scale, suffix='', base_dir=None):
     """Create a detailed performance summary table and save to CSV
     All costs are reported per customer for consistency across models (including legacy).
     """
@@ -711,8 +718,10 @@ def create_performance_summary(results, training_times, model_params, config, na
     # Sort by performance (lowest cost per customer first)
     df = df.sort_values('Final Val Cost/Customer')
     
-    # Save to CSV - use local results directory
-    csv_dir = os.path.join(os.path.dirname(__file__), 'results', 'csv')
+    # Save to CSV - use base_dir parameter if provided, otherwise fallback
+    if base_dir is None:
+        base_dir = os.path.join(os.path.dirname(__file__), 'results')
+    csv_dir = os.path.join(base_dir, 'csv')
     os.makedirs(csv_dir, exist_ok=True)
     csv_path = f'{csv_dir}/comparative_results{suffix}.csv'
     df.to_csv(csv_path, index=False)
@@ -763,9 +772,30 @@ def _deep_merge_dict(a: dict, b: dict) -> dict:
     return a
 
 def load_config(config_path):
-    """Unified config loader (shared)"""
-    from src.utils.config import load_config as _shared_load
-    return _shared_load(config_path)
+    """Load config with proper path resolution"""
+    import yaml
+    from pathlib import Path
+    import os
+    
+    # Save the current working directory
+    original_cwd = os.getcwd()
+    
+    # Convert config_path to absolute path first
+    config_path = Path(config_path).resolve()
+    
+    try:
+        # Change to project root for config loading
+        project_root = Path(__file__).parent.parent
+        os.chdir(project_root)
+        
+        # Now load the config using the shared loader with absolute path
+        from src.utils.config import load_config as _shared_load
+        config = _shared_load(str(config_path))
+        
+        return config
+    finally:
+        # Restore the original working directory
+        os.chdir(original_cwd)
 
 def determine_scale_from_config_path(config_path):
     """Determine scale directly from config filename"""
@@ -794,8 +824,22 @@ def main():
     try:
         # Load config
         cfg = load_config(args.config)
-        # Use local results directory within training_cpu
-        base_dir = os.path.join(os.path.dirname(__file__), 'results')
+        
+        # Use working_dir_path from config if available
+        if 'working_dir_path' in cfg:
+            from pathlib import Path
+            working_dir = Path(cfg['working_dir_path'])
+            if not working_dir.is_absolute():
+                # If relative, it's relative to project root
+                project_root = Path(__file__).parent.parent
+                base_dir = project_root / working_dir
+            else:
+                base_dir = working_dir
+            base_dir = str(base_dir)
+        else:
+            # Fallback to local results directory within training_cpu
+            base_dir = os.path.join(os.path.dirname(__file__), 'results')
+        
         logger.info(f"📁 Working directory: {base_dir}")
         
         # Load saved results
@@ -805,7 +849,7 @@ def main():
         suffix = f"_{args.suffix}" if args.suffix else ""
         # Derive a label (for file locations only) from working_dir_path leaf
         label = Path(base_dir).name
-        create_comparison_plots(results, training_times, model_params, loaded_config, label, suffix)
+        create_comparison_plots(results, training_times, model_params, loaded_config, label, suffix, base_dir)
         
         logger.info("✅ Comparative plots generated successfully!")
         logger.info(f"📊 Output: {base_dir}/plots/comparative_study_results{suffix}.png")
