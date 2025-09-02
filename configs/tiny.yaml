@@ -41,12 +41,14 @@ model:
 
 # === GAT-SPECIFIC PARAMETERS FOR TINY ===
 # Override GAT parameters for small-scale experiments
+# Based on analysis: GAT needs more conservative learning parameters
 gat_training:
-  learning_rate: 0.0005     # Higher LR for GAT on small problems
-  temp_start: 4.0           # Higher temperature start for GAT exploration
-  temp_min: 0.4             # Higher minimum temperature  
-  temp_adaptation_rate: 0.15 # Moderate temperature adaptation
-  entropy_coef: 0.10        # High entropy for GAT exploration in small problems
-  entropy_min: 0.01         # Higher entropy minimum
-  gradient_clip_norm: 1.0   # Tight gradient clipping for stability
-  early_stopping_patience: 20 # Reasonable patience for tiny problems
+  learning_rate: 0.0001     # Conservative LR like legacy GAT (was 0.0005)
+  temp_start: 2.5           # Match legacy temperature (was 4.0)
+  temp_min: 0.05            # Lower minimum for exploitation (was 0.4)
+  temp_adaptation_rate: 0.25 # Faster temperature decay (was 0.15)
+  entropy_coef: 0.02        # Much lower entropy (was 0.10 - way too high!)
+  entropy_min: 0.001        # Lower entropy minimum (was 0.01)
+  gradient_clip_norm: 2.0   # Match legacy clipping (was 1.0)
+  early_stopping_patience: 30 # More patience for tiny problems
+  batch_size: 256          # Larger batch for stability (was 128)
