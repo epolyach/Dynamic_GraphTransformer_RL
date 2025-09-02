@@ -17,14 +17,17 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-# Add parent directory to path to find src module
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root to path to find src module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
 import pandas as pd
 import torch
 
 from src.utils.config import load_config
+# Import from training_cpu.lib since we're now in scripts/ subdirectory
+training_cpu_path = Path(__file__).parent.parent
+sys.path.insert(0, str(training_cpu_path))
 from lib import advanced_train_model
 from src.generator.generator import create_data_generator
 from src.models.model_factory import ModelFactory
@@ -148,13 +151,55 @@ def check_existing_model(model_name: str, base_dir: str) -> bool:
     return os.path.exists(model_path)
 
 
+def apply_gat_specific_config(config: Dict[str, Any], model_name: str) -> Dict[str, Any]:
+    """Apply GAT-specific parameters if training GAT model."""
+    if 'GAT' not in model_name.upper():
+        return config
+    
+    # Check if GAT-specific parameters exist in config
+    if 'gat_training' not in config:
+        return config
+    
+    # Create a deep copy to avoid modifying original
+    import copy
+    gat_config = copy.deepcopy(config)
+    gat_params = config['gat_training']
+    
+    # Override training parameters for GAT
+    if 'learning_rate' in gat_params:
+        gat_config['training']['learning_rate'] = gat_params['learning_rate']
+    
+    # Override advanced training parameters for GAT
+    if 'training_advanced' not in gat_config:
+        gat_config['training_advanced'] = {}
+    
+    gat_advanced = gat_config['training_advanced']
+    
+    if 'temp_start' in gat_params:
+        gat_advanced['temp_start'] = gat_params['temp_start']
+    if 'temp_min' in gat_params:
+        gat_advanced['temp_min'] = gat_params['temp_min']
+    if 'temp_adaptation_rate' in gat_params:
+        gat_advanced['temp_adaptation_rate'] = gat_params['temp_adaptation_rate']
+    if 'entropy_coef' in gat_params:
+        gat_advanced['entropy_coef'] = gat_params['entropy_coef']
+    if 'entropy_min' in gat_params:
+        gat_advanced['entropy_min'] = gat_params['entropy_min']
+    if 'gradient_clip_norm' in gat_params:
+        gat_advanced['gradient_clip_norm'] = gat_params['gradient_clip_norm']
+    if 'early_stopping_patience' in gat_params:
+        gat_advanced['early_stopping_patience'] = gat_params['early_stopping_patience']
+    
+    return gat_config
+
+
 def main():
     """Main training function."""
     args = parse_args()
     
     # Save current directory and change to project root for config loading
     original_cwd = os.getcwd()
-    project_root = Path(__file__).parent.parent
+    project_root = Path(__file__).parent.parent.parent
     os.chdir(project_root)
     
     # Convert config path to absolute before changing directory
@@ -230,10 +275,21 @@ def main():
             continue
         
         logger.info("-"*40)
-    
+        logger.info(f"Training {model_name}")
+        
         try:
+            # Apply GAT-specific configuration if needed
+            model_config = apply_gat_specific_config(config, model_name)
+            
+            # Log if GAT-specific parameters are being used
+            if 'GAT' in model_name.upper() and 'gat_training' in config:
+                logger.info(f"Applying GAT-specific parameters:")
+                gat_params = config['gat_training']
+                for key, value in gat_params.items():
+                    logger.info(f"  {key}: {value}")
+            
             # Create model
-            model = ModelFactory.create_model(model_name, config)
+            model = ModelFactory.create_model(model_name, model_config)
             model = model.to(device)
         
             # Log model info
@@ -242,14 +298,14 @@ def main():
             logger.info(f"Total parameters: {total_params:,}")
         
             # Create CSV writer for incremental logging
-            csv_writer = IncrementalCSVWriter(model_name, base_dir, config, logger)
+            csv_writer = IncrementalCSVWriter(model_name, base_dir, model_config, logger)
         
             # Train model with CSV callback
             start_time = time.time()
             history, training_time, artifacts = advanced_train_model(
                 model=model,
                 model_name=model_name,
-                config=config,
+                config=model_config,
                 data_generator=data_generator,
                 logger_print=logger.info,
                 use_advanced_features=use_advanced,

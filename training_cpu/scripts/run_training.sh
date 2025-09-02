@@ -9,18 +9,18 @@ echo "=================================================="
 echo "🚀 CVRP Model Training (CPU)"
 echo "=================================================="
 
-# Check if we're in the training_cpu directory
+# Check if we're in the training_cpu/scripts directory
 if [ ! -f "run_training.py" ]; then
     echo "❌ Error: run_training.py not found!"
-    echo "Please run this script from the training_cpu directory."
+    echo "Please run this script from the training_cpu/scripts directory."
     exit 1
 fi
 
 # Activate virtual environment if not already activated
 if [ -z "$VIRTUAL_ENV" ]; then
-    if [ -d "../venv" ]; then
+    if [ -d "../../venv" ]; then
         echo "📦 Activating virtual environment..."
-        source ../venv/bin/activate
+        source ../../venv/bin/activate
     else
         echo "⚠️  Virtual environment not found. Please run setup_venv.sh first."
         exit 1
@@ -30,7 +30,7 @@ else
 fi
 
 # Parse arguments or use defaults
-CONFIG=${1:-"../configs/default.yaml"}
+CONFIG=${1:-"../../configs/default.yaml"}
 MODEL=${2:-"GT+RL"}
 
 echo ""

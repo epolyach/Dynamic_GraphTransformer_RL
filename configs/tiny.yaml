@@ -38,3 +38,15 @@ model:
   num_layers: 3      # optional: slightly shallower for speed/stability on CPU
   transformer_dropout: 0.1
   feedforward_multiplier: 2
+
+# === GAT-SPECIFIC PARAMETERS FOR TINY ===
+# Override GAT parameters for small-scale experiments
+gat_training:
+  learning_rate: 0.0005     # Higher LR for GAT on small problems
+  temp_start: 4.0           # Higher temperature start for GAT exploration
+  temp_min: 0.4             # Higher minimum temperature  
+  temp_adaptation_rate: 0.15 # Moderate temperature adaptation
+  entropy_coef: 0.10        # High entropy for GAT exploration in small problems
+  entropy_min: 0.01         # Higher entropy minimum
+  gradient_clip_norm: 1.0   # Tight gradient clipping for stability
+  early_stopping_patience: 20 # Reasonable patience for tiny problems

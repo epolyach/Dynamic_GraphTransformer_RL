@@ -2,8 +2,12 @@
 import argparse
 import csv
 import os
+import sys
 import time
 from typing import Dict, Any, List, Callable
+
+# Add project root to path to find src module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from src.utils.config import load_config
 from src.generator.generator import create_data_generator

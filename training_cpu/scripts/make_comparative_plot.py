@@ -23,7 +23,7 @@ import argparse
 
 # Add the project root to the Python path to allow importing 'src'
 current_script_path = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_script_path, '..'))
+project_root = os.path.abspath(os.path.join(current_script_path, '..', '..'))
 sys.path.insert(0, project_root)
 import torch
 import numpy as np

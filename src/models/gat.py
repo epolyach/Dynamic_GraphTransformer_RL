@@ -523,8 +523,8 @@ class GATDecoder(nn.Module):
         
         if not greedy and log_ps:
             log_p = torch.stack(log_ps, dim=1).sum(dim=1)
-            # Average entropy across all steps
-            entropy = torch.stack(entropies, dim=1).mean(dim=1) if entropies else torch.zeros(batch_size, device=device)
+            # Sum entropy across all steps to match GT model
+            entropy = torch.stack(entropies, dim=1).sum(dim=1) if entropies else torch.zeros(batch_size, device=device)
         else:
             log_p = torch.zeros(batch_size, device=device)
             entropy = torch.zeros(batch_size, device=device)
