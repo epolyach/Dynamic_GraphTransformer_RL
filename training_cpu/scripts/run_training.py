@@ -168,6 +168,8 @@ def apply_gat_specific_config(config: Dict[str, Any], model_name: str) -> Dict[s
     # Override training parameters for GAT
     if 'learning_rate' in gat_params:
         gat_config['training']['learning_rate'] = gat_params['learning_rate']
+    if 'batch_size' in gat_params:
+        gat_config['training']['batch_size'] = gat_params['batch_size']
     
     # Override advanced training parameters for GAT
     if 'training_advanced' not in gat_config:
