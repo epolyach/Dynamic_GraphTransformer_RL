@@ -808,30 +808,21 @@ def _deep_merge_dict(a: dict, b: dict) -> dict:
     return a
 
 def load_config(config_path):
-    """Load config with proper path resolution"""
+    """Load config directly from YAML file without any defaults"""
     import yaml
     from pathlib import Path
-    import os
     
-    # Save the current working directory
-    original_cwd = os.getcwd()
-    
-    # Convert config_path to absolute path first
+    # Convert config_path to absolute path
     config_path = Path(config_path).resolve()
     
-    try:
-        # Change to project root for config loading
-        project_root = Path(__file__).parent.parent
-        os.chdir(project_root)
-        
-        # Now load the config using the shared loader with absolute path
-        from src.utils.config import load_config as _shared_load
-        config = _shared_load(str(config_path))
-        
-        return config
-    finally:
-        # Restore the original working directory
-        os.chdir(original_cwd)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    # Load the config file directly
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    return config
 
 def determine_scale_from_config_path(config_path):
     """Determine scale directly from config filename"""
@@ -866,9 +857,10 @@ def main():
             from pathlib import Path
             working_dir = Path(cfg['working_dir_path'])
             if not working_dir.is_absolute():
-                # If relative, it's relative to project root
-                project_root = Path(__file__).parent.parent
-                base_dir = project_root / working_dir
+                # If relative, it's relative to the parent of training_cpu (the repo root)
+                # Since we're in training_cpu/scripts, go up two levels to get repo root
+                repo_root = Path(__file__).parent.parent.parent
+                base_dir = repo_root / working_dir
             else:
                 base_dir = working_dir
             base_dir = str(base_dir)
