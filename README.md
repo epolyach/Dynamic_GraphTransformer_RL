@@ -420,3 +420,42 @@ chmod +x gpu_cluster_monitor.sh
 - SSH access to GPU servers (gpu1/2/3.sedan.pro)
 - nvidia-smi installed on target servers
 - SSH key authentication configured (recommended)
+
+### OR-Tools Heuristic Benchmark (Greedy & GLS)
+Location: `benchmark_gpu/scripts/benchmark_ortools_heuristics.py`
+
+CPU-side heuristic benchmark using OR-Tools to estimate CPC for selected CVRP sizes. Generates instances with the canonical generator (no external config needed) and reports statistics for two methods:
+- Greedy: PATH_CHEAPEST_ARC (no local search)
+- GLS: GUIDED_LOCAL_SEARCH (configurable timeout)
+
+Dependencies:
+```bash
+pip install ortools tabulate
+```
+
+Usage examples:
+```bash
+# Run all four configurations with 1,000 instances each and 5s GLS timeout
+cd benchmark_gpu
+python scripts/benchmark_ortools_heuristics.py --instances 1000 --gls-timeout 5.0 --configs all
+
+# Quick smoke test: only N in {10,20}, 100 instances, faster GLS
+python scripts/benchmark_ortools_heuristics.py --instances 100 --configs 10,20 --gls-timeout 2.0
+
+# Large-only configurations (N=50,100), 500 instances, 3s GLS
+python scripts/benchmark_ortools_heuristics.py --instances 500 --configs large --gls-timeout 3.0
+```
+
+Command-line options:
+- `--instances INT` — Number of instances per configuration. Default: `1000`.
+- `--gls-timeout FLOAT` — Per-instance time limit (seconds) for GLS metaheuristic. Default: `5.0`.
+  - Note: Greedy uses a short fixed time budget (2.0s) just to compute the initial solution.
+- `--configs {all, small, large, N1,N2,...}` — Which configurations to run. Default: `all`.
+  - `all` → run N={10,20,50,100} with capacities {20,30,40,50}
+  - `small` → N≤20 (10,20)
+  - `large` → N>20 (50,100)
+  - Comma list → pick specific N values, e.g. `--configs 10,50`
+
+Output:
+- Two tables (one per method) with columns: `N`, `Capacity`, `Instances`, `Mean CPC`, `Std CPC`, `SEM`, `2×SEM/Mean(%)`.
+- Results are also saved to a timestamped JSON file in `benchmark_gpu/scripts/`.
