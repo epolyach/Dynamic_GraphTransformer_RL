@@ -22,7 +22,6 @@ Distance scaling knob (for solver internals):
 - configs/default.yaml → benchmark.scaling.distance_scale (default 100000)
 - Used by solver internals for stable integer math; costs are scaled back; CPC = cost/N
 
-
 ## 1) Training (CPU)
 Location: training_cpu/
 
@@ -51,7 +50,6 @@ Notes:
 - Training uses src/generator/generator.py; no augmentation/curriculum
 - Models live in src/models; advanced trainer in training_cpu/lib/advanced_trainer.py
 - Results saved locally in training_cpu/results/ (models in pytorch/, CSVs in csv/, plots in plots/)
-
 
 ## 2) CPU Benchmarks
 Location: benchmark_cpu/
@@ -93,50 +91,6 @@ Solvers (labels match plot):
 - exact_dp (N ≤ 8)
 - ortools_greedy (exact_ortools_vrp_fixed)
 - ortools_gls
-
-
-
-### OR-Tools Heuristic Benchmark (Greedy & GLS)
-Location: 
-- `benchmark_cpu/scripts/benchmark_ortools_heuristics.py` (sequential version)
-- `benchmark_cpu/scripts/benchmark_ortools_heuristics_batch.py` (parallel batch processing - faster!)
-
-CPU-side heuristic benchmark using OR-Tools to estimate CPC for selected CVRP sizes. Generates instances with the canonical generator (no external config needed) and reports statistics for two methods:
-- Greedy: PATH_CHEAPEST_ARC (no local search)
-- GLS: GUIDED_LOCAL_SEARCH (configurable timeout)
-
-Dependencies:
-```bash
-pip install ortools tabulate
-```
-
-Usage examples:
-```bash
-# Run all four configurations with 1,000 instances each and 5s GLS timeout
-cd benchmark_cpu
-python scripts/benchmark_ortools_heuristics_batch.py --instances 1000 --gls-timeout 5.0 --configs all
-
-# Quick smoke test: only N in {10,20}, 100 instances, faster GLS
-python scripts/benchmark_ortools_heuristics_batch.py --instances 100 --configs 10,20 --gls-timeout 2.0
-
-# Large-only configurations (N=50,100), 500 instances, 3s GLS
-python scripts/benchmark_ortools_heuristics_batch.py --instances 500 --configs large --gls-timeout 3.0
-```
-
-Command-line options:
-- `--instances INT` — Number of instances per configuration. Default: `1000`.
-- `--gls-timeout FLOAT` — Per-instance time limit (seconds) for GLS metaheuristic. Default: `5.0`.
-  - Note: Greedy uses a short fixed time budget (2.0s) just to compute the initial solution.
-- `--batch-size INT` — Batch size for parallel processing (batch version only). Default: `100`.
-- `--configs {all, small, large, N1,N2,...}` — Which configurations to run. Default: `all`.
-  - `all` → run N={10,20,50,100} with capacities {20,30,40,50}
-  - `small` → N≤20 (10,20)
-  - `large` → N>20 (50,100)
-  - Comma list → pick specific N values, e.g. `--configs 10,50`
-
-Output:
-- Two tables (one per method) with columns: `N`, `Capacity`, `Instances`, `Mean CPC`, `Std CPC`, `SEM`, `2×SEM/Mean(%)`.
-- Results are also saved to a timestamped JSON file in `benchmark_cpu/scripts/`.
 
 ## 3) GPU Benchmarks
 Location: benchmark_gpu/
@@ -244,7 +198,6 @@ GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive 
 - **Cost trend**: Mean CPC decreases from 0.494 (N=5) to 0.395 (N=10), showing economies of scale
 - **Statistical power**: Ultra-high precision enables detection of small performance differences across problem sizes
 
-
 ## Configuration Files
 
 | Config       | Customers | Capacity | Batches/Epoch | Purpose                     |
@@ -340,7 +293,6 @@ Note: All configs inherit from `default.yaml` (1500 batches = 768,000 instances 
 └── WARP.md                        # WARP terminal integration guide
 ```
 
-
 ## Quickstart
 ```bash
 # 1. Setup environment (one-time)
@@ -370,7 +322,6 @@ python scripts/benchmark_gpu_10k.py  # High-precision GPU benchmark
 python scripts/benchmark_gpu_adaptive_n.py  # Adaptive multi-N benchmark
 python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
 ```
-
 
 ## Key Features
 
@@ -464,3 +415,31 @@ chmod +x gpu_cluster_monitor.sh
 - nvidia-smi installed on target servers
 - SSH key authentication configured (recommended)
 
+
+### GPU Heuristic Solver (PyTorch)
+Location: `benchmark_gpu/scripts/benchmark_gpu_heuristic_gls.py`
+
+GPU-accelerated heuristic solver using PyTorch CUDA tensors. Implements greedy nearest neighbor algorithm entirely on GPU with NO CPU fallback.
+
+Dependencies:
+```bash
+pip install torch  # with CUDA support
+```
+
+Usage:
+```bash
+cd benchmark_gpu
+# Test GPU greedy heuristic on small problems
+python scripts/benchmark_gpu_heuristic_gls.py --instances 100 --batch-size 50 --configs 10,20
+
+# Full benchmark with all configurations
+python scripts/benchmark_gpu_heuristic_gls.py --instances 1000 --batch-size 100 --configs all
+```
+
+Features:
+- **GPU-only**: Requires CUDA GPU, will fail if no GPU available (no fallback)
+- **Batch processing**: Solves multiple instances in parallel on GPU
+- **PyTorch tensors**: All operations use CUDA tensor operations
+- **Configurations**: N={10,20,50,100} with appropriate capacities
+
+GPU Solver: `src/benchmarking/solvers/gpu/heuristic_gpu_simple.py`
