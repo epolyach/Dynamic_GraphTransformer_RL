@@ -10,7 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python package directories (but not our project lib dirs)
+venv/lib/
+*/site-packages/lib/
 lib64/
 parts/
 sdist/
@@ -47,9 +49,11 @@ wandb/
 tensorboard/
 logs/tensorboard/
 
-# Results and plots (artifacts)
-results/
-plots/
+# Temporary results and plots (keep important benchmark/training results)
+# results/  # Commented out - we want to keep benchmark and training results
+# plots/    # Commented out - we want to keep generated plots
+runs/outputs/  # Temporary run outputs
+temp_results/  # Temporary results only
 
 # Virtual environments
 .env
