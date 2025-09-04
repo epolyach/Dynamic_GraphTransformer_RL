@@ -1,54 +1,21 @@
-# Small-fast config to sanity-check pipeline quickly
+# Tiny config - Quick experiments with reduced training
+# Same problem as small (N=10) but only 10% of training data
 working_dir_path: "training_cpu/results/tiny"
 
 problem:
-  num_customers: 7
+  num_customers: 10
+  vehicle_capacity: 20
 
-# Current tiny.yaml has these values - CHANGE TO:
 training:
-  num_batches_per_epoch: 5
-  batch_size: 128         # Reduced from 256 - smaller batches for faster updates
-  num_epochs: 80
-  learning_rate: 0.0003   # Increased from 0.0001 - faster learning for small models
+  num_batches_per_epoch: 150   # 10% of paper's 1500 (76,800 instances/epoch)
 
-baseline:
-  eval_batches: 3         # Reduced from default 5 - less eval overhead
-  update:
-    frequency: 2          # Check every 2 epochs instead of 4
-    significance_test: false  # Disable statistical test - update if mean improves
-    p_value: 0.10         # More lenient if re-enabled later
-
-training_advanced:
-  early_stopping_patience: 25
-  # Gentler temperature schedule for small models
-  temp_start: 5.0         # Reduced from 3.5 - less initial chaos
-  temp_min: 0.2           # Raised from 0.05 - avoid too greedy too fast  
-  temp_adaptation_rate: 0.15  # Slower from 0.25 - more stable learning
-  
-  # Higher entropy for exploration
-  entropy_coef: 0.05      # Increased from 0.02
-  entropy_min: 0.005      # Increased from 0.001
-  
-  # Smaller gradient clipping for stability
-  gradient_clip_norm: 1.0  # Reduced from 2.0
-
+# Smaller model for faster training
 model:
-  hidden_dim: 128    # explicitly use the small model
-  num_heads: 4       # 64 is divisible by 4 (head_dim=16)
-  num_layers: 3      # optional: slightly shallower for speed/stability on CPU
-  transformer_dropout: 0.1
-  feedforward_multiplier: 2
+  hidden_dim: 128              # Half of default 256
+  num_heads: 4
+  num_layers: 3                # Reduced from default 4
 
-# === GAT-SPECIFIC PARAMETERS FOR TINY ===
-# Override GAT parameters for small-scale experiments
-# Based on analysis: GAT needs more conservative learning parameters
-gat_training:
-  learning_rate: 0.0001     # Conservative LR like legacy GAT (was 0.0005)
-  temp_start: 2.5           # Match legacy temperature (was 4.0)
-  temp_min: 0.05            # Lower minimum for exploitation (was 0.4)
-  temp_adaptation_rate: 0.25 # Faster temperature decay (was 0.15)
-  entropy_coef: 0.02        # Much lower entropy (was 0.10 - way too high!)
-  entropy_min: 0.001        # Lower entropy minimum (was 0.01)
-  gradient_clip_norm: 2.0   # Match legacy clipping (was 1.0)
-  early_stopping_patience: 30 # More patience for tiny problems
-  batch_size: 256          # Larger batch for stability (was 128)
+# GAT-specific architecture for tiny experiments
+model_gat:
+  gat_hidden_dim: 128          # Smaller for quick experiments
+  gat_layers: 3                # Fewer layers for speed

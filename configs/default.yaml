@@ -17,11 +17,11 @@ problem:
 # Training parameters
 # =============================
 training:
-  num_batches_per_epoch: 15 # Default batches per epoch
-  batch_size: 512           # Default batch size
-  num_epochs: 100           # Default number of epochs
-  learning_rate: 1e-4       # Base LR
-  validation_frequency: 4   # Run validation every N epochs
+  num_batches_per_epoch: 1500 # Paper's scale: 768,000 instances per epoch
+  batch_size: 512            # Default batch size (paper's value)
+  num_epochs: 100            # Default number of epochs
+  learning_rate: 1e-4        # Base LR
+  validation_frequency: 4    # Run validation every N epochs
 
 # =============================
 # Rollout baseline (optional)
@@ -46,59 +46,69 @@ experiment:
   strict_validation: true
 
 # =============================
-# Model architecture (shared)
+# Model architecture - Graph Transformer (GT/DGT)
 # =============================
 model:
-  input_dim: 3
-  hidden_dim: 256
-  num_heads: 4
-  num_layers: 4
-  transformer_dropout: 0.1
-  feedforward_multiplier: 2
-  # GAT-specific parameters
-  gat_edge_dim: 16         # Edge feature dimension for GAT
-  gat_dropout: 0.6         # Higher dropout for GAT (prevents overfitting)
-  gat_negative_slope: 0.2  # LeakyReLU slope for GAT attention
+  input_dim: 3                 # Node feature dimension
+  hidden_dim: 256               # Hidden dimension for transformers
+  num_heads: 4                  # Number of attention heads
+  num_layers: 4                 # Number of transformer layers
+  transformer_dropout: 0.1      # Dropout rate for transformers
+  feedforward_multiplier: 2     # Feedforward expansion factor
+
+# =============================
+# Model architecture - GAT specific
+# =============================
+model_gat:
+  # GAT uses different architecture parameters
+  gat_hidden_dim: 256          # Hidden dimension for GAT (can differ from transformer)
+  gat_edge_dim: 16             # Edge feature dimension for GAT
+  gat_layers: 4                # Number of GAT layers
+  gat_dropout: 0.6             # Higher dropout for GAT (prevents overfitting)
+  gat_negative_slope: 0.2      # LeakyReLU slope for GAT attention
 
 
-# === NEW ENHANCED FEATURES ===
+# =============================
+# Advanced training parameters - Graph Transformer (GT/DGT)
+# =============================
 training_advanced:
-  # Adaptive temperature scheduling (optimized for differentiation)
+  # Temperature scheduling for exploration
   use_adaptive_temperature: true
-  temp_start: 2.5         # Reduced from 3.0
-  temp_min: 0.15          # Raised from 0.1
-  temp_adaptation_rate: 0.18  # Slightly slower from 0.2
+  temp_start: 2.5              # Initial temperature
+  temp_min: 0.15               # Final temperature
+  temp_adaptation_rate: 0.18   # Temperature decay rate
   
-  # Standard entropy
-  entropy_coef: 0.03      # Slight increase from 0.02
-  entropy_min: 0.002      # Slight increase from 0.001
+  # Entropy regularization
+  entropy_coef: 0.03           # Entropy coefficient
+  entropy_min: 0.002           # Minimum entropy
 
-  # Better optimizer
-  weight_decay: 0.0001
-  gradient_clip_norm: 2.0
+  # Optimizer settings
+  weight_decay: 0.0001         # L2 regularization
+  gradient_clip_norm: 2.0      # Gradient clipping
   
   # Learning rate scheduling  
   use_lr_scheduling: true
-  scheduler_type: "cosine"
-  min_lr: 0.000001
+  scheduler_type: "cosine"     # Cosine annealing
+  min_lr: 0.000001             # Minimum learning rate
   
   # Early stopping
   use_early_stopping: true
   early_stopping_patience: 10
   early_stopping_delta: 0.0001
 
-# === GAT-SPECIFIC PARAMETERS ===
-# These parameters are used only when training GAT models
-# GAT requires different hyperparameters due to its architecture
+# =============================
+# Advanced training parameters - GAT specific
+# =============================
+# These override training_advanced when training GAT models
 gat_training:
-  learning_rate: 0.0002     # Higher LR for GAT (vs default 1e-4)
-  temp_start: 3.0           # Different temperature schedule  
-  temp_min: 0.3             # Higher minimum temperature
-  temp_adaptation_rate: 0.12 # Slower temperature adaptation
-  entropy_coef: 0.08        # Higher entropy for GAT exploration
-  entropy_min: 0.008        # Higher entropy minimum
-  gradient_clip_norm: 1.5   # Tighter gradient clipping for GAT stability
-  early_stopping_patience: 15 # More patience for GAT convergence
+  learning_rate: 0.0002        # Higher LR for GAT (overrides training.learning_rate)
+  temp_start: 3.0              # Different temperature schedule  
+  temp_min: 0.3                # Higher minimum temperature
+  temp_adaptation_rate: 0.12   # Slower temperature adaptation
+  entropy_coef: 0.08           # Higher entropy for GAT exploration
+  entropy_min: 0.008           # Higher entropy minimum
+  gradient_clip_norm: 1.5      # Tighter gradient clipping for GAT stability
+  early_stopping_patience: 15  # More patience for GAT convergence
   
 
 # =============================

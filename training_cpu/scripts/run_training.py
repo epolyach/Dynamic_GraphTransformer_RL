@@ -170,13 +170,15 @@ def apply_gat_specific_config(config: Dict[str, Any], model_name: str) -> Dict[s
         gat_config['training']['learning_rate'] = gat_params['learning_rate']
     if 'batch_size' in gat_params:
         gat_config['training']['batch_size'] = gat_params['batch_size']
-    
+
     # Override advanced training parameters for GAT
     if 'training_advanced' not in gat_config:
         gat_config['training_advanced'] = {}
-    
+
     gat_advanced = gat_config['training_advanced']
-    
+
+    # For GAT: use fixed temperature (disable adaptive) and copy schedule (start==min => constant)
+    gat_advanced['use_adaptive_temperature'] = False
     if 'temp_start' in gat_params:
         gat_advanced['temp_start'] = gat_params['temp_start']
     if 'temp_min' in gat_params:
@@ -191,7 +193,24 @@ def apply_gat_specific_config(config: Dict[str, Any], model_name: str) -> Dict[s
         gat_advanced['gradient_clip_norm'] = gat_params['gradient_clip_norm']
     if 'early_stopping_patience' in gat_params:
         gat_advanced['early_stopping_patience'] = gat_params['early_stopping_patience']
-    
+
+    # Align rollout baseline decoding temperature with GAT training temperature
+    if 'temp_start' in gat_params:
+        gat_config.setdefault('inference', {})
+        gat_config['inference']['default_temperature'] = gat_params['temp_start']
+
+    # Make rollout baseline less aggressive for GAT only
+    gat_config.setdefault('baseline', {})
+    gat_config['baseline'].setdefault('update', {})
+    gat_config['baseline']['update']['enabled'] = True
+    gat_config['baseline']['update']['frequency'] = 8  # update less frequently
+    gat_config['baseline']['update']['significance_test'] = True
+    gat_config['baseline']['update']['p_value'] = 0.01  # stricter significance
+    gat_config['baseline']['update']['warmup_epochs'] = 12  # delay updates at the start
+    # Do not force higher eval_batches; default to 3 if not set
+    if 'eval_batches' not in gat_config['baseline']:
+        gat_config['baseline']['eval_batches'] = 3
+
     return gat_config
 
 

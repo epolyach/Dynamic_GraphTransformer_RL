@@ -1,0 +1,24 @@
+# Huge config - N=100 customers
+working_dir_path: "training_cpu/results/huge"
+
+problem:
+  num_customers: 100
+  vehicle_capacity: 50
+
+# Model scaling for N=100 - maximum complexity
+model:
+  hidden_dim: 512              # Doubled from default 256
+  num_heads: 8                 # Maximum attention heads
+  num_layers: 8                # Very deep network for complexity
+  transformer_dropout: 0.2     # Higher dropout for regularization
+
+# GAT-specific architecture for N=100
+model_gat:
+  gat_hidden_dim: 512          # Large hidden dim for N=100
+  gat_layers: 6                # Many layers for very complex problems  
+  gat_dropout: 0.5             # High dropout for huge problems
+
+# Training adjustments for huge problems
+training_advanced:
+  early_stopping_patience: 40  # More patience for huge problems
+  gradient_clip_norm: 1.5      # Tighter clipping for stability

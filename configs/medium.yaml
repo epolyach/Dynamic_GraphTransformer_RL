@@ -1,25 +1,17 @@
-# Medium-scale configuration: research experiments
-working_dir_path: "results/medium"
+# Medium config - N=20 customers
+working_dir_path: "training_cpu/results/medium"
 
 problem:
   num_customers: 20
+  vehicle_capacity: 30
 
-training:
-  num_batches_per_epoch: 15  # 15 batches per epoch
-  batch_size: 512         
-  num_epochs: 100
-  learning_rate: 0.0001
+# Model scaling for N=20
+model:
+  hidden_dim: 256              # Use default hidden dim
+  num_heads: 4
+  num_layers: 4
 
-# Override for better algorithm differentiation
-training_advanced:
-  # Longer patience for better convergence
-  early_stopping_patience: 25  # Increased to match longer training
-  
-  # More aggressive temperature adaptation for clear differences  
-  temp_start: 3.5          # Even higher start
-  temp_min: 0.05           # Even lower min
-  temp_adaptation_rate: 0.25   # Faster adaptation
-
-# Keep default cost penalty modest to speed learning signal; override if studying penalties
-cost:
-  depot_penalty_per_visit: 0.0
+# GAT-specific architecture for N=20
+model_gat:
+  gat_hidden_dim: 256
+  gat_layers: 4

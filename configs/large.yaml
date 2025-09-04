@@ -1,0 +1,19 @@
+# Large config - N=50 customers
+working_dir_path: "training_cpu/results/large"
+
+problem:
+  num_customers: 50
+  vehicle_capacity: 40
+
+# Model scaling for N=50 - increased complexity
+model:
+  hidden_dim: 512              # Doubled from default 256
+  num_heads: 8                 # More attention heads for larger problems
+  num_layers: 6                # Deeper network for complexity
+  transformer_dropout: 0.15    # Slightly higher dropout for regularization
+
+# GAT-specific architecture for N=50
+model_gat:
+  gat_hidden_dim: 512          # Larger hidden dim for N=50
+  gat_layers: 5                # More layers for complex problems
+  gat_dropout: 0.5             # Higher dropout for larger problems

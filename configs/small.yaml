@@ -1,26 +1,17 @@
-# Small-scale configuration: quick experiments overriding only study-relevant params
-working_dir_path: "results/small"
+# Small config - N=10 customers with full training
+working_dir_path: "training_cpu/results/small"
 
 problem:
   num_customers: 10
+  vehicle_capacity: 20
 
-training:
-  num_batches_per_epoch: 15  # 15 batches per epoch  
-  batch_size: 512         
-  num_epochs: 100
-  learning_rate: 0.0001 
+# Smaller model appropriate for N=10
+model:
+  hidden_dim: 128              # Reduced from default 256
+  num_heads: 4                 
+  num_layers: 3                # Shallower for small problems
 
-# Override for better algorithm differentiation
-training_advanced:
-  # Longer patience for better convergence
-  early_stopping_patience: 25  # Increased to match longer training
-  
-  # More aggressive temperature adaptation for clear differences  
-  temp_start: 3.5          # Even higher start
-  temp_min: 0.05           # Even lower min
-  temp_adaptation_rate: 0.25   # Faster adaptation
-
-# Keep default cost penalty modest to speed learning signal; override if studying penalties
-cost:
-  depot_penalty_per_visit: 0.0
-
+# GAT-specific architecture for N=10
+model_gat:
+  gat_hidden_dim: 128          # Match transformer hidden dim
+  gat_layers: 3                # Match transformer layers

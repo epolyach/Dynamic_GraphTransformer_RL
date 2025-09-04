@@ -36,23 +36,31 @@ def create_model(model_name: str, config: Dict[str, Any]) -> nn.Module:
     dropout = config['model']['transformer_dropout']
     ff_mult = config['model']['feedforward_multiplier']
     
-    # GAT-specific parameters (with defaults for backward compatibility)
-    gat_edge_dim = config['model'].get('gat_edge_dim', 16)
-    gat_dropout = config['model'].get('gat_dropout', 0.6)
-    gat_negative_slope = config['model'].get('gat_negative_slope', 0.2)
+    # GAT-specific parameters from model_gat section (with backward compatibility)
+    # First try the new model_gat section, then fall back to model section for backward compatibility
+    model_gat = config.get('model_gat', {})
+    gat_edge_dim = model_gat.get('gat_edge_dim', config['model'].get('gat_edge_dim', 16))
+    gat_dropout = model_gat.get('gat_dropout', config['model'].get('gat_dropout', 0.6))
+    gat_negative_slope = model_gat.get('gat_negative_slope', config['model'].get('gat_negative_slope', 0.2))
     
     # Create model based on name
     if model_name == 'GAT+RL':
         # GAT model with improved convergence
-        # Uses GAT-specific parameters from config
+        # Uses GAT-specific parameters from model_gat section if available
+        # Check for GAT-specific architecture parameters
+        gat_hidden_dim = model_gat.get('gat_hidden_dim', config['model'].get('gat_hidden_dim', hidden_dim))
+        gat_edge_dim_override = model_gat.get('gat_edge_dim', config['model'].get('gat_edge_dim', gat_edge_dim))
+        gat_layers = model_gat.get('gat_layers', config['model'].get('gat_layers', num_layers))
+        gat_dropout_override = model_gat.get('gat_dropout', config['model'].get('gat_dropout', gat_dropout))
+        
         return GATModel(
             node_input_dim=input_dim,
             edge_input_dim=1,  # Edge features are distances
-            hidden_dim=hidden_dim,
-            edge_dim=gat_edge_dim,  # From config (default: 16)
-            layers=num_layers,  # From config
+            hidden_dim=gat_hidden_dim,  # Use GAT-specific hidden dim if available
+            edge_dim=gat_edge_dim_override,  # From config
+            layers=gat_layers,  # Use GAT-specific layers if available
             negative_slope=gat_negative_slope,  # From config (default: 0.2)
-            dropout=gat_dropout,  # From config (default: 0.6)
+            dropout=gat_dropout_override,  # From config
             config=config
         )
     elif model_name == 'GT-Greedy':

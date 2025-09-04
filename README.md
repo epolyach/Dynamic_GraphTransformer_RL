@@ -28,22 +28,23 @@ Location: training_cpu/
 
 - Train a single model
   ```bash
-  cd training_cpu/scripts
-  python run_training.py --model GT+RL --config ../../configs/small.yaml
+  cd training_cpu
+  python scripts/run_training.py --model GT+RL --config ../configs/small.yaml
   # Or use the convenience script:
+  cd scripts
   ./run_training.sh ../../configs/small.yaml GT+RL
   ```
 
 - Train all kept models (GAT+RL, GT+RL, DGT+RL, GT-Greedy)
   ```bash
-  cd training_cpu/scripts
-  python run_training.py --all --config ../../configs/tiny.yaml
+  cd training_cpu
+  python scripts/run_training.py --all --config ../configs/tiny.yaml
   ```
 
 - Generate comparison plots from saved results
   ```bash
-  cd training_cpu/scripts
-  python make_comparative_plot.py --config ../../configs/small.yaml
+  cd training_cpu
+  python scripts/make_comparative_plot.py --config ../configs/small.yaml
   ```
 
 Notes:
@@ -58,32 +59,34 @@ Location: benchmark_cpu/
 ### Current Unified CPU Benchmark
 - Generate per-instance CSV and evaluate solvers
   ```bash
-  cd benchmark_cpu/scripts
-  python run_exact.py \
-    --config ../../configs/small.yaml \
+  cd benchmark_cpu
+  python scripts/run_exact.py \
+    --config ../configs/small.yaml \
     --n-start 5 --n-end 12 \
     --instances 20 \
     --time-limit 5 \
-    --csv ../results/csv/cpu_benchmark.csv
+    --csv results/csv/cpu_benchmark.csv
   ```
 
 - Plot CPU results (reads the same CSV)
   ```bash
-  python plot_cpu_benchmark.py \
-    --csv ../results/csv/cpu_benchmark.csv \
-    --output ../plots/cpu_benchmark.png
+  cd benchmark_cpu
+  python scripts/plot_cpu_benchmark.py \
+    --csv results/csv/cpu_benchmark.csv \
+    --output plots/cpu_benchmark.png
   ```
 
 ### Archived CPU Benchmarks (Historical)
 - Legacy exact CPU benchmark (uses EnhancedCVRPGenerator)
   ```bash
-  cd benchmark_cpu/scripts
-  python benchmark_exact_cpu.py
+  cd benchmark_cpu
+  python scripts/benchmark_exact_cpu.py
   ```
 
 - Modified exact CPU benchmark (optimized version)
   ```bash
-  python benchmark_exact_cpu_modified.py
+  cd benchmark_cpu
+  python scripts/benchmark_exact_cpu_modified.py
   ```
 
 Solvers (labels match plot):
@@ -99,36 +102,40 @@ Location: benchmark_gpu/
 
 - High-precision GPU benchmark (10,000 instances)
   ```bash
-  cd benchmark_gpu/scripts
-  python benchmark_gpu_10k.py
+  cd benchmark_gpu
+  python scripts/benchmark_gpu_10k.py
   ```
 
 - GPU vs CPU comparison benchmark (matched instances)
   ```bash
-  cd benchmark_gpu/scripts
-  python benchmark_gpu_exact_matched.py
+  cd benchmark_gpu
+  python scripts/benchmark_gpu_exact_matched.py
   ```
 
 - Adaptive N GPU benchmark (N=5 to N=20, variable instances using 10^(7-N/5) formula)
   ```bash
-  cd benchmark_gpu/scripts
-  python benchmark_gpu_adaptive_n.py
+  cd benchmark_gpu
+  python scripts/benchmark_gpu_adaptive_n.py
   ```
 
 - Multi-N GPU benchmark (N=5 to N=10, 10K instances each)
   ```bash
-  cd benchmark_gpu/scripts
-  python benchmark_gpu_multi_n.py
+  cd benchmark_gpu
+  python scripts/benchmark_gpu_multi_n.py
   ```
 
 - Plot GPU benchmark results
   ```bash
-  python plot_gpu_benchmark.py --csv ../results/csv/gpu_benchmark_results.csv
+  cd benchmark_gpu
+  python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
   ```
 
 - Plot CPU vs GPU comparison
   ```bash
-  python plot_cpu_gpu_comparison.py --cpu-csv ../../benchmark_cpu/results/csv/cpu_benchmark.csv --gpu-csv ../results/csv/gpu_benchmark_results.csv
+  cd benchmark_gpu
+  python scripts/plot_cpu_gpu_comparison.py \
+    --cpu-csv ../benchmark_cpu/results/csv/cpu_benchmark.csv \
+    --gpu-csv results/csv/gpu_benchmark_results.csv
   ```
 
 GPU solvers:
@@ -146,12 +153,12 @@ GPU benchmarks use `benchmark_cpu/scripts/config.json` with parameters:
 
 Benchmark results for N=6 customers showing statistical precision improvements with larger sample sizes:
 
-| Solver | Instances | Mean CPC | Std CPC | SEM       | 2×SEM/Mean(%) | 95% CI               |
+| Solver | Instances | Mean CPC | Std CPC  | SEM      | 2×SEM/Mean(%) | 95% CI               |
 |--------|-----------|----------|----------|----------|---------------|----------------------|
-| CPU    |      1000 | 0.464466 | 0.090135 | 0.002850 |         1.23% | [0.458880, 0.470052] |
-| GPU    |      1000 | 0.460799 | 0.091148 | 0.002882 |         1.25% | [0.455150, 0.466448] |
-| GPU    |     10000 | 0.466432 | 0.089185 | 0.000892 |         0.38% | [0.464684, 0.468180] |
-| GPU    |    100000 | 0.466568 | 0.089946 | 0.000284 |         0.12% | [0.466011, 0.467125] |
+| CPU    |     1,000 | 0.464466 | 0.090135 | 0.002850 |        1.23% | [0.458880, 0.470052] |
+| GPU    |     1,000 | 0.460799 | 0.091148 | 0.002882 |        1.25% | [0.455150, 0.466448] |
+| GPU    |    10,000 | 0.466432 | 0.089185 | 0.000892 |        0.38% | [0.464684, 0.468180] |
+| GPU    |   100,000 | 0.466568 | 0.089946 | 0.000284 |        0.12% | [0.466011, 0.467125] |
 
 **Analysis: Script Sources for Benchmark Data**
 
@@ -195,15 +202,28 @@ GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive 
 - **Statistical power**: Ultra-high precision enables detection of small performance differences across problem sizes
 
 
-## Project Layout (essentials)
+## Configuration Files
+
+| Config       | Customers | Capacity | Batches/Epoch | Purpose                     |
+|--------------|-----------|----------|---------------|-----------------------------|  
+| tiny.yaml    |        10 |       20 |           150 | Quick experiments (10% data)|
+| small.yaml   |        10 |       20 |          1500 | Full training on N=10       |
+| medium.yaml  |        20 |       30 |          1500 | Standard problems (default) |
+| large.yaml   |        50 |       40 |          1500 | Large-scale problems        |
+| huge.yaml    |       100 |       50 |          1500 | Maximum complexity          |
+
+Note: All configs inherit from `default.yaml` (1500 batches = 768,000 instances per epoch).
+
+## Project Structure
 ```
 .
 ├── configs/                        # Configuration files
 │   ├── default.yaml               # Base configuration (all parameters)
-│   ├── tiny.yaml                  # Quick testing
-│   ├── small.yaml                 # Development testing
-│   ├── medium.yaml                # Research experiments
-│   └── production.yaml            # Full training runs
+│   ├── tiny.yaml                  # N=10, 150 batches/epoch (quick testing)
+│   ├── small.yaml                 # N=10, 1500 batches/epoch (full training)
+│   ├── medium.yaml                # N=20, standard problems
+│   ├── large.yaml                 # N=50, large-scale problems
+│   └── huge.yaml                  # N=100, maximum complexity
 │
 ├── src/                           # Core source code
 │   ├── generator/                 # Data generation
@@ -265,9 +285,16 @@ GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive 
 │   └── results/                   # GPU benchmark results
 │       └── csv/                  # CSV data files
 │
+├── misc/                          # Test scripts and debugging files (gitignored)
+│   ├── test_*.py                 # Various test scripts
+│   ├── debug_*.py                # Debugging utilities
+│   └── *.md                      # Analysis documentation
 ├── setup_venv.sh                  # Environment setup script
 ├── activate_env.sh                # Environment activation helper
-└── requirements.txt               # Python dependencies
+├── gpu_cluster_monitor.sh         # GPU cluster monitoring tool
+├── requirements.txt               # Python dependencies
+├── README.md                      # This file
+└── WARP.md                        # WARP terminal integration guide
 ```
 
 
@@ -280,25 +307,25 @@ GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive 
 source activate_env.sh
 
 # 3. Train models
-cd training_cpu/scripts
+cd training_cpu
 # Train a single model
-python run_training.py --model GT+RL --config ../../configs/small.yaml
+python scripts/run_training.py --model GT+RL --config ../configs/small.yaml
 # Or train all models
-python run_training.py --all --config ../../configs/tiny.yaml
+python scripts/run_training.py --all --config ../configs/tiny.yaml
 
 # 4. Generate comparison plots
-python make_comparative_plot.py --config ../../configs/small.yaml
+python scripts/make_comparative_plot.py --config ../configs/small.yaml
 
 # 5. Run CPU benchmarks (optional)
-cd ../../benchmark_cpu/scripts
-python run_exact.py --config ../../configs/small.yaml --instances 10 --time-limit 5
-python plot_cpu_benchmark.py --csv ../results/csv/cpu_benchmark.csv
+cd ../benchmark_cpu
+python scripts/run_exact.py --config ../configs/small.yaml --instances 10 --time-limit 5
+python scripts/plot_cpu_benchmark.py --csv results/csv/cpu_benchmark.csv
 
 # 6. Run GPU benchmarks (optional)
-cd ../../benchmark_gpu/scripts
-python benchmark_gpu_10k.py  # High-precision GPU benchmark
-python benchmark_gpu_adaptive_n.py  # Adaptive multi-N benchmark
-python plot_gpu_benchmark.py --csv ../results/csv/gpu_benchmark_results.csv
+cd ../benchmark_gpu
+python scripts/benchmark_gpu_10k.py  # High-precision GPU benchmark
+python scripts/benchmark_gpu_adaptive_n.py  # Adaptive multi-N benchmark
+python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
 ```
 
 
@@ -320,3 +347,76 @@ python plot_gpu_benchmark.py --csv ../results/csv/gpu_benchmark_results.csv
 - Shared core utilities in `src/`
 
 For details, see the "Strict CVRP specification" section above.
+
+## GPU Cluster Monitoring
+
+### Overview
+The `gpu_cluster_monitor.sh` script provides real-time monitoring of multiple GPU servers in the cluster.
+It monitors gpu1.sedan.pro, gpu2.sedan.pro, and gpu3.sedan.pro for GPU availability and usage.
+
+### Features
+- Real-time GPU utilization monitoring across multiple servers
+- User tracking (shows who's using which GPU)
+- Temperature and memory usage reporting
+- Visual alerts when GPUs become available
+- Color-coded status indicators:
+  - 🟢 GREEN: GPU is free (< 5% memory)
+  - 🟡 YELLOW: Partially used (5-50% memory)
+  - 🔴 RED: Busy (> 50% memory)
+
+### Usage
+```bash
+# Make script executable (first time only)
+chmod +x gpu_cluster_monitor.sh
+
+# Single check with detailed information
+./gpu_cluster_monitor.sh
+
+# Continuous monitoring (refreshes every 10 seconds)
+./gpu_cluster_monitor.sh watch
+
+# Continuous monitoring with custom interval (e.g., 5 seconds)
+./gpu_cluster_monitor.sh watch 5
+
+# Quick one-line status check
+./gpu_cluster_monitor.sh quick
+
+# Show help
+./gpu_cluster_monitor.sh help
+```
+
+### Output Format
+
+#### Detailed View
+```
+╔══════════════════════════════════════╗
+║    GPU CLUSTER MONITOR               ║
+║    2024-09-04 14:05:23               ║
+╚══════════════════════════════════════╝
+
+━━━ GPU1 ━━━
+✅ GPU0:   2% mem,   0% util, 38°C [AVAILABLE]
+🔥 GPU1:  87% mem,  95% util, 72°C [username]
+
+━━━ GPU2 ━━━
+⚡ GPU0:  23% mem,  45% util, 55°C [user1,user2]
+✅ GPU1:   0% mem,   0% util, 35°C [AVAILABLE]
+
+═══ SUMMARY ═══
+🎉 FREE GPUS AVAILABLE on:
+   ✓ gpu1
+   ✓ gpu2
+⚡ Busy servers: gpu3.sedan.pro
+
+🔔 ALERT: FREE GPU(S) AVAILABLE! 🔔
+```
+
+#### Quick Status View
+```
+[gpu1:✅][gpu2:✅][gpu3:🔥] 2 FREE
+```
+
+### Requirements
+- SSH access to GPU servers (gpu1/2/3.sedan.pro)
+- nvidia-smi installed on target servers
+- SSH key authentication configured (recommended)
