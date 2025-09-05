@@ -1,0 +1,28 @@
+\begin{table*}[htbp]
+\centering
+\caption{GPU CVRP Performance with Log-normal Statistics and Normality Tests}
+\label{tab:gpu-performance-normality}
+\begin{tabular}{@{}l c c S[table-format=1.4] S[table-format=1.4] c c c c c c@{}}
+\toprule
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & {\textbf{GM}} & {\textbf{GSD}} & \\
+\textbf{95\% Range} & \textbf{95\% CI} & \textbf{KS} & \textbf{D'Agost.} & \textbf{JB} & \textbf{AD} \\
+\midrule
+Exact (100k) & 10 & 20 & 0.4735 & 1.2012 & [0.3306, 0.6782] & [0.4730, 0.4741] & $0.19$ & $<$0.001 & $<$0.001 & $1.405^*$ \\
+Exact (10k) & 10 & 20 & 0.4737 & 1.1996 & [0.3316, 0.6767] & [0.4720, 0.4754] & $0.93$ & $0.37$ & $0.37$ & $0.295$ \\
+Heuristic & 10 & 20 & 0.4831 & 1.2064 & [0.3344, 0.6978] & [0.4813, 0.4849] & $0.87$ & $0.44$ & $0.44$ & $0.353$ \\
+Heuristic* & 20 & 30 & 0.3319 & 1.1514 & [0.2518, 0.4376] & [0.3310, 0.3328] & $1.00$ & $0.85$ & $0.86$ & $0.093$ \\
+Heuristic* & 50 & 40 & 0.2303 & 1.1291 & [0.1815, 0.2921] & [0.2297, 0.2308] & $0.73$ & $0.29$ & $0.28$ & $0.400$ \\
+Heuristic** & 100 & 50 & 0.1623 & 1.1189 & [0.1302, 0.2023] & [0.1620, 0.1627] & $0.55$ & $0.19$ & $0.20$ & $0.547$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item GM: Geometric Mean, GSD: Geometric Standard Deviation
+\item 95\% Range: Individual value range GM $\times$ [GSD$^{-1.96}$, GSD$^{+1.96}$]
+\item 95\% CI: Confidence interval for the geometric mean
+\item KS: Kolmogorov-Smirnov, D'Agost.: D'Agostino, JB: Jarque-Bera (p-values for log(CPC) normality)
+\item AD: Anderson-Darling test statistic (larger values indicate non-normality)
+\item Critical value for AD at 5\% significance ≈ 0.787; * indicates rejection
+\item * Based on partial benchmark data; ** Estimated from scaling
+\end{tablenotes}
+\end{table*}

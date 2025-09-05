@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+"""
+Test if CPC (Cost Per Customer) distribution is log-normal.
+This script tests whether log(CPC) follows a normal distribution using various statistical tests.
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+from scipy.stats import shapiro, normaltest, jarque_bera, anderson, kstest
+import argparse
+import os
+import sys
+
+def load_cpc_data(csv_file):
+    """Load CPC data from CSV file."""
+    if not os.path.exists(csv_file):
+        print(f"Error: File {csv_file} not found!")
+        sys.exit(1)
+    
+    df = pd.read_csv(csv_file)
+    if 'cpc' not in df.columns:
+        print(f"Error: 'cpc' column not found in {csv_file}")
+        print(f"Available columns: {list(df.columns)}")
+        sys.exit(1)
+    
+    return df['cpc'].values
+
+def test_normality(data, name="data"):
+    """
+    Perform multiple normality tests on the data.
+    Returns a dictionary with test results.
+    """
+    n = len(data)
+    results = {}
+    
+    print(f"\n{'='*60}")
+    print(f"NORMALITY TESTS FOR {name.upper()}")
+    print(f"{'='*60}")
+    print(f"Sample size: {n:,}")
+    print(f"Mean: {np.mean(data):.6f}")
+    print(f"Std:  {np.std(data, ddof=1):.6f}")
+    print(f"Min:  {np.min(data):.6f}")
+    print(f"Max:  {np.max(data):.6f}")
+    print("-" * 60)
+    
+    # Shapiro-Wilk test (best for small samples, n < 5000)
+    if n <= 5000:
+        stat, p_value = shapiro(data)
+        results['shapiro'] = {'statistic': stat, 'p_value': p_value}
+        print(f"Shapiro-Wilk Test:")
+        print(f"  Statistic: {stat:.6f}")
+        print(f"  P-value:   {p_value:.2e}")
+        print(f"  Result:    {'NORMAL' if p_value > 0.05 else 'NOT NORMAL'} (α=0.05)")
+    else:
+        print(f"Shapiro-Wilk Test: Skipped (n={n} > 5000)")
+        results['shapiro'] = None
+    
+    # D'Agostino's normality test
+    stat, p_value = normaltest(data)
+    results['dagostino'] = {'statistic': stat, 'p_value': p_value}
+    print(f"\nD'Agostino's Normality Test:")
+    print(f"  Statistic: {stat:.6f}")
+    print(f"  P-value:   {p_value:.2e}")
+    print(f"  Result:    {'NORMAL' if p_value > 0.05 else 'NOT NORMAL'} (α=0.05)")
+    
+    # Jarque-Bera test
+    stat, p_value = jarque_bera(data)
+    results['jarque_bera'] = {'statistic': stat, 'p_value': p_value}
+    print(f"\nJarque-Bera Test:")
+    print(f"  Statistic: {stat:.6f}")
+    print(f"  P-value:   {p_value:.2e}")
+    print(f"  Result:    {'NORMAL' if p_value > 0.05 else 'NOT NORMAL'} (α=0.05)")
+    
+    # Anderson-Darling test
+    stat, critical_values, significance_levels = anderson(data, dist='norm')
+    results['anderson'] = {
+        'statistic': stat, 
+        'critical_values': critical_values,
+        'significance_levels': significance_levels
+    }
+    print(f"\nAnderson-Darling Test:")
+    print(f"  Statistic: {stat:.6f}")
+    print(f"  Critical values and significance levels:")
+    normal_at_5pct = stat < critical_values[2]  # 5% significance level is typically at index 2
+    for i, (cv, sl) in enumerate(zip(critical_values, significance_levels)):
+        marker = " *" if i == 2 else ""  # Mark 5% level
+        print(f"    {sl:4.1f}%: {cv:.6f}{marker}")
+    print(f"  Result:    {'NORMAL' if normal_at_5pct else 'NOT NORMAL'} (α=0.05)")
+    
+    # Kolmogorov-Smirnov test against normal distribution
+    # Use sample mean and std to define the normal distribution
+    mean, std = np.mean(data), np.std(data, ddof=1)
+    stat, p_value = kstest(data, lambda x: stats.norm.cdf(x, loc=mean, scale=std))
+    results['ks'] = {'statistic': stat, 'p_value': p_value}
+    print(f"\nKolmogorov-Smirnov Test:")
+    print(f"  Statistic: {stat:.6f}")
+    print(f"  P-value:   {p_value:.2e}")
+    print(f"  Result:    {'NORMAL' if p_value > 0.05 else 'NOT NORMAL'} (α=0.05)")
+    
+    return results
+
+def create_diagnostic_plots(cpc_data, log_cpc_data, output_prefix="cpc_lognormal_test"):
+    """Create diagnostic plots for log-normal distribution test."""
+    
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig.suptitle('Log-Normal Distribution Test for CPC Data', fontsize=16, fontweight='bold')
+    
+    # Row 1: CPC data
+    # Histogram of CPC
+    axes[0, 0].hist(cpc_data, bins=50, density=True, alpha=0.7, color='skyblue', edgecolor='black')
+    axes[0, 0].set_title('CPC Distribution', fontweight='bold')
+    axes[0, 0].set_xlabel('CPC')
+    axes[0, 0].set_ylabel('Density')
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    # Q-Q plot for CPC vs Log-Normal
+    from scipy.stats import lognorm
+    # Fit log-normal distribution to CPC data
+    shape, loc, scale = lognorm.fit(cpc_data, floc=0)
+    stats.probplot(cpc_data, dist=lognorm, sparams=(shape, loc, scale), plot=axes[0, 1])
+    axes[0, 1].set_title('Q-Q Plot: CPC vs Log-Normal', fontweight='bold')
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    # Box plot of CPC
+    axes[0, 2].boxplot(cpc_data)
+    axes[0, 2].set_title('CPC Box Plot', fontweight='bold')
+    axes[0, 2].set_ylabel('CPC')
+    axes[0, 2].grid(True, alpha=0.3)
+    
+    # Row 2: log(CPC) data
+    # Histogram of log(CPC)
+    axes[1, 0].hist(log_cpc_data, bins=50, density=True, alpha=0.7, color='lightcoral', edgecolor='black')
+    axes[1, 0].set_title('log(CPC) Distribution', fontweight='bold')
+    axes[1, 0].set_xlabel('log(CPC)')
+    axes[1, 0].set_ylabel('Density')
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Overlay normal distribution fit
+    mu, sigma = np.mean(log_cpc_data), np.std(log_cpc_data)
+    x = np.linspace(log_cpc_data.min(), log_cpc_data.max(), 100)
+    axes[1, 0].plot(x, stats.norm.pdf(x, mu, sigma), 'r-', linewidth=2, 
+                    label=f'Normal(μ={mu:.3f}, σ={sigma:.3f})')
+    axes[1, 0].legend()
+    
+    # Q-Q plot for log(CPC) vs Normal
+    stats.probplot(log_cpc_data, dist="norm", plot=axes[1, 1])
+    axes[1, 1].set_title('Q-Q Plot: log(CPC) vs Normal', fontweight='bold')
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    # Box plot of log(CPC)
+    axes[1, 2].boxplot(log_cpc_data)
+    axes[1, 2].set_title('log(CPC) Box Plot', fontweight='bold')
+    axes[1, 2].set_ylabel('log(CPC)')
+    axes[1, 2].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    plot_file = f"{output_prefix}.png"
+    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+    print(f"\nDiagnostic plots saved to: {plot_file}")
+    
+    return plot_file
+
+def summarize_results(cpc_results, log_cpc_results):
+    """Summarize the test results."""
+    print(f"\n{'='*60}")
+    print("SUMMARY OF LOG-NORMAL DISTRIBUTION TEST")
+    print(f"{'='*60}")
+    
+    print("\nTest Results for CPC being Log-Normal:")
+    print("(i.e., log(CPC) should be normally distributed)")
+    print("-" * 60)
+    
+    # Count how many tests support normality for log(CPC)
+    normal_count = 0
+    total_count = 0
+    
+    test_names = {
+        'shapiro': 'Shapiro-Wilk',
+        'dagostino': "D'Agostino's",
+        'jarque_bera': 'Jarque-Bera',
+        'anderson': 'Anderson-Darling',
+        'ks': 'Kolmogorov-Smirnov'
+    }
+    
+    for test_key, test_name in test_names.items():
+        if log_cpc_results[test_key] is not None:
+            total_count += 1
+            if test_key == 'anderson':
+                # Anderson-Darling uses critical values
+                stat = log_cpc_results[test_key]['statistic']
+                critical_5pct = log_cpc_results[test_key]['critical_values'][2]
+                is_normal = stat < critical_5pct
+            else:
+                # Other tests use p-values
+                p_value = log_cpc_results[test_key]['p_value']
+                is_normal = p_value > 0.05
+            
+            if is_normal:
+                normal_count += 1
+            
+            result_str = "NORMAL" if is_normal else "NOT NORMAL"
+            print(f"{test_name:20}: {result_str}")
+    
+    print("-" * 60)
+    print(f"Tests supporting normality: {normal_count}/{total_count}")
+    
+    if normal_count == total_count:
+        conclusion = "STRONG EVIDENCE that CPC follows a log-normal distribution"
+    elif normal_count >= total_count * 0.6:
+        conclusion = "MODERATE EVIDENCE that CPC follows a log-normal distribution"
+    elif normal_count > 0:
+        conclusion = "WEAK EVIDENCE that CPC follows a log-normal distribution"
+    else:
+        conclusion = "NO EVIDENCE that CPC follows a log-normal distribution"
+    
+    print(f"\nCONCLUSION: {conclusion}")
+    
+    return conclusion
+
+def main():
+    parser = argparse.ArgumentParser(description='Test if CPC distribution is log-normal')
+    parser.add_argument('csv_file', nargs='?', 
+                        help='CSV file containing CPC data (default: auto-detect latest)')
+    parser.add_argument('--no-plots', action='store_true',
+                        help='Skip generating diagnostic plots')
+    parser.add_argument('--alpha', type=float, default=0.05,
+                        help='Significance level for tests (default: 0.05)')
+    
+    args = parser.parse_args()
+    
+    # Auto-detect latest CSV file if not provided
+    if args.csv_file is None:
+        csv_files = [f for f in os.listdir('.') if f.endswith('.csv') and 'gpu_dp_exact_results' in f]
+        if not csv_files:
+            print("Error: No GPU DP exact results CSV files found!")
+            print("Please provide a CSV file as argument.")
+            sys.exit(1)
+        args.csv_file = sorted(csv_files)[-1]  # Get the latest file
+        print(f"Auto-detected CSV file: {args.csv_file}")
+    
+    # Load data
+    print("Loading CPC data...")
+    cpc_data = load_cpc_data(args.csv_file)
+    print(f"Loaded {len(cpc_data):,} CPC values")
+    
+    # Calculate log(CPC)
+    log_cpc_data = np.log(cpc_data)
+    
+    # Test normality for original CPC data (should NOT be normal if log-normal)
+    print("\n" + "="*80)
+    print("TESTING ORIGINAL CPC DATA (should NOT be normal if log-normal)")
+    print("="*80)
+    cpc_results = test_normality(cpc_data, "CPC")
+    
+    # Test normality for log(CPC) data (should be normal if CPC is log-normal)
+    print("\n" + "="*80)
+    print("TESTING log(CPC) DATA (should be normal if CPC is log-normal)")
+    print("="*80)
+    log_cpc_results = test_normality(log_cpc_data, "log(CPC)")
+    
+    # Create diagnostic plots
+    if not args.no_plots:
+        print(f"\nCreating diagnostic plots...")
+        create_diagnostic_plots(cpc_data, log_cpc_data)
+    
+    # Summarize results
+    conclusion = summarize_results(cpc_results, log_cpc_results)
+    
+    # Save summary to file
+    timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+    summary_file = f"cpc_lognormal_test_summary_{timestamp}.txt"
+    with open(summary_file, 'w') as f:
+        f.write(f"Log-Normal Distribution Test for CPC Data\n")
+        f.write(f"Data file: {args.csv_file}\n")
+        f.write(f"Sample size: {len(cpc_data):,}\n")
+        f.write(f"Timestamp: {timestamp}\n")
+        f.write(f"Conclusion: {conclusion}\n")
+        f.write(f"\nDetailed results available in terminal output.\n")
+    
+    print(f"\nSummary saved to: {summary_file}")
+
+if __name__ == "__main__":
+    main()

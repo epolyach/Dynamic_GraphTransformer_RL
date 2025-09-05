@@ -17,6 +17,7 @@ from tabulate import tabulate
 def benchmark_gpu_exact_dp(n_customers, capacity, num_instances, batch_size=100):
     """
     Benchmark GPU DP-exact solver with specified parameters.
+    Returns (all_costs, all_cpcs, all_solve_times, timestamp) for further processing.
     """
     print("=" * 70)
     print("GPU DP-Exact CVRP Benchmark")
@@ -163,8 +164,8 @@ def benchmark_gpu_exact_dp(n_customers, capacity, num_instances, batch_size=100)
         'max_cost': float(max_cost),
         'total_time': total_time,
         'time_per_instance': total_time / len(all_cpcs),
-        'all_costs': [float(c) for c in all_costs[:100]],  # Save first 100 for analysis
-        'all_cpcs': [float(c) for c in all_cpcs[:100]]
+        'all_costs': [float(c) for c in all_costs],  # Save first 100 for analysis
+        'all_cpcs': [float(c) for c in all_cpcs]
     }
     
     timestamp = time.strftime('%Y%m%d_%H%M%S')
@@ -174,6 +175,9 @@ def benchmark_gpu_exact_dp(n_customers, capacity, num_instances, batch_size=100)
     
     print(f"\nResults saved to: {output_file}")
     print("=" * 70)
+    
+    # Return data for further processing
+    return all_costs, all_cpcs, all_solve_times, timestamp
 
 if __name__ == "__main__":
     import argparse
@@ -199,9 +203,26 @@ if __name__ == "__main__":
         print("WARNING: No GPU detected! DP-exact solver requires GPU.")
         exit(1)
     
-    benchmark_gpu_exact_dp(
+    # Run the benchmark and capture returned data
+    all_costs, all_cpcs, all_solve_times, timestamp = benchmark_gpu_exact_dp(
         n_customers=args.n_customers,
         capacity=args.capacity,
         num_instances=args.instances,
         batch_size=args.batch_size
     )
+
+    # Also save as CSV for easier analysis
+    import pandas as pd
+    
+    csv_data = {
+        'instance_id': range(len(all_costs)),
+        'cost': all_costs,
+        'cpc': all_cpcs,
+        'solve_time': all_solve_times
+    }
+    
+    df = pd.DataFrame(csv_data)
+    csv_file = f'gpu_dp_exact_results_{timestamp}.csv'
+    df.to_csv(csv_file, index=False)
+    
+    print(f"CSV data saved to: {csv_file}")

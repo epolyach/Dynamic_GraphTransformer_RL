@@ -98,6 +98,7 @@ def run_benchmark_configuration(n_customers: int, capacity: int, num_instances: 
     
     # Calculate statistics
     cpcs = np.array(all_costs) / n_customers
+    # Prepare result dict (include per-instance CPCs for downstream analysis)
     results = {
         'n_customers': n_customers,
         'capacity': capacity,
@@ -106,7 +107,9 @@ def run_benchmark_configuration(n_customers: int, capacity: int, num_instances: 
         'std_cpc': cpcs.std(),
         'sem': cpcs.std() / np.sqrt(len(cpcs)),
         'total_time': total_time,
-        'time_per_instance': total_time / num_instances
+        'time_per_instance': total_time / num_instances,
+        # Added: save all CPCs so we can compute GM, GSD, and normality tests later
+        'all_cpcs': [float(x) for x in cpcs]
     }
     results['2sem_mean_pct'] = (2 * results['sem'] / results['mean_cpc']) * 100
     

@@ -1,0 +1,7 @@
+Log-Normal Distribution Test for CPC Data
+Data file: gpu_dp_exact_results_20250905_071235.json
+Sample size: 100,000
+Timestamp: 20250905_100817
+Conclusion: WEAK EVIDENCE that CPC follows a log-normal distribution
+
+Detailed results available in terminal output.

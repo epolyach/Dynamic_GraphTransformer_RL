@@ -1,0 +1,23 @@
+\begin{table}[htbp]
+\centering
+\caption{OR-Tools GLS Performance on CVRP instances}
+\begin{tabular}{rrrrrrrr}
+\toprule
+N & Instances & GM & GSD & 95\% Range & 95\% CI(GM) & KS p-val & AD stat \\
+\midrule
+100 & \textbf{1000} & 0.1817 & 1.1248 & [0.1443, 0.2288] & [0.1804, 0.1830] & 0.143 & \textbf{1.67} \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item All results use OR-Tools with Guided Local Search (GLS) metaheuristic
+\item GM: Geometric Mean of CPC (Cost vs. Nearest Neighbor baseline)
+\item GSD: Geometric Standard Deviation
+\item 95\% Range: [GM×GSD$^{-1.96}$, GM×GSD$^{1.96}$]
+\item 95\% CI(GM): 95\% confidence interval for geometric mean
+\item KS p-val: Kolmogorov-Smirnov test for log-normality
+\item AD stat: Anderson-Darling test statistic (critical value: 0.787)
+\item Bold values indicate rejection of log-normality (p < 0.05 or AD > 0.787)
+\item Bold instance counts indicate preliminary results (<10,000 instances)
+\end{tablenotes}
+\end{table}

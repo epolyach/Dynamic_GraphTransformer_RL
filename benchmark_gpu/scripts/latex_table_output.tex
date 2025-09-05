@@ -1,0 +1,23 @@
+\begin{table*}[htbp]
+\centering
+\caption{GPU CVRP Performance with Log-normal Statistics}
+\label{tab:gpu-lognormal}
+\begin{tabular}{@{}l c c S[table-format=1.4] S[table-format=1.4] c c c c c@{}}
+\toprule
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & {\textbf{GM}} & {\textbf{GSD}} & \textbf{95\% Range} & \textbf{KS} & \textbf{D'Agostino} & \textbf{Jarque-Bera} & \textbf{Anderson} \\
+\midrule
+Exact (100k) & 10 & 20 & 0.4735 & 1.2012 & [0.3306, 0.6782] & $0.19$ & $8.15 \times 10^{-8}$ & $8.19 \times 10^{-8}$ & $1.405^*$ \\
+Exact (10k) & 10 & 20 & 0.4737 & 1.1996 & [0.3316, 0.6767] & $0.93$ & $0.37$ & $0.37$ & $0.295$ \\
+Heuristic (10k) & 10 & 20 & 0.4831 & 1.2064 & [0.3344, 0.6978] & $0.87$ & $0.44$ & $0.44$ & $0.353$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item GM: Geometric Mean, GSD: Geometric Standard Deviation
+\item 95\% Range: GM $\times$ [GSD$^{-1.96}$, GSD$^{+1.96}$] for individual values
+\item KS: Kolmogorov-Smirnov test p-value for log(CPC) normality
+\item D'Agostino and Jarque-Bera: Normality test p-values for log(CPC)
+\item Anderson: Anderson-Darling test statistic (critical value at 5\% = 0.787)
+\item * indicates rejection of normality at 5\% significance level
+\end{tablenotes}
+\end{table*}
