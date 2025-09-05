@@ -1,0 +1,13 @@
+n_customers,solver,instance_id,status,time,cpc
+5,exact_dp,1,success,0.011528,0.627911
+5,ortools_greedy,1,success,0.025629,0.627911
+5,ortools_gls,1,success,2.001532,0.627911
+5,exact_dp,2,success,0.011654,0.429076
+5,ortools_greedy,2,success,0.004360,0.429076
+5,ortools_gls,2,success,2.001394,0.429076
+6,exact_dp,1,success,0.147406,0.382844
+6,ortools_greedy,1,success,0.009279,0.382844
+6,ortools_gls,1,success,2.001556,0.382844
+6,exact_dp,2,success,0.146555,0.420783
+6,ortools_greedy,2,success,0.065113,0.420783
+6,ortools_gls,2,success,2.001548,0.420783

@@ -7,7 +7,7 @@ problem:
   vehicle_capacity: 20
 
 training:
-  num_batches_per_epoch: 150   # 10% of paper's 1500 (76,800 instances/epoch)
+  num_batches_per_epoch: 50   # 10% of paper's 1500 (76,800 instances/epoch)
 
 # Smaller model for faster training
 model:

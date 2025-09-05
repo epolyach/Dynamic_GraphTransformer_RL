@@ -28,10 +28,10 @@ training:
 # =============================
 baseline:
   type: "rollout"
-  eval_batches: 4         # Slight reduction from 5
+  eval_batches: 5         # Slight reduction from 5
   update:
     enabled: true
-    frequency: 3          # Check every 3 epochs instead of 4
+    frequency: 1          # Check every 1 epochs instead of 4
     significance_test: true  
     p_value: 0.10         # More lenient from 0.05
 

@@ -1,0 +1,5 @@
+Solver,Avg Cost,CPC,Std CPC,Avg Time (s),Failed
+Exact DP,3.0961,0.4423,0.0818,2.164,0/1000
+OR-Tools Exact,3.0961,0.4423,0.0818,0.566,0/1000
+OR-Tools Sub-optimal,3.0961,0.4423,0.0818,5.001,0/1000
+OR-Tools GLS,3.0961,0.4423,0.0818,8.823,0/1000
