@@ -22,7 +22,6 @@ Distance scaling knob (for solver internals):
 - configs/default.yaml → benchmark.scaling.distance_scale (default 100000)
 - Used by solver internals for stable integer math; costs are scaled back; CPC = cost/N
 
-
 ## 1) Training (CPU)
 Location: training_cpu/
 
@@ -51,7 +50,6 @@ Notes:
 - Training uses src/generator/generator.py; no augmentation/curriculum
 - Models live in src/models; advanced trainer in training_cpu/lib/advanced_trainer.py
 - Results saved locally in training_cpu/results/ (models in pytorch/, CSVs in csv/, plots in plots/)
-
 
 ## 2) CPU Benchmarks
 Location: benchmark_cpu/
@@ -94,7 +92,6 @@ Solvers (labels match plot):
 - ortools_greedy (exact_ortools_vrp_fixed)
 - ortools_gls
 
-
 ## 3) GPU Benchmarks
 Location: benchmark_gpu/
 
@@ -102,37 +99,37 @@ Location: benchmark_gpu/
 
 - High-precision GPU benchmark (10,000 instances)
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/benchmark_gpu_10k.py
   ```
 
 - GPU vs CPU comparison benchmark (matched instances)
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/benchmark_gpu_exact_matched.py
   ```
 
 - Adaptive N GPU benchmark (N=5 to N=20, variable instances using 10^(7-N/5) formula)
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/benchmark_gpu_adaptive_n.py
   ```
 
 - Multi-N GPU benchmark (N=5 to N=10, 10K instances each)
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/benchmark_gpu_multi_n.py
   ```
 
 - Plot GPU benchmark results
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
   ```
 
 - Plot CPU vs GPU comparison
   ```bash
-  cd benchmark_gpu
+  cd benchmark_cpu
   python scripts/plot_cpu_gpu_comparison.py \
     --cpu-csv ../benchmark_cpu/results/csv/cpu_benchmark.csv \
     --gpu-csv results/csv/gpu_benchmark_results.csv
@@ -200,7 +197,6 @@ GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive 
 - **Precision maintenance**: All benchmarks achieve sub-0.1% relative error (2×SEM/Mean < 0.1%)
 - **Cost trend**: Mean CPC decreases from 0.494 (N=5) to 0.395 (N=10), showing economies of scale
 - **Statistical power**: Ultra-high precision enables detection of small performance differences across problem sizes
-
 
 ## Configuration Files
 
@@ -297,7 +293,6 @@ Note: All configs inherit from `default.yaml` (1500 batches = 768,000 instances 
 └── WARP.md                        # WARP terminal integration guide
 ```
 
-
 ## Quickstart
 ```bash
 # 1. Setup environment (one-time)
@@ -327,7 +322,6 @@ python scripts/benchmark_gpu_10k.py  # High-precision GPU benchmark
 python scripts/benchmark_gpu_adaptive_n.py  # Adaptive multi-N benchmark
 python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
 ```
-
 
 ## Key Features
 
@@ -420,3 +414,32 @@ chmod +x gpu_cluster_monitor.sh
 - SSH access to GPU servers (gpu1/2/3.sedan.pro)
 - nvidia-smi installed on target servers
 - SSH key authentication configured (recommended)
+
+
+### GPU Heuristic Solver (PyTorch)
+Location: `benchmark_gpu/scripts/benchmark_gpu_heuristic_gls.py`
+
+GPU-accelerated heuristic solver using PyTorch CUDA tensors. Implements greedy nearest neighbor algorithm entirely on GPU with NO CPU fallback.
+
+Dependencies:
+```bash
+pip install torch  # with CUDA support
+```
+
+Usage:
+```bash
+cd benchmark_gpu
+# Test GPU greedy heuristic on small problems
+python scripts/benchmark_gpu_heuristic_gls.py --instances 100 --batch-size 50 --configs 10,20
+
+# Full benchmark with all configurations
+python scripts/benchmark_gpu_heuristic_gls.py --instances 1000 --batch-size 100 --configs all
+```
+
+Features:
+- **GPU-only**: Requires CUDA GPU, will fail if no GPU available (no fallback)
+- **Batch processing**: Solves multiple instances in parallel on GPU
+- **PyTorch tensors**: All operations use CUDA tensor operations
+- **Configurations**: N={10,20,50,100} with appropriate capacities
+
+GPU Solver: `src/benchmarking/solvers/gpu/heuristic_gpu_simple.py`

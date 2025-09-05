@@ -111,3 +111,91 @@ The implementations differ fundamentally in philosophy:
 
 The run_training.py implementation generates 768,000 new instances per epoch vs reusing the 
 same 768,000 instances, which is a critical difference affecting training diversity.
+
+## 8. Data Generation Analysis: Fixed vs Dynamic Instances
+
+### Current Difference
+The most critical difference between implementations is data handling:
+- **paper_replication_train.py**: 768,000 instances generated once, reused every epoch
+- **run_training.py**: 768,000 new instances generated each epoch
+
+### Literature Review: Best Practices in Neural Combinatorial Optimization
+
+Based on standard practices in NCO/RL for routing problems:
+
+- **Standard Practice**: On-the-fly sampling per batch/epoch is the norm in major works (Kool et al., 2019; Nazari et al., 2018; Bello et al., 2016) to learn the underlying instance distribution and avoid memorization
+
+- **Fixed Training Sets**: While legitimate and used for reproducibility, training on one fixed large set increases overfitting risk, especially with:
+  - Long training periods
+  - High-capacity models
+  - Deep reinforcement learning setups
+
+### Overfitting Risk Assessment
+
+| Approach                  | Overfitting Risk | Generalization | Reproducibility |
+|---------------------------|------------------|----------------|-----------------|
+| Fixed 768k instances      | High             | Limited        | Excellent       |
+| Per-epoch resampling      | Low              | Better         | Good            |
+| Multi-shard rotation      | Medium           | Good           | Good            |
+
+### Mitigation Strategies for Fixed Sets
+
+If using fixed training instances:
+- Keep separate fixed validation set
+- Shuffle instance order each epoch  
+- Use entropy regularization and dropout
+- Apply early stopping and LR scheduling
+- Monitor train-validation gap closely
+
+### Best Practice Recommendations
+
+1. **Preferred**: Per-epoch resampling or rotating across several pre-generated shards (4-8× 768k)
+2. **Compromise**: Balance reproducibility, I/O efficiency, and anti-overfitting
+3. **Fallback**: If reproducing a paper with fixed sets, watch validation curves carefully
+
+## 9. Hypothesis: Fixed Instance Set Causes Overfitting
+
+### Research Question
+Does training on a fixed set of 768,000 CVRP instances cause overfitting compared to 
+per-epoch instance generation?
+
+### Testable Hypothesis
+**H₁**: Models trained on fixed instance sets will show:
+- Lower training loss but higher validation loss over time (train-val gap)
+- Worse generalization to unseen instance distributions
+- Performance degradation on test sets with different random seeds
+
+**H₀**: No significant difference in overfitting between fixed and dynamic instance generation
+
+### Experimental Design
+
+| Group                | Training Data                    | Validation Data      | Test Data           |
+|---------------------|----------------------------------|---------------------|---------------------|
+| **Fixed Group**      | Same 768k instances every epoch | Fixed 10k instances | New 10k instances   |
+| **Dynamic Group**    | New 768k instances every epoch  | Fixed 10k instances | New 10k instances   |
+
+### Metrics to Compare
+
+1. **Training Curves**:
+   - Training loss progression
+   - Validation loss progression  
+   - Train-validation gap over epochs
+
+2. **Generalization Performance**:
+   - Test set performance (different seeds)
+   - Performance on larger instances (20→50 nodes)
+   - Performance on different demand/capacity ratios
+
+3. **Overfitting Indicators**:
+   - Early stopping epoch (if validation loss increases)
+   - Validation cost plateau while training cost decreases
+   - Test performance degradation vs validation performance
+
+### Expected Results
+If fixed instances cause overfitting:
+- Fixed group shows larger train-val gap after ~20-30 epochs
+- Dynamic group maintains better test set generalization
+- Fixed group requires earlier stopping or shows validation loss increase
+
+This experiment would definitively answer whether the paper_replication approach's fixed 
+instance set is a limitation or acceptable trade-off for reproducibility.
