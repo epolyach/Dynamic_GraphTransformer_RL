@@ -18,7 +18,6 @@ class GPUHeuristicGLS:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA GPU is required. No CPU fallback.")
         self.device = torch.device("cuda")
-        if not torch.cuda.is_available():
     
     def solve_batch(self, instances: List[Dict[str, Any]], 
                    time_limit: float = 5.0,
