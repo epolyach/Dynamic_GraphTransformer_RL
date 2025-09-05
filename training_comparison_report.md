@@ -33,8 +33,8 @@ Comparison between `../CVRP-GAT-RL/paper_replication_train.py` and
 | edge_dim          |                16 |                     16 |                  16 |
 | layers            |                 4 |                      4 |                   4 |
 | dropout           |               0.6 |                    0.1 |                 0.6 |
-| learning_rate     |             1e-4  |                  1e-4  |               2e-4  |
-| temperature       |          Fixed 2.5|        Adaptive 2.5→0.15|         3.0→0.3    |
+| learning_rate     |             1e-4  |                  1e-4  |                2e-4 |
+| temperature       |          Fixed 2.5|      Adaptive 2.5→0.15 |             3.0→0.3 |
 | num_epochs        |               101 |                    100 |                 100 |
 | batch_size        |               512 |                    512 |                 512 |
 | vehicle_capacity  |                30 |                     30 |                  30 |
@@ -74,8 +74,8 @@ Comparison between `../CVRP-GAT-RL/paper_replication_train.py` and
 ## 6. Module Dependencies
 
 | Component         | paper_replication                  | run_training                       |
-|-------------------|-------------------------------------|-------------------------------------|
-| Model Module      | src_batch.model.Model               | src.models.model_factory           |
+|-------------------|------------------------------------|------------------------------------|
+| Model Module      | src_batch.model.Model              | src.models.model_factory           |
 | Train Module      | src_batch.train.train_model        | training_cpu.lib.advanced_trainer  |
 | Data Module       | src_batch.instance_creator         | src.generator.generator            |
 | Baseline Module   | src_batch.RL.Rollout_Baseline      | training_cpu.lib.rollout_baseline  |
