@@ -1,0 +1,42 @@
+2025-09-06 19:23:03 - INFO - ======================================================================
+2025-09-06 19:23:03 - INFO - OR-Tools GLS Parallel Benchmark Runner
+2025-09-06 19:23:03 - INFO - ======================================================================
+2025-09-06 19:23:03 - INFO - Configuration:
+2025-09-06 19:23:03 - INFO -   Problem size (N): 10
+2025-09-06 19:23:03 - INFO -   Vehicle capacity: 20
+2025-09-06 19:23:03 - INFO -   Total instances: 10
+2025-09-06 19:23:03 - INFO -   Timeout per instance: 1.0s
+2025-09-06 19:23:03 - INFO -   Parallel threads: 2
+2025-09-06 19:23:03 - INFO -   Base seed: 42
+2025-09-06 19:23:03 - INFO -   Output directory: benchmark_cpu/results/test_integrated
+2025-09-06 19:23:03 - INFO -   Log file: benchmark_cpu/results/test_integrated/benchmark_log.txt
+2025-09-06 19:23:03 - INFO - 
+2025-09-06 19:23:03 - INFO - Instance distribution across threads: [5, 5]
+2025-09-06 19:23:03 - INFO - Total instances to process: 10
+2025-09-06 19:23:03 - INFO - Seed range: 42 to 51
+2025-09-06 19:23:03 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-06 19:23:03 - INFO - This ensures reproducibility regardless of thread count
+2025-09-06 19:23:03 - INFO - Estimated maximum completion time: 5.0s (0.1 minutes)
+2025-09-06 19:23:03 - INFO - 
+2025-09-06 19:23:03 - INFO - Starting parallel execution...
+2025-09-06 19:23:03 - INFO - ----------------------------------------------------------------------
+2025-09-06 19:23:03 - INFO - Thread 0: ✓ Completed - Processed 5 instances (5 failed)
+2025-09-06 19:23:03 - INFO - Thread 1: ✓ Completed - Processed 5 instances (5 failed)
+2025-09-06 19:23:03 - INFO - ----------------------------------------------------------------------
+2025-09-06 19:23:03 - INFO - EXECUTION SUMMARY
+2025-09-06 19:23:03 - INFO - ----------------------------------------------------------------------
+2025-09-06 19:23:03 - INFO - Total execution time: 0.01s (0.00 minutes)
+2025-09-06 19:23:03 - INFO - Average time per instance: 0.001s
+2025-09-06 19:23:03 - INFO - Threads successful: 2/2
+2025-09-06 19:23:03 - INFO - Threads failed: 0/2
+2025-09-06 19:23:03 - INFO - JSON files created: 2
+2025-09-06 19:23:03 - INFO - Total instances successfully processed: 0
+2025-09-06 19:23:03 - INFO - Total instances failed: 10
+2025-09-06 19:23:03 - INFO - 
+JSON files:
+2025-09-06 19:23:03 - INFO -   thread_00_n10_20250906_192303.json (1.1 KB)
+2025-09-06 19:23:03 - INFO -   thread_01_n10_20250906_192303.json (1.1 KB)
+2025-09-06 19:23:03 - INFO - 
+2025-09-06 19:23:03 - INFO - Results saved in: benchmark_cpu/results/test_integrated
+2025-09-06 19:23:03 - INFO - Log file: benchmark_cpu/results/test_integrated/benchmark_log.txt
+2025-09-06 19:23:03 - INFO - ======================================================================

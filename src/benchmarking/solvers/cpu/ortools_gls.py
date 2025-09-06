@@ -1,22 +1,22 @@
-#!/usr/bin/env python3
+from typing import List, Dict, Any
 import time
-from typing import Dict, Any, List, Tuple
 import numpy as np
-from src.benchmarking.solvers.types import CVRPSolution
-from src.benchmarking.solvers.utils import calculate_route_cost
+from ortools.constraint_solver import routing_enums_pb2, pywrapcp
+from ..types import CVRPSolution
+from ..utils import calculate_route_cost
 
 
-def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = False) -> CVRPSolution:
-    """Heuristic OR-Tools VRP solver wrapper (not exact).
-    Returns is_optimal=False.
+def solve(instance: Dict[str, Any], time_limit: float = 10.0, verbose: bool = False) -> CVRPSolution:
     """
-    try:
-        from ortools.constraint_solver import pywrapcp
-        from ortools.constraint_solver import routing_enums_pb2
-    except Exception as e:
-        raise ImportError(f"OR-Tools constraint solver not available: {e}")
-
-    start_time = time.time()
+    Solve CVRP using OR-Tools with Guided Local Search.
+    
+    This solver tries different numbers of vehicles to find a feasible solution,
+    preferring solutions with fewer vehicles when costs are similar.
+    
+    Returns:
+        - route: Complete tour starting from depot, visiting all customers with depot returns
+        - vehicle_routes: List of customer sequences for each vehicle (depot not included)
+    """
     coords = instance['coords']
     demands = instance['demands']
     distances = instance['distances']
@@ -31,6 +31,7 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
     best_route: List[int] = [0]
     best_vehicle_routes: List[List[int]] = []
     best_cost = float('inf')
+    start_time = time.time()
 
     if verbose:
         print(f"Heuristic solver: n_customers={n_customers}, total_demand={total_demand}, capacity={capacity}")
@@ -68,21 +69,34 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
             obj = solution.ObjectiveValue() / 1000.0
             if obj < best_cost:
                 best_cost = obj
-                route = [0]
+                route = [0]  # Start with depot
                 vrs: List[List[int]] = []
+                
                 for vid in range(routing.vehicles()):
                     index = routing.Start(vid)
-                    vr = [0]
+                    vr = []  # Vehicle route (customers only, no depot)
+                    
                     while not routing.IsEnd(index):
                         node = manager.IndexToNode(index)
-                        if node != 0:
+                        if node != 0:  # Skip depot
                             vr.append(node)
                         index = solution.Value(routing.NextVar(index))
-                    if len(vr) > 1:
-                        vr.append(0)
-                        vrs.append(vr[1:-1])
-                        route.extend(vr[1:-1])
-                best_route = route
+                    
+                    if len(vr) > 0:  # Only add non-empty routes
+                        vrs.append(vr)
+                        # Add this vehicle's route to the main route with depot return
+                        for customer in vr:
+                            route.append(customer)
+                        route.append(0)  # Return to depot after each vehicle
+                
+                # The route now has format: 0, c1, c2, 0, c3, c4, c5, 0, ...
+                # Remove duplicate consecutive depots if any
+                cleaned_route = [route[0]]
+                for i in range(1, len(route)):
+                    if not (route[i] == 0 and route[i-1] == 0):
+                        cleaned_route.append(route[i])
+                
+                best_route = cleaned_route
                 best_vehicle_routes = vrs
 
         if time.time() - start_time > time_limit:
@@ -96,5 +110,4 @@ def solve(instance: Dict[str, Any], time_limit: float = 60.0, verbose: bool = Fa
 
     return CVRPSolution(route=best_route, cost=standardized_cost, num_vehicles=len(best_vehicle_routes),
                         vehicle_routes=best_vehicle_routes, solve_time=time.time() - start_time,
-                        algorithm_used='Heuristic-OR', is_optimal=False)
-
+                        algorithm_used='OR-Tools-GLS', is_optimal=False)

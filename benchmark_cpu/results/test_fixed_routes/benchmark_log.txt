@@ -1,0 +1,52 @@
+2025-09-06 20:01:20 - INFO - ======================================================================
+2025-09-06 20:01:20 - INFO - OR-Tools GLS Parallel Benchmark Runner with Retry Logic
+2025-09-06 20:01:20 - INFO - ======================================================================
+2025-09-06 20:01:20 - INFO - Configuration:
+2025-09-06 20:01:20 - INFO -   Problem size (N): 10
+2025-09-06 20:01:20 - INFO -   Vehicle capacity: 20
+2025-09-06 20:01:20 - INFO -   Total instances: 4
+2025-09-06 20:01:20 - INFO -   Base timeout per instance: 1.0s
+2025-09-06 20:01:20 - INFO -   Retry strategy: up to 4 attempts with timeouts:
+2025-09-06 20:01:20 - INFO -     - Attempt 1: 1.0s
+2025-09-06 20:01:20 - INFO -     - Attempt 2: 2.0s
+2025-09-06 20:01:20 - INFO -     - Attempt 3: 4.0s
+2025-09-06 20:01:20 - INFO -     - Attempt 4: 8.0s
+2025-09-06 20:01:20 - INFO -   Parallel threads: 2
+2025-09-06 20:01:20 - INFO -   Base seed: 42
+2025-09-06 20:01:20 - INFO -   Output directory: benchmark_cpu/results/test_fixed_routes
+2025-09-06 20:01:20 - INFO -   Log file: benchmark_cpu/results/test_fixed_routes/benchmark_log.txt
+2025-09-06 20:01:20 - INFO - 
+2025-09-06 20:01:20 - INFO - Instance distribution across threads: [2, 2]
+2025-09-06 20:01:20 - INFO - Total instances to process: 4
+2025-09-06 20:01:20 - INFO - Seed range: 42 to 45
+2025-09-06 20:01:20 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-06 20:01:20 - INFO - This ensures reproducibility regardless of thread count
+2025-09-06 20:01:20 - INFO - Estimated completion time:
+2025-09-06 20:01:20 - INFO -   Typical case: 2.2s (0.0 minutes)
+2025-09-06 20:01:20 - INFO -   Worst case: 30.0s (0.5 minutes)
+2025-09-06 20:01:20 - INFO - 
+2025-09-06 20:01:20 - INFO - Starting parallel execution...
+2025-09-06 20:01:20 - INFO - ----------------------------------------------------------------------
+2025-09-06 20:01:22 - INFO - Thread 0: ✓ Completed - Processed 2 instances (0 failed, 0 needed retries)
+2025-09-06 20:01:24 - INFO - Thread 1: ✓ Completed - Processed 2 instances (0 failed, 1 needed retries)
+2025-09-06 20:01:24 - INFO - ----------------------------------------------------------------------
+2025-09-06 20:01:24 - INFO - EXECUTION SUMMARY
+2025-09-06 20:01:24 - INFO - ----------------------------------------------------------------------
+2025-09-06 20:01:24 - INFO - Total execution time: 4.04s (0.07 minutes)
+2025-09-06 20:01:24 - INFO - Average time per instance: 1.009s
+2025-09-06 20:01:24 - INFO - Threads successful: 2/2
+2025-09-06 20:01:24 - INFO - Threads failed: 0/2
+2025-09-06 20:01:24 - INFO - JSON files created: 2
+2025-09-06 20:01:24 - INFO - Total instances successfully processed: 4
+2025-09-06 20:01:24 - INFO - Total instances that needed retries: 1
+2025-09-06 20:01:24 - INFO - Total instances failed (after all retries): 0
+2025-09-06 20:01:24 - INFO - Retry rate: 25.0%
+2025-09-06 20:01:24 - INFO - Final failure rate: 0.0%
+2025-09-06 20:01:24 - INFO - 
+JSON files:
+2025-09-06 20:01:24 - INFO -   thread_00_n10_20250906_200122.json (3.1 KB)
+2025-09-06 20:01:24 - INFO -   thread_01_n10_20250906_200124.json (3.1 KB)
+2025-09-06 20:01:24 - INFO - 
+2025-09-06 20:01:24 - INFO - Results saved in: benchmark_cpu/results/test_fixed_routes
+2025-09-06 20:01:24 - INFO - Log file: benchmark_cpu/results/test_fixed_routes/benchmark_log.txt
+2025-09-06 20:01:24 - INFO - ======================================================================

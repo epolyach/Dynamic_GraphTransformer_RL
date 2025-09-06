@@ -57,27 +57,101 @@ Location: benchmark_cpu/
 ### OR-Tools GLS (Latest CPU Implementation) ⭐
 **Main script:** `benchmark_cpu/scripts/ortools/production/run_ortools_gls.py`
 
-The latest OR-Tools GLS implementation with ProcessPoolExecutor parallel processing:
+Integrated OR-Tools GLS benchmark runner with ProcessPoolExecutor parallel processing, built-in instance generation, and deterministic seed management.
 
+#### Usage
 ```bash
-# Direct execution
-python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py
-
-# Or use the interactive test runner
-./run_ortools_test.sh
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py \
+    --subfolder SUBFOLDER \
+    --n N \
+    --instances NI \
+    --timeout TIMEOUT \
+    --threads NT \
+    [--capacity CAPACITY] \
+    [--seed SEED] \
+    [--verbose]
 ```
 
-**Features:**
-- ProcessPoolExecutor for true parallel processing across CPU cores
-- Configurable thread counts for different problem sizes
-- Striped instance allocation for optimal load balancing
-- Individual JSON output per thread
-- Support for N=10, 20, 50, 100 with automatic capacity calculation
+#### Arguments
+- `--subfolder`: Output directory name in `benchmark_cpu/results/`
+- `--n`: Problem size (number of customer nodes)
+- `--instances`: Total number of instances to run
+- `--timeout`: Base timeout in seconds per instance (will be increased on retries)
+- `--threads`: Number of parallel threads
+- `--capacity`: (Optional) Vehicle capacity. Auto-calculated if not provided
+- `--seed`: (Optional) Base seed for reproducible instance generation (default: 42)
+- `--verbose`: (Optional) Save detailed per-thread results in addition to CPC summary
 
-**Test configurations available:**
-- Quick test: N=10,20 with 2s timeout (~10 seconds)
-- Medium test: N=10,20,50,100 with 5s timeout (~40 seconds)  
-- Full production: 18 threads, multiple configurations
+#### Key Features
+- **Integrated Generation & Solving**: No external script dependencies, all functionality in one place
+- **Deterministic Instance Generation**: Each instance gets unique seed = base_seed + instance_id
+- **Thread-Independent Reproducibility**: Same instances generated regardless of thread count
+- **Striped Thread Allocation**: Optimal load balancing across threads
+- **Automatic Retry Logic**: Failed instances retry with 2x, 4x, 8x timeout
+- **Dual Output Modes**: 
+  - Default: Only `ortools_n{N}.json` with CPC values
+  - Verbose: Both detailed thread JSONs and CPC summary
+- **Real-time Monitoring**: Live progress updates and logging to `benchmark_log.txt`
+- **Complete Results**: Each thread produces JSON with instance data, solutions, and metadata
+- **Proper CVRP Routes**: Routes include depot returns between vehicles
+
+#### Examples
+
+Quick test (N=10, 20 instances, 2 threads):
+```bash
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py \
+    --subfolder "test_n10" \
+    --n 10 \
+    --instances 20 \
+    --timeout 1 \
+    --threads 2 \
+    --seed 42
+```
+
+Production run with verbose output (N=50, 1000 instances, 20 threads):
+```bash
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py \
+    --subfolder "production_n50" \
+    --n 50 \
+    --instances 1000 \
+    --timeout 30 \
+    --threads 20 \
+    --seed 42 \
+    --verbose
+```
+
+#### Output Structure
+```
+benchmark_cpu/results/
+└── [subfolder]/
+    ├── benchmark_log.txt                 # Real-time monitoring log
+    ├── ortools_n{N}.json                 # CPC values (always created)
+    ├── thread_00_n[N]_[timestamp].json   # Detailed results (--verbose only)
+    ├── thread_01_n[N]_[timestamp].json   # Detailed results (--verbose only)
+    └── ...                                # NT total thread files (--verbose only)
+```
+
+#### Analysis Tools
+
+**Histogram Visualization:**
+```bash
+cd benchmark_cpu/results/[subfolder]
+python3 make_log_norm_figure_cli.py --input ortools_n10.json --output histogram.png
+```
+
+**LaTeX Table Generation:**
+```bash
+cd benchmark_cpu/results/[subfolder]
+python3 generate_latex_table_line.py --input ortools_n10.json --timeout 1s
+```
+
+#### Seed Management
+- Seeds range from `base_seed` to `base_seed + instances - 1`
+- Instance i always gets seed = `base_seed + i`
+- Guarantees same instances regardless of thread count
+- Example: With base_seed=100 and 6 instances:
+  - Thread 0 (2 threads): processes instances [0,2,4] with seeds [100,102,104]
+  - Thread 1 (2 threads): processes instances [1,3,5] with seeds [101,103,105]
 
 ### Legacy CPU Benchmarks
 - Unified CPU benchmark
@@ -102,7 +176,7 @@ python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py
 CPU Solvers (labels match plot):
 - exact_dp (N ≤ 8)
 - ortools_greedy (exact_ortools_vrp_fixed)
-- ortools_gls
+- ortools_gls (OR-Tools-GLS)
 
 ## 3) GPU Benchmarks
 Location: benchmark_gpu/
@@ -188,15 +262,19 @@ pip install -r requirements.txt
 cd training_cpu
 python scripts/run_training.py --model GT+RL --config ../configs/tiny.yaml
 
-# 3. OR-Tools CPU benchmark test
-./run_ortools_test.sh
-# Choose option 1 for quick test
+# 3. OR-Tools CPU benchmark test (CPC only)
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py \
+    --subfolder "quicktest" --n 10 --instances 10 --timeout 1 --threads 2
 
-# 4. GPU benchmark test (if CUDA available)
+# 4. OR-Tools CPU benchmark with detailed output
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py \
+    --subfolder "quicktest_verbose" --n 10 --instances 10 --timeout 1 --threads 2 --verbose
+
+# 5. GPU benchmark test (if CUDA available)
 cd benchmark_gpu
 python scripts/benchmark_gpu_multi_n.py
 
-# 5. Generate comparison plots
+# 6. Generate comparison plots
 cd training_cpu
 python scripts/make_comparative_plot.py --config ../configs/small.yaml
 ```
@@ -221,9 +299,17 @@ Dynamic_GraphTransformer_RL/
 │   ├── scripts/
 │   │   └── ortools/             # OR-Tools scripts
 │   │       ├── production/      # Main OR-Tools runners
-│   │       ├── benchmarks/      # Core benchmark scripts  
-│   │       └── monitoring/      # Progress monitoring
+│   │       │   ├── run_ortools_gls.py           # Integrated benchmark runner
+│   │       │   ├── make_log_norm_figure_cli.py  # Histogram visualization
+│   │       │   └── generate_latex_table_line.py # LaTeX table generation
+│   │       ├── benchmarks/      # Legacy benchmark scripts  
+│   │       ├── monitoring/      # Progress monitoring
+│   │       └── README.md        # OR-Tools documentation
 │   └── results/                 # CPU benchmark results
+│       └── [subfolder]/         # User-defined output directories
+│           ├── benchmark_log.txt
+│           ├── ortools_n{N}.json # CPC values
+│           └── thread_*.json     # Detailed results (--verbose only)
 ├── benchmark_gpu/                # GPU benchmarking
 │   ├── scripts/
 │   │   ├── benchmark_gpu_*.py   # Core GPU benchmarks
@@ -239,7 +325,6 @@ Dynamic_GraphTransformer_RL/
 │       └── logs/                # Output logs
 ├── paper_dgt/                    # Research paper
 ├── test_ortools_parallel.py     # OR-Tools test runner
-├── run_ortools_test.sh          # Interactive test script
 └── ORTOOLS_SETUP_SUMMARY.md     # Setup documentation
 ```
 
@@ -247,13 +332,23 @@ Dynamic_GraphTransformer_RL/
 
 ### Latest OR-Tools Implementation
 - **Location:** `benchmark_cpu/scripts/ortools/production/run_ortools_gls.py`
-- **Features:** ProcessPoolExecutor, configurable threading, production-ready
-- **Performance:** Scales across multiple CPU cores with optimal load balancing
+- **Features:** 
+  - Integrated instance generation with deterministic seeds
+  - ProcessPoolExecutor for parallel processing
+  - Automatic retry logic with exponential backoff (1x, 2x, 4x, 8x timeout)
+  - Dual output modes (CPC-only or detailed with --verbose)
+  - Real-time logging and progress monitoring
+- **Performance:** Scales across multiple CPU cores with optimal striped allocation
+- **Reproducibility:** Same instances generated regardless of thread count
+- **Analysis Tools:** 
+  - `make_log_norm_figure_cli.py`: Generate histograms with log-normal fits
+  - `generate_latex_table_line.py`: Create publication-ready LaTeX tables
 
 ### Organized Results
 - All plots, tables, and data files properly organized by type
 - Clear separation between CPU and GPU benchmarking results
-- Automated test runners with multiple configuration options
+- User-defined output directories via `--subfolder` argument
+- Automatic CPC extraction for statistical analysis
 
 ### Strict Validation
 - All generated routes are validated for CVRP constraints when `strict_validation: true` (default)
@@ -262,6 +357,7 @@ Dynamic_GraphTransformer_RL/
 
 ### Reproducibility
 - Fixed seeds for training/validation/testing
+- Deterministic instance generation with base_seed + instance_id
 - All parameters in YAML configs
 - No hidden defaults or fallbacks
 
@@ -282,6 +378,18 @@ Benchmark results for N=6 customers showing statistical precision improvements w
 - GPU and CPU solvers achieve equivalent solution quality (overlapping confidence intervals)
 - Statistical precision improves dramatically with larger sample sizes (SEM reduces by ~10× with 10K instances)
 - The latest OR-Tools GLS implementation provides robust parallel processing for production use
+
+### OR-Tools GLS Statistical Properties (N=10, 1000 instances)
+
+| Metric | Value |
+|--------|-------|
+| Geometric Mean | 0.4753 |
+| Geometric Std Dev | 1.2001 |
+| 95% Range | [0.3324, 0.6795] |
+| KS Test p-value | 0.98 |
+| Algorithm | OR-Tools-GLS |
+
+**CPC values follow a log-normal distribution**, confirmed by multiple normality tests on log(CPC).
 
 ## 8) Citation
 
