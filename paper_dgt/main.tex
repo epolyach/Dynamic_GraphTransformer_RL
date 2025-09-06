@@ -52,78 +52,49 @@
 
 \section{Optimal and suboptimal benchmarks}
 
-\begin{figure*}[t!]
-\centering
-   \includegraphics[width=160mm]{figures/benchmark.eps}
-   \caption{Performance comparison of CVRP solvers on CPU benchmarks. 
-       \textbf{Top panel:} Solve time (log scale) versus problem size for different solvers. 
-       Exact DP provides optimal solutions but is limited to small instances (N$\leq$8). 
-       OR-Tools Greedy operates in exact mode for N$\leq$8 (solid line) and switches to heuristic mode for larger instances (dashed line). 
-       OR-Tools GLS with 2-second time limit maintains consistent performance across all problem sizes (dotted line). 
-       \textbf{Bottom panel:} Cost per customer (CPC) showing solution quality with error bars indicating standard deviation across 1000 instances per problem size. 
-       The vertical line at N=8.5 marks the transition point between exact and heuristic approaches for OR-Tools Greedy.}
-\label{fig:benchmark}
-% trim={5pt 10pt 5pt 8pt}, clip
-\end{figure*}
-
 
 \begin{figure}[t!]
 \centering
-   \includegraphics[width=85mm]{figures/log_norm_N10.eps}
-   \caption{Distribution of log(CPC) for N=10 CVRP instances solved using GPU dynamic programming. The histogram shows 100,000 random instances with the fitted normal distribution overlaid ($\mu=-0.748$, $\sigma=0.183$). The log-normal fit demonstrates that CPC follows a log-normal distribution (Kolmogorov-Smirnov test, $p=0.189$).}
+   \includegraphics[width=85mm]{figures/cpc_histogram_paper_100k.eps}
+   \caption{Distribution of CPC for N=10 CVRP instances solved using GPU dynamic programming. The histogram shows 100,000 random instances with the fitted log-normal distribution overlaid ($\mu=-0.748$, $\sigma=0.183$). The log-normal fit demonstrates that CPC follows a log-normal distribution (Kolmogorov-Smirnov test, $p=0.189$).}
 \label{fig:benchmark}
 % trim={5pt 10pt 5pt 8pt}, clip
 \end{figure}
 
 
-\begin{table*}[htbp]
+
+\begin{table*}[htbp] 
 \centering
-\caption{GPU CVRP Performance with Log-normal Statistics and Normality Tests}
-\label{tab:gpu-performance-complete}
-\begin{tabular}{@{}l c c S[table-format=1.4] S[table-format=1.4] c c c c c c@{}}
+\caption{Optimal and sub-optimal (OR-Tools GLS) CPC values (10k instances per configuration)}
+\label{tab:ortools-gls-timeout}
+\small \begin{tabular}{@{}l c c c S[table-format=1.4] S[table-format=1.4] c c c c c c@{}}
 \toprule
-\textbf{Method} & \textbf{N} & \textbf{Cap.} & {\textbf{GM}} & {\textbf{GSD}} & 
-\textbf{95\% Range} & \textbf{95\% CI} & \textbf{KS} & \textbf{D'Agost.} & \textbf{JB} & \textbf{AD} \\
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & \textbf{Timeout} & {\textbf{GM}} & {\textbf{GSD}} & \textbf{95\% Range} & \textbf{95\% CI} & \textbf{KS} & \textbf{D'Agost.} & \textbf{JB} & \textbf{AD} \\
 \midrule
-Exact (100k) & 10 & 20 & 0.4735 & 1.2012 & [0.3306, 0.6782] & [0.4730, 0.4741] & $0.19$ & $<$0.001 & $<$0.001 & $1.405^*$ \\
-Exact (10k) & 10 & 20 & 0.4737 & 1.1996 & [0.3316, 0.6767] & [0.4720, 0.4754] & $0.93$ & $0.37$ & $0.37$ & $0.295$ \\
-Heuristic & 10 & 20 & 0.4831 & 1.2064 & [0.3344, 0.6978] & [0.4813, 0.4849] & $0.87$ & $0.44$ & $0.44$ & $0.353$ \\
-Heuristic* & 20 & 30 & 0.3319 & 1.1514 & [0.2518, 0.4376] & [0.3310, 0.3328] & $1.00$ & $0.85$ & $0.86$ & $0.093$ \\
-Heuristic* & 50 & 40 & 0.2303 & 1.1291 & [0.1815, 0.2921] & [0.2297, 0.2308] & $0.73$ & $0.29$ & $0.28$ & $0.400$ \\
-OR-Tools GLS & 100 & 50 & 0.1811 & 1.1058 & [0.1487, 0.2206] & [0.1776, 0.1847] & $0.47$ & $0.39$ & $0.49$ & $0.521$ \\
+Exact (100k) & 10 & 20 & -- & 0.4735 & 1.2012 & [0.3306, 0.6782] & [0.4730, 0.4741] & $0.19$ & $<$0.001 & $<$0.001 & $1.405^*$ \\
+Exact (10k)  & 10 & 20 & -- & 0.4737 & 1.1996 & [0.3316, 0.6767] & [0.4720, 0.4754] & $0.93$ & $0.37$ & $0.37$ & $0.295$ \\
+OR-Tools GLS & 10 & 20 & 2s & 0.4744 & 1.2025 & [0.3305, 0.6809] & [0.4727, 0.4761] & $0.91$ & $0.08$ & $0.08$ & $0.503$ \\
+OR-Tools GLS & 20 & 30 & 2s & 0.3257 & 1.1473 & [0.2488, 0.4264] & [0.3248, 0.3266] & $0.15$ & $<$0.01 & $<$0.01 & $1.711*$ \\
+OR-Tools GLS & 50 & 40 & 10s & 0.2366 & 1.1233 & [0.1884, 0.2972] & [0.2270, 0.2467] & $0.89$ & $0.33$ & $0.55$ & $0.411$ \\
+OR-Tools GLS & 50 & 40 & 20s & 0.2391 & 1.1270 & [0.1892, 0.3023] & [0.2323, 0.2462] & $0.05$ & $0.12$ & $0.32$ & $1.580*$ \\
+OR-Tools GLS & 100 & 50 & 10s & 0.1729 & 1.1061 & [0.1419, 0.2108] & [0.1676, 0.1784] & $$<$0.01$ & $0.09$ & $0.11$ & $2.018*$ \\
+OR-Tools GLS & 100 & 50 & 20s & 0.1673 & 1.1353 & [0.1305, 0.2146] & [0.1612, 0.1737] & $$<$0.01$ & $$<$0.01$ & $$<$0.01$ & $4.906*$ \\
+OR-Tools GLS & 100 & 50 & 30s & 0.1552 & 1.0338 & [0.1454, 0.1657] & [0.1538, 0.1567] & $$<$0.01$ & $$<$0.01$ & $0.06$ & $4.285*$ \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
 \small
 \item GM: Geometric Mean, GSD: Geometric Standard Deviation
-\item 95\% Range: Individual value range GM $\times$ [GSD$^{-1.96}$, GSD$^{+1.96}$]
-\item 95\% CI: Confidence interval for the geometric mean
+\item 95\% Range: GM $\times$ [GSD$^{-1.96}$, GSD$^{+1.96}$]
 \item KS: Kolmogorov-Smirnov, D'Agost.: D'Agostino, JB: Jarque-Bera (p-values for log(CPC) normality)
 \item AD: Anderson-Darling test statistic (critical value at 5\% = 0.787; * indicates rejection)
-\item * Based on partial benchmark data from GPU heuristic
-\item OR-Tools GLS: 100 instances with 1s time limit per instance
+\item Timeout column indicates per-instance time limit used by OR-Tools GLS
+\item Test run with 20 instances per configuration
 \end{tablenotes}
 \end{table*}
 
 
 
-\begin{table*}[htbp]
-\centering
-\caption{GPU Improved Heuristic Performance (10,000 instances)}
-\label{tab:gpu-heuristic-10000}
-\begin{tabular}{@{}c c S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] c@{}}
-\toprule
-\textbf{N} & \textbf{Capacity} & {\textbf{Mean CPC}} & {\textbf{Std CPC}} & {\textbf{SEM}} & \textbf{2×SEM/Mean(\%)} \\
-\midrule
- 10 & 20 & 0.4815 & 0.0886 & 0.0003 & 0.12\% \\ %exact-dp 100k
- 10 & 20 & 0.4816 & 0.0881 & 0.0008 & 0.37\% \\ %exact-dp 
- 10 & 20 & 0.4916 & 0.0929 & 0.0009 & 0.38\% \\
- 20 & 30 & 0.3353 & 0.0476 & 0.0005 & 0.28\% \\
- 50 & 40 & 0.2316 & 0.0283 & 0.0003 & 0.24\% \\
-100 & 50 & 0.1753 & 0.0208 & 0.0002 & 0.24\% \\
-\bottomrule
-\end{tabular}
-\end{table*}
 
 
 
@@ -534,3 +505,67 @@ references without numbering, and not on a new page. To do so please use the fol
 \bottomrule
 \end{tabular}
 \end{table*}
+
+
+
+\begin{figure*}[t!]
+\centering
+   \includegraphics[width=160mm]{figures/benchmark.eps}
+   \caption{Performance comparison of CVRP solvers on CPU benchmarks. 
+       \textbf{Top panel:} Solve time (log scale) versus problem size for different solvers. 
+       Exact DP provides optimal solutions but is limited to small instances (N$\leq$8). 
+       OR-Tools Greedy operates in exact mode for N$\leq$8 (solid line) and switches to heuristic mode for larger instances (dashed line). 
+       OR-Tools GLS with 2-second time limit maintains consistent performance across all problem sizes (dotted line). 
+       \textbf{Bottom panel:} Cost per customer (CPC) showing solution quality with error bars indicating standard deviation across 1000 instances per problem size. 
+       The vertical line at N=8.5 marks the transition point between exact and heuristic approaches for OR-Tools Greedy.}
+\label{fig:benchmark}
+% trim={5pt 10pt 5pt 8pt}, clip
+\end{figure*}
+
+\begin{table*}[htbp]
+\centering
+\caption{GPU CVRP Performance with Log-normal Statistics and Normality Tests}
+\label{tab:gpu-performance-complete}
+\begin{tabular}{@{}l c c S[table-format=1.4] S[table-format=1.4] c c c c c c@{}}
+\toprule
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & {\textbf{GM}} & {\textbf{GSD}} & 
+\textbf{95\% Range} & \textbf{95\% CI} & \textbf{KS} & \textbf{D'Agost.} & \textbf{JB} & \textbf{AD} \\
+\midrule
+Exact (100k) & 10 & 20 & 0.4735 & 1.2012 & [0.3306, 0.6782] & [0.4730, 0.4741] & $0.19$ & $<$0.001 & $<$0.001 & $1.405^*$ \\
+Exact (10k) & 10 & 20 & 0.4737 & 1.1996 & [0.3316, 0.6767] & [0.4720, 0.4754] & $0.93$ & $0.37$ & $0.37$ & $0.295$ \\
+Heuristic & 10 & 20 & 0.4831 & 1.2064 & [0.3344, 0.6978] & [0.4813, 0.4849] & $0.87$ & $0.44$ & $0.44$ & $0.353$ \\
+Heuristic* & 20 & 30 & 0.3319 & 1.1514 & [0.2518, 0.4376] & [0.3310, 0.3328] & $1.00$ & $0.85$ & $0.86$ & $0.093$ \\
+Heuristic* & 50 & 40 & 0.2303 & 1.1291 & [0.1815, 0.2921] & [0.2297, 0.2308] & $0.73$ & $0.29$ & $0.28$ & $0.400$ \\
+OR-Tools GLS & 100 & 50 & 0.1811 & 1.1058 & [0.1487, 0.2206] & [0.1776, 0.1847] & $0.47$ & $0.39$ & $0.49$ & $0.521$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item GM: Geometric Mean, GSD: Geometric Standard Deviation
+\item 95\% Range: Individual value range GM $\times$ [GSD$^{-1.96}$, GSD$^{+1.96}$]
+\item 95\% CI: Confidence interval for the geometric mean
+\item KS: Kolmogorov-Smirnov, D'Agost.: D'Agostino, JB: Jarque-Bera (p-values for log(CPC) normality)
+\item AD: Anderson-Darling test statistic (critical value at 5\% = 0.787; * indicates rejection)
+\item * Based on partial benchmark data from GPU heuristic
+\item OR-Tools GLS: 100 instances with 1s time limit per instance
+\end{tablenotes}
+\end{table*}
+
+\begin{table*}[htbp]
+\centering
+\caption{GPU Improved Heuristic Performance (10,000 instances)}
+\label{tab:gpu-heuristic-10000}
+\begin{tabular}{@{}c c S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] c@{}}
+\toprule
+\textbf{N} & \textbf{Capacity} & {\textbf{Mean CPC}} & {\textbf{Std CPC}} & {\textbf{SEM}} & \textbf{2×SEM/Mean(\%)} \\
+\midrule
+ 10 & 20 & 0.4815 & 0.0886 & 0.0003 & 0.12\% \\ %exact-dp 100k
+ 10 & 20 & 0.4816 & 0.0881 & 0.0008 & 0.37\% \\ %exact-dp 
+ 10 & 20 & 0.4916 & 0.0929 & 0.0009 & 0.38\% \\
+ 20 & 30 & 0.3353 & 0.0476 & 0.0005 & 0.28\% \\
+ 50 & 40 & 0.2316 & 0.0283 & 0.0003 & 0.24\% \\
+100 & 50 & 0.1753 & 0.0208 & 0.0002 & 0.24\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
