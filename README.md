@@ -54,8 +54,33 @@ Notes:
 ## 2) CPU Benchmarks
 Location: benchmark_cpu/
 
-### Current Unified CPU Benchmark
-- Generate per-instance CSV and evaluate solvers
+### OR-Tools GLS (Latest CPU Implementation) ⭐
+**Main script:** `benchmark_cpu/scripts/ortools/production/run_ortools_gls.py`
+
+The latest OR-Tools GLS implementation with ProcessPoolExecutor parallel processing:
+
+```bash
+# Direct execution
+python3 benchmark_cpu/scripts/ortools/production/run_ortools_gls.py
+
+# Or use the interactive test runner
+./run_ortools_test.sh
+```
+
+**Features:**
+- ProcessPoolExecutor for true parallel processing across CPU cores
+- Configurable thread counts for different problem sizes
+- Striped instance allocation for optimal load balancing
+- Individual JSON output per thread
+- Support for N=10, 20, 50, 100 with automatic capacity calculation
+
+**Test configurations available:**
+- Quick test: N=10,20 with 2s timeout (~10 seconds)
+- Medium test: N=10,20,50,100 with 5s timeout (~40 seconds)  
+- Full production: 18 threads, multiple configurations
+
+### Legacy CPU Benchmarks
+- Unified CPU benchmark
   ```bash
   cd benchmark_cpu
   python scripts/run_exact.py \
@@ -66,7 +91,7 @@ Location: benchmark_cpu/
     --csv results/csv/cpu_benchmark.csv
   ```
 
-- Plot CPU results (reads the same CSV)
+- Plot CPU results
   ```bash
   cd benchmark_cpu
   python scripts/plot_cpu_benchmark.py \
@@ -74,20 +99,7 @@ Location: benchmark_cpu/
     --output plots/cpu_benchmark.png
   ```
 
-### Archived CPU Benchmarks (Historical)
-- Legacy exact CPU benchmark (uses EnhancedCVRPGenerator)
-  ```bash
-  cd benchmark_cpu
-  python scripts/benchmark_exact_cpu.py
-  ```
-
-- Modified exact CPU benchmark (optimized version)
-  ```bash
-  cd benchmark_cpu
-  python scripts/benchmark_exact_cpu_modified.py
-  ```
-
-Solvers (labels match plot):
+CPU Solvers (labels match plot):
 - exact_dp (N ≤ 8)
 - ortools_greedy (exact_ortools_vrp_fixed)
 - ortools_gls
@@ -95,56 +107,165 @@ Solvers (labels match plot):
 ## 3) GPU Benchmarks
 Location: benchmark_gpu/
 
-**Note**: GPU scripts require `config.json` in `benchmark_cpu/scripts/` for configuration parameters.
+### Organized Structure (Updated Sept 2025)
+```
+benchmark_gpu/
+├── scripts/
+│   ├── benchmark_gpu_*.py        # Core GPU benchmarks (9 scripts)
+│   ├── plotting/                 # Visualization scripts (7 files)
+│   ├── table_generation/         # LaTeX table generation (6 files)
+│   ├── monitoring/               # Progress monitoring (3 files)
+│   ├── tests/                    # Test scripts (9 files)
+│   ├── examples/                 # Example scripts (3 files)
+│   └── archive/                  # Backup files
+└── results/
+    ├── plots/                    # Generated figures
+    ├── tables/                   # LaTeX tables
+    ├── data/                     # CSV/JSON results
+    └── logs/                     # Output logs
+```
 
+### Core GPU Benchmarks
 - High-precision GPU benchmark (10,000 instances)
   ```bash
-  cd benchmark_cpu
+  cd benchmark_gpu
   python scripts/benchmark_gpu_10k.py
   ```
 
 - GPU vs CPU comparison benchmark (matched instances)
   ```bash
-  cd benchmark_cpu
+  cd benchmark_gpu
   python scripts/benchmark_gpu_exact_matched.py
   ```
 
-- Adaptive N GPU benchmark (N=5 to N=20, variable instances using 10^(7-N/5) formula)
+- Adaptive N GPU benchmark (N=5 to N=20)
   ```bash
-  cd benchmark_cpu
+  cd benchmark_gpu
   python scripts/benchmark_gpu_adaptive_n.py
   ```
 
-- Multi-N GPU benchmark (N=5 to N=10, 10K instances each)
+- Advanced GPU GLS heuristic
   ```bash
-  cd benchmark_cpu
-  python scripts/benchmark_gpu_multi_n.py
+  cd benchmark_gpu
+  python scripts/benchmark_gpu_heuristic_gls_advanced.py
   ```
 
+### Visualization and Analysis
 - Plot GPU benchmark results
   ```bash
-  cd benchmark_cpu
-  python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
+  cd benchmark_gpu
+  python scripts/plotting/plot_gpu_benchmark.py --csv results/data/gpu_benchmark_results.csv
   ```
 
 - Plot CPU vs GPU comparison
   ```bash
-  cd benchmark_cpu
-  python scripts/plot_cpu_gpu_comparison.py \
+  cd benchmark_gpu
+  python scripts/plotting/plot_cpu_gpu_comparison.py \
     --cpu-csv ../benchmark_cpu/results/csv/cpu_benchmark.csv \
-    --gpu-csv results/csv/gpu_benchmark_results.csv
+    --gpu-csv results/data/gpu_benchmark_results.csv
+  ```
+
+- Generate LaTeX tables
+  ```bash
+  cd benchmark_gpu
+  python scripts/table_generation/generate_gpu_latex_tables.py
   ```
 
 GPU solvers:
 - exact_gpu_dp (exact for N ≤ 16)
 - exact_gpu_improved (exact for tiny N; heuristic for larger N; raises on failure — no fallback)
+- heuristic_gpu_gls (GPU-accelerated GLS)
 
-### Configuration
-GPU benchmarks use `benchmark_cpu/scripts/config.json` with parameters:
-- Capacity: 30
-- Demand range: [1, 10]
-- Coordinate range: 100 (normalized to [0,1])
-- Random uniform distribution
+## 4) Quick Start
+
+```bash
+# 1. Setup environment
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+
+# 2. Quick training test
+cd training_cpu
+python scripts/run_training.py --model GT+RL --config ../configs/tiny.yaml
+
+# 3. OR-Tools CPU benchmark test
+./run_ortools_test.sh
+# Choose option 1 for quick test
+
+# 4. GPU benchmark test (if CUDA available)
+cd benchmark_gpu
+python scripts/benchmark_gpu_multi_n.py
+
+# 5. Generate comparison plots
+cd training_cpu
+python scripts/make_comparative_plot.py --config ../configs/small.yaml
+```
+
+## 5) Directory Structure (Updated Sept 2025)
+
+```
+Dynamic_GraphTransformer_RL/
+├── src/                          # Core implementation
+│   ├── generator/                # CVRP instance generator
+│   ├── models/                   # Neural network models
+│   └── benchmarking/            # Solver implementations
+│       ├── solvers/
+│       │   ├── cpu/             # CPU solvers (OR-Tools, DP)
+│       │   └── gpu/             # GPU solvers (CUDA)
+├── configs/                      # YAML configuration files
+├── training_cpu/                 # Neural network training
+│   ├── scripts/                 # Training scripts
+│   ├── lib/                     # Training utilities
+│   └── results/                 # Training results
+├── benchmark_cpu/                # CPU benchmarking ⭐
+│   ├── scripts/
+│   │   └── ortools/             # OR-Tools scripts
+│   │       ├── production/      # Main OR-Tools runners
+│   │       ├── benchmarks/      # Core benchmark scripts  
+│   │       └── monitoring/      # Progress monitoring
+│   └── results/                 # CPU benchmark results
+├── benchmark_gpu/                # GPU benchmarking
+│   ├── scripts/
+│   │   ├── benchmark_gpu_*.py   # Core GPU benchmarks
+│   │   ├── plotting/            # Visualization
+│   │   ├── table_generation/    # LaTeX tables
+│   │   ├── monitoring/          # Progress tracking
+│   │   ├── tests/               # Test scripts
+│   │   └── examples/            # Example scripts
+│   └── results/
+│       ├── plots/               # Generated figures
+│       ├── tables/              # LaTeX tables
+│       ├── data/                # Results data
+│       └── logs/                # Output logs
+├── paper_dgt/                    # Research paper
+├── test_ortools_parallel.py     # OR-Tools test runner
+├── run_ortools_test.sh          # Interactive test script
+└── ORTOOLS_SETUP_SUMMARY.md     # Setup documentation
+```
+
+## 6) Key Features
+
+### Latest OR-Tools Implementation
+- **Location:** `benchmark_cpu/scripts/ortools/production/run_ortools_gls.py`
+- **Features:** ProcessPoolExecutor, configurable threading, production-ready
+- **Performance:** Scales across multiple CPU cores with optimal load balancing
+
+### Organized Results
+- All plots, tables, and data files properly organized by type
+- Clear separation between CPU and GPU benchmarking results
+- Automated test runners with multiple configuration options
+
+### Strict Validation
+- All generated routes are validated for CVRP constraints when `strict_validation: true` (default)
+- Validation checks: depot start/end, capacity constraints, all customers visited exactly once
+- Can be disabled for speed: set `strict_validation: false` in config
+
+### Reproducibility
+- Fixed seeds for training/validation/testing
+- All parameters in YAML configs
+- No hidden defaults or fallbacks
+
+## 7) Performance Benchmarks
 
 ### CPU vs GPU Performance Comparison
 
@@ -157,289 +278,20 @@ Benchmark results for N=6 customers showing statistical precision improvements w
 | GPU    |    10,000 | 0.466432 | 0.089185 | 0.000892 |        0.38% | [0.464684, 0.468180] |
 | GPU    |   100,000 | 0.466568 | 0.089946 | 0.000284 |        0.12% | [0.466011, 0.467125] |
 
-**Analysis: Script Sources for Benchmark Data**
-
-| Benchmark Data | Source Script | Location | Purpose |
-|----------------|---------------|----------|----------|
-| **CPU (1000 instances)** | `run_exact.py` | `benchmark_cpu/scripts/` | Current unified CPU benchmark |
-| **CPU (1000 instances, legacy)** | `benchmark_exact_cpu_modified.py` | `benchmark_cpu/scripts/` | Archived CPU benchmark (historical) |
-| **GPU (1000 instances)** | `benchmark_gpu_exact_matched.py` | `benchmark_gpu/scripts/` | GPU vs CPU comparison |
-| **GPU (10,000 instances)** | `benchmark_gpu_10k.py` | `benchmark_gpu/scripts/` | High-precision GPU benchmark |
-| **GPU (100,000 instances)** | Modified `benchmark_gpu_10k.py` | `benchmark_gpu/scripts/` | Extended precision study |
-
 **Key Findings:**
 - GPU and CPU solvers achieve equivalent solution quality (overlapping confidence intervals)
 - Statistical precision improves dramatically with larger sample sizes (SEM reduces by ~10× with 10K instances)
-- The 100K instance benchmark provides sub-0.1% precision for robust statistical analysis
+- The latest OR-Tools GLS implementation provides robust parallel processing for production use
 
-### Multi-N Adaptive Instance Benchmark
+## 8) Citation
 
-GPU benchmark results across multiple problem sizes (N=5 to N=10) with adaptive instance counts optimized for statistical precision:
+If you use this codebase in your research, please cite:
 
-| N  | Instances    | Mean CPC | Std CPC  | SEM      | 2×SEM/Mean(%) |
-|----|--------------|----------|----------|----------|---------------|
-|  5 |    1,000,000 | 0.494321 | 0.097430 | 0.000097 |       0.0394% |
-|  6 |      630,957 | 0.466990 | 0.090131 | 0.000113 |       0.0486% |
-|  7 |      398,107 | 0.445905 | 0.080218 | 0.000127 |       0.0570% |
-|  8 |      251,188 | 0.425300 | 0.069546 | 0.000139 |       0.0653% |
-|  9 |      158,489 | 0.408855 | 0.064280 | 0.000161 |       0.0790% |
-| 10 |      100,000 | 0.394610 | 0.061011 | 0.000193 |       0.0978% |
-
-**Analysis: Adaptive Instance Count Strategy**
-
-| Problem Size | Instance Count Formula | Source Script | Purpose |
-|--------------|------------------------|---------------|---------|
-| **N=5 to N=20** | `int(10^(7-N/5))` | `benchmark_gpu_adaptive_n.py` | Adaptive precision study |
-| **Varying counts** | More instances for small N, fewer for large N | Formula: 10^(7-N/5) | Balanced computational cost vs precision |
-
-**Key Insights:**
-- **Computational scaling**: Instance counts decrease exponentially as N increases (10^6 for N=5 → 10^5 for N=10)
-- **Precision maintenance**: All benchmarks achieve sub-0.1% relative error (2×SEM/Mean < 0.1%)
-- **Cost trend**: Mean CPC decreases from 0.494 (N=5) to 0.395 (N=10), showing economies of scale
-- **Statistical power**: Ultra-high precision enables detection of small performance differences across problem sizes
-
-## Configuration Files
-
-| Config       | Customers | Capacity | Batches/Epoch | Purpose                     |
-|--------------|-----------|----------|---------------|-----------------------------|  
-| tiny.yaml    |        10 |       20 |           150 | Quick experiments (10% data)|
-| small.yaml   |        10 |       20 |          1500 | Full training on N=10       |
-| medium.yaml  |        20 |       30 |          1500 | Standard problems (default) |
-| large.yaml   |        50 |       40 |          1500 | Large-scale problems        |
-| huge.yaml    |       100 |       50 |          1500 | Maximum complexity          |
-
-Note: All configs inherit from `default.yaml` (1500 batches = 768,000 instances per epoch).
-
-## Project Structure
+```bibtex
+@inproceedings{polyachenko2025dynamic,
+  title={Dynamic Graph Transformer with Reinforcement Learning for CVRP},
+  author={Polyachenko, Evgeny},
+  booktitle={Proceedings of ICORES 2025},
+  year={2025}
+}
 ```
-.
-├── configs/                        # Configuration files
-│   ├── default.yaml               # Base configuration (all parameters)
-│   ├── tiny.yaml                  # N=10, 150 batches/epoch (quick testing)
-│   ├── small.yaml                 # N=10, 1500 batches/epoch (full training)
-│   ├── medium.yaml                # N=20, standard problems
-│   ├── large.yaml                 # N=50, large-scale problems
-│   └── huge.yaml                  # N=100, maximum complexity
-│
-├── src/                           # Core source code
-│   ├── generator/                 # Data generation
-│   │   └── generator.py          # Canonical CVRP instance generator
-│   ├── models/                    # Model implementations
-│   │   ├── model_factory.py      # Model creation factory
-│   │   ├── gat.py                # GAT+RL model
-│   │   ├── gt.py                 # GT+RL (Graph Transformer)
-│   │   ├── dgt.py                # DGT+RL (Dynamic Graph Transformer)
-│   │   └── greedy_gt.py          # GT-Greedy baseline
-│   ├── eval/                      # Evaluation utilities
-│   │   └── validation.py         # Strict route validation
-│   ├── metrics/                   # Metrics computation
-│   │   └── costs.py              # Cost utilities (CPC = cost/N)
-│   ├── utils/                     # General utilities
-│   │   ├── config.py             # YAML deep-merge + normalization
-│   │   └── seeding.py            # Reproducibility utilities
-│   └── benchmarking/              # Benchmarking utilities
-│       └── solvers/               # Solver implementations
-│           ├── cpu/              # CPU solvers
-│           └── gpu/              # GPU solvers
-│
-├── training_cpu/                  # CPU-based training
-│   ├── scripts/                  # Training scripts
-│   │   ├── run_training.py       # Main training script
-│   │   ├── run_training.sh       # Convenience script
-│   │   ├── make_comparative_plot.py # Generate comparison plots
-│   │   └── regenerate_analysis.py # Analysis regeneration
-│   ├── lib/                      # Training library
-│   │   ├── advanced_trainer.py   # RL training logic
-│   │   └── rollout_baseline.py   # Rollout baseline for REINFORCE
-│   └── results/                   # Local results directory
-│       ├── pytorch/              # Saved models
-│       ├── csv/                  # Training history
-│       └── plots/                # Generated plots
-│
-├── benchmark_cpu/                 # CPU benchmarking
-│   ├── scripts/                  # Benchmark scripts
-│   │   ├── run_exact.py          # Current unified benchmark runner
-│   │   ├── benchmark_exact_cpu.py # Archived CPU benchmark (historical)
-│   │   ├── benchmark_exact_cpu_modified.py # Archived optimized CPU benchmark
-│   │   ├── config.json           # Configuration for GPU benchmarks
-│   │   ├── plot_cpu_benchmark.py # Plot results
-│   │   ├── benchmark_cvrp_n7.py  # N=7 specific benchmarks
-│   │   ├── analyze_n7_results.py # N=7 results analysis
-│   │   └── run_n7_comparison.py  # N=7 comparison runner
-│   └── results/                   # Local results
-│       └── csv/                  # Benchmark data
-│
-├── benchmark_gpu/                 # GPU benchmarking
-│   ├── scripts/                  # GPU benchmark scripts
-│   │   ├── benchmark_gpu_10k.py  # High-precision GPU benchmark (10K instances)
-│   │   ├── benchmark_gpu_adaptive_n.py # Adaptive N-value benchmarks
-│   │   ├── benchmark_gpu_exact_matched.py # Matched instance comparison
-│   │   ├── benchmark_gpu_multi_n.py # Multi-N benchmarks (N=5-10)
-│   │   ├── plot_cpu_gpu_comparison.py # CPU vs GPU plotting
-│   │   ├── plot_gpu_benchmark.py # GPU results visualization
-│   │   └── run_exact.py          # Basic GPU benchmark runner
-│   └── results/                   # GPU benchmark results
-│       └── csv/                  # CSV data files
-│
-├── misc/                          # Test scripts and debugging files (gitignored)
-│   ├── test_*.py                 # Various test scripts
-│   ├── debug_*.py                # Debugging utilities
-│   └── *.md                      # Analysis documentation
-├── setup_venv.sh                  # Environment setup script
-├── activate_env.sh                # Environment activation helper
-├── gpu_cluster_monitor.sh         # GPU cluster monitoring tool
-├── requirements.txt               # Python dependencies
-├── README.md                      # This file
-└── WARP.md                        # WARP terminal integration guide
-```
-
-## Quickstart
-```bash
-# 1. Setup environment (one-time)
-./setup_venv.sh
-
-# 2. Activate environment (each session)
-source activate_env.sh
-
-# 3. Train models
-cd training_cpu
-# Train a single model
-python scripts/run_training.py --model GT+RL --config ../configs/small.yaml
-# Or train all models
-python scripts/run_training.py --all --config ../configs/tiny.yaml
-
-# 4. Generate comparison plots
-python scripts/make_comparative_plot.py --config ../configs/small.yaml
-
-# 5. Run CPU benchmarks (optional)
-cd ../benchmark_cpu
-python scripts/run_exact.py --config ../configs/small.yaml --instances 10 --time-limit 5
-python scripts/plot_cpu_benchmark.py --csv results/csv/cpu_benchmark.csv
-
-# 6. Run GPU benchmarks (optional)
-cd ../benchmark_gpu
-python scripts/benchmark_gpu_10k.py  # High-precision GPU benchmark
-python scripts/benchmark_gpu_adaptive_n.py  # Adaptive multi-N benchmark
-python scripts/plot_gpu_benchmark.py --csv results/csv/gpu_benchmark_results.csv
-```
-
-## Key Features
-
-### Strict Validation
-- All generated routes are validated for CVRP constraints when `strict_validation: true` (default)
-- Validation checks: depot start/end, capacity constraints, all customers visited exactly once
-- Can be disabled for speed: set `strict_validation: false` in config
-
-### Reproducibility
-- Fixed seeds for training/validation/testing
-- All parameters in YAML configs
-- No hidden defaults in code
-
-### Modular Design
-- Each component (training, benchmarking) has its own directory
-- Local results directories prevent pollution
-- Shared core utilities in `src/`
-
-For details, see the "Strict CVRP specification" section above.
-
-## GPU Cluster Monitoring
-
-### Overview
-The `gpu_cluster_monitor.sh` script provides real-time monitoring of multiple GPU servers in the cluster.
-It monitors gpu1.sedan.pro, gpu2.sedan.pro, and gpu3.sedan.pro for GPU availability and usage.
-
-### Features
-- Real-time GPU utilization monitoring across multiple servers
-- User tracking (shows who's using which GPU)
-- Temperature and memory usage reporting
-- Visual alerts when GPUs become available
-- Color-coded status indicators:
-  - 🟢 GREEN: GPU is free (< 5% memory)
-  - 🟡 YELLOW: Partially used (5-50% memory)
-  - 🔴 RED: Busy (> 50% memory)
-
-### Usage
-```bash
-# Make script executable (first time only)
-chmod +x gpu_cluster_monitor.sh
-
-# Single check with detailed information
-./gpu_cluster_monitor.sh
-
-# Continuous monitoring (refreshes every 10 seconds)
-./gpu_cluster_monitor.sh watch
-
-# Continuous monitoring with custom interval (e.g., 5 seconds)
-./gpu_cluster_monitor.sh watch 5
-
-# Quick one-line status check
-./gpu_cluster_monitor.sh quick
-
-# Show help
-./gpu_cluster_monitor.sh help
-```
-
-### Output Format
-
-#### Detailed View
-```
-╔══════════════════════════════════════╗
-║    GPU CLUSTER MONITOR               ║
-║    2024-09-04 14:05:23               ║
-╚══════════════════════════════════════╝
-
-━━━ GPU1 ━━━
-✅ GPU0:   2% mem,   0% util, 38°C [AVAILABLE]
-🔥 GPU1:  87% mem,  95% util, 72°C [username]
-
-━━━ GPU2 ━━━
-⚡ GPU0:  23% mem,  45% util, 55°C [user1,user2]
-✅ GPU1:   0% mem,   0% util, 35°C [AVAILABLE]
-
-═══ SUMMARY ═══
-🎉 FREE GPUS AVAILABLE on:
-   ✓ gpu1
-   ✓ gpu2
-⚡ Busy servers: gpu3.sedan.pro
-
-🔔 ALERT: FREE GPU(S) AVAILABLE! 🔔
-```
-
-#### Quick Status View
-```
-[gpu1:✅][gpu2:✅][gpu3:🔥] 2 FREE
-```
-
-### Requirements
-- SSH access to GPU servers (gpu1/2/3.sedan.pro)
-- nvidia-smi installed on target servers
-- SSH key authentication configured (recommended)
-
-
-### GPU Heuristic Solver (PyTorch)
-Location: `benchmark_gpu/scripts/benchmark_gpu_heuristic_gls.py`
-
-GPU-accelerated heuristic solver using PyTorch CUDA tensors. Implements greedy nearest neighbor algorithm entirely on GPU with NO CPU fallback.
-
-Dependencies:
-```bash
-pip install torch  # with CUDA support
-```
-
-Usage:
-```bash
-cd benchmark_gpu
-# Test GPU greedy heuristic on small problems
-python scripts/benchmark_gpu_heuristic_gls.py --instances 100 --batch-size 50 --configs 10,20
-
-# Full benchmark with all configurations
-python scripts/benchmark_gpu_heuristic_gls.py --instances 1000 --batch-size 100 --configs all
-```
-
-Features:
-- **GPU-only**: Requires CUDA GPU, will fail if no GPU available (no fallback)
-- **Batch processing**: Solves multiple instances in parallel on GPU
-- **PyTorch tensors**: All operations use CUDA tensor operations
-- **Configurations**: N={10,20,50,100} with appropriate capacities
-
-GPU Solver: `src/benchmarking/solvers/gpu/heuristic_gpu_simple.py`

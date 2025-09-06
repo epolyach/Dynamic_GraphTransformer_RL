@@ -1,7 +1,0 @@
-Log-Normal Distribution Test for CPC Data
-Data file: gpu_dp_exact_results_20250905_064755.csv
-Sample size: 10,000
-Timestamp: 20250905_065532
-Conclusion: STRONG EVIDENCE that CPC follows a log-normal distribution
-
-Detailed results available in terminal output.
