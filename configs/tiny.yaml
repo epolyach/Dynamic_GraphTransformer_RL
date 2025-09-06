@@ -1,5 +1,5 @@
 # Tiny config - Quick experiments with reduced training
-# Same problem as small (N=10) but only 10% of training data
+# Same problem as small (N=10) but reduced training data
 working_dir_path: "training_cpu/results/tiny"
 
 problem:
@@ -7,7 +7,13 @@ problem:
   vehicle_capacity: 20
 
 training:
-  num_batches_per_epoch: 50   # 10% of paper's 1500 (76,800 instances/epoch)
+  batches_per_epoch: 10        # Much smaller for quick testing
+  batch_size: 64               # Reasonable batch size
+  n_epochs: 5                  # Few epochs for testing
+  baseline:                    # Baseline config must be nested under training
+    eval_batches: 2            # Small number for quick evaluation
+    update_frequency: 2        # Update every 2 epochs
+    warmup_epochs: 0           # No warmup for quick testing
 
 # Smaller model for faster training
 model:

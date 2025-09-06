@@ -132,3 +132,25 @@ logging:
 benchmark:
   scaling:
     distance_scale: 100000  # Used by GPU/CPU internals for integer distance scaling (results scaled back)
+
+# =============================
+# GPU Configuration
+# =============================
+gpu:
+  enabled: true                        # Enable GPU training if available
+  device: "cuda:0"                     # GPU device to use (cuda:0, cuda:1, etc.)
+  mixed_precision: true                # Enable automatic mixed precision (FP16)
+  memory_fraction: 0.95                # Fraction of GPU memory to use
+  pin_memory: true                     # Pin memory for faster CPU-GPU transfer
+  non_blocking: true                   # Non-blocking tensor transfers
+  gradient_accumulation_steps: 1       # Gradient accumulation for larger effective batch size
+  num_workers: 4                       # Data loading workers
+  prefetch_factor: 2                   # Batches to prefetch
+
+# =============================
+# Memory optimization
+# =============================
+memory:
+  clear_cache_interval: 5              # Clear GPU cache every N epochs
+  memory_check_interval: 50            # Check memory usage every N batches
+  memory_warning_threshold: 0.9        # Warn if memory usage exceeds this fraction
