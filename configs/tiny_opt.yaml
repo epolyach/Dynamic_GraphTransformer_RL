@@ -1,0 +1,30 @@
+# Tiny-OPT config - Isolated optimizer experiment (β2 scaling, bs=1)
+# Deep-merged with configs/default.yaml
+
+working_dir_path: "training_cpu/results/tiny_opt"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 20
+
+training:
+  num_batches_per_epoch: 150
+  batch_size: 1
+  num_epochs: 100
+  learning_rate: 1e-4
+  validation_frequency: 2
+
+# Keep model small, matching tiny.yaml scale
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+# Optimizer experiment controls (isolated to this config)
+optimizer_experiments:
+  override_beta2: true
+  base_batch_size: 512
+  base_beta2: 0.999
+  normalize_advantages: none   # critical to avoid zero gradients with bs=1
+  eps: 1.0e-8
+
