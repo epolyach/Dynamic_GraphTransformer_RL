@@ -7,13 +7,9 @@ problem:
   vehicle_capacity: 20
 
 training:
-  batches_per_epoch: 10        # Much smaller for quick testing
-  batch_size: 64               # Reasonable batch size
-  n_epochs: 5                  # Few epochs for testing
-  baseline:                    # Baseline config must be nested under training
-    eval_batches: 2            # Small number for quick evaluation
-    update_frequency: 2        # Update every 2 epochs
-    warmup_epochs: 0           # No warmup for quick testing
+  num_batches_per_epoch: 150  # Paper's scale: 768,000 instances per epoch
+  batch_size: 512             # Default batch size (paper's value)
+  num_epochs: 100             # Default number of epochs
 
 # Smaller model for faster training
 model:
