@@ -1,0 +1,1 @@
+epoch,train_loss,train_cost,val_cost,learning_rate,temperature,gpu_memory_gb,time_per_epoch

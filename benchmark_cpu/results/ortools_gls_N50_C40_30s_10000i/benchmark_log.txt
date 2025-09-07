@@ -1,0 +1,110 @@
+2025-09-06 22:40:13 - INFO - ======================================================================
+2025-09-06 22:40:13 - INFO - OR-Tools GLS Parallel Benchmark Runner
+2025-09-06 22:40:13 - INFO - ======================================================================
+2025-09-06 22:40:13 - INFO - Configuration:
+2025-09-06 22:40:13 - INFO -   Problem size (N): 50
+2025-09-06 22:40:13 - INFO -   Vehicle capacity: 40
+2025-09-06 22:40:13 - INFO -   Total instances: 10000
+2025-09-06 22:40:13 - INFO -   Base timeout per instance: 30.0s
+2025-09-06 22:40:13 - INFO -   Retry strategy: up to 4 attempts with timeouts:
+2025-09-06 22:40:13 - INFO -     - Attempt 1: 30.0s
+2025-09-06 22:40:13 - INFO -     - Attempt 2: 60.0s
+2025-09-06 22:40:13 - INFO -     - Attempt 3: 120.0s
+2025-09-06 22:40:13 - INFO -     - Attempt 4: 240.0s
+2025-09-06 22:40:13 - INFO -   Parallel threads: 25
+2025-09-06 22:40:13 - INFO -   Base seed: 42
+2025-09-06 22:40:13 - INFO -   Output mode: CPC only
+2025-09-06 22:40:13 - INFO -   Output directory: benchmark_cpu/results/ortools_gls_N50_C40_30s_10000i
+2025-09-06 22:40:13 - INFO -   Log file: benchmark_cpu/results/ortools_gls_N50_C40_30s_10000i/benchmark_log.txt
+2025-09-06 22:40:13 - INFO - 
+2025-09-06 22:40:13 - INFO - Instance distribution across threads: [400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400]
+2025-09-06 22:40:13 - INFO - Total instances to process: 10000
+2025-09-06 22:40:13 - INFO - Seed range: 42 to 10041
+2025-09-06 22:40:13 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-06 22:40:13 - INFO - This ensures reproducibility regardless of thread count
+2025-09-06 22:40:13 - INFO - Estimated completion time:
+2025-09-06 22:40:13 - INFO -   Typical case: 13200.0s (220.0 minutes)
+2025-09-06 22:40:13 - INFO -   Worst case: 180000.0s (3000.0 minutes)
+2025-09-06 22:40:13 - INFO - 
+2025-09-06 22:40:13 - INFO - Starting parallel execution...
+2025-09-06 22:40:13 - INFO - ----------------------------------------------------------------------
+2025-09-06 22:48:51 - INFO - ======================================================================
+2025-09-06 22:48:51 - INFO - OR-Tools GLS Parallel Benchmark Runner
+2025-09-06 22:48:51 - INFO - ======================================================================
+2025-09-06 22:48:51 - INFO - Configuration:
+2025-09-06 22:48:51 - INFO -   Problem size (N): 50
+2025-09-06 22:48:51 - INFO -   Vehicle capacity: 40
+2025-09-06 22:48:51 - INFO -   Total instances: 10000
+2025-09-06 22:48:51 - INFO -   Base timeout per instance: 30.0s
+2025-09-06 22:48:51 - INFO -   Retry strategy: up to 4 attempts with timeouts:
+2025-09-06 22:48:51 - INFO -     - Attempt 1: 30.0s
+2025-09-06 22:48:51 - INFO -     - Attempt 2: 60.0s
+2025-09-06 22:48:51 - INFO -     - Attempt 3: 120.0s
+2025-09-06 22:48:51 - INFO -     - Attempt 4: 240.0s
+2025-09-06 22:48:51 - INFO -   Parallel threads: 25
+2025-09-06 22:48:51 - INFO -   Base seed: 42
+2025-09-06 22:48:51 - INFO -   Output mode: CPC only
+2025-09-06 22:48:51 - INFO -   Output directory: benchmark_cpu/results/ortools_gls_N50_C40_30s_10000i
+2025-09-06 22:48:51 - INFO -   Log file: benchmark_cpu/results/ortools_gls_N50_C40_30s_10000i/benchmark_log.txt
+2025-09-06 22:48:51 - INFO - 
+2025-09-06 22:48:51 - INFO - Instance distribution across threads: [400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400]
+2025-09-06 22:48:51 - INFO - Total instances to process: 10000
+2025-09-06 22:48:51 - INFO - Seed range: 42 to 10041
+2025-09-06 22:48:51 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-06 22:48:51 - INFO - This ensures reproducibility regardless of thread count
+2025-09-06 22:48:51 - INFO - Estimated completion time:
+2025-09-06 22:48:51 - INFO -   Typical case: 13200.0s (220.0 minutes)
+2025-09-06 22:48:51 - INFO -   Worst case: 180000.0s (3000.0 minutes)
+2025-09-06 22:48:51 - INFO - 
+2025-09-06 22:48:51 - INFO - Starting parallel execution...
+2025-09-06 22:48:51 - INFO - ----------------------------------------------------------------------
+2025-09-07 02:08:19 - INFO - Thread 0: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:19 - INFO - Thread 1: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 2: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 3: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 4: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 5: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 6: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 7: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 8: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 9: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 10: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 11: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:21 - INFO - Thread 12: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:23 - INFO - Thread 13: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 14: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 15: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 16: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 17: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 18: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 19: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 20: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 21: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 22: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 23: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - Thread 24: Processed 400 instances (0 failed, 0 needed retries)
+2025-09-07 02:08:33 - INFO - ✓ Saved CPC values to ortools_n50.json
+2025-09-07 02:08:33 - INFO - ----------------------------------------------------------------------
+2025-09-07 02:08:33 - INFO - EXECUTION SUMMARY
+2025-09-07 02:08:33 - INFO - ----------------------------------------------------------------------
+2025-09-07 02:08:33 - INFO - Total execution time: 11982.35s (199.71 minutes)
+2025-09-07 02:08:33 - INFO - Average time per instance: 1.198s
+2025-09-07 02:08:33 - INFO - Total instances successfully processed: 10000
+2025-09-07 02:08:33 - INFO - Total instances that needed retries: 0
+2025-09-07 02:08:33 - INFO - Total instances failed (after all retries): 0
+2025-09-07 02:08:33 - INFO - 
+CPC Statistics:
+2025-09-07 02:08:33 - INFO -   Mean: 0.226965
+2025-09-07 02:08:33 - INFO -   Std:  0.027876
+2025-09-07 02:08:33 - INFO -   Min:  0.153962
+2025-09-07 02:08:33 - INFO -   Max:  0.337237
+2025-09-07 02:08:33 - INFO - 
+Retry rate: 0.0%
+2025-09-07 02:08:33 - INFO - Final failure rate: 0.0%
+2025-09-07 02:08:33 - INFO - 
+Output files:
+2025-09-07 02:08:33 - INFO -   - ortools_n50.json (CPC values)
+2025-09-07 02:08:33 - INFO -   - benchmark_log.txt (execution log)
+2025-09-07 02:08:33 - INFO - 
+2025-09-07 02:08:33 - INFO - Results saved in: benchmark_cpu/results/ortools_gls_N50_C40_30s_10000i
+2025-09-07 02:08:33 - INFO - ======================================================================

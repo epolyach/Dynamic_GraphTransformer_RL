@@ -274,30 +274,22 @@ class IncrementalCSVWriter:
         def convert_value(val):
             if isinstance(val, (np.ndarray, np.generic)):
                 return float(val)
-            elif val is None:
-                return float('nan')
-            return float(val) if not isinstance(val, float) else val
+            return val
         
         n_epochs = len(history.get('train_cost', []))
-        if n_epochs == 0:
-            self.logger.warning(f"No history data to save to CSV")
-            return
-            
         for epoch in range(n_epochs):
             row = {
                 'epoch': epoch,
-                'train_loss': convert_value(history['train_loss'][epoch]) if 'train_loss' in history and epoch < len(history['train_loss']) else float('nan'),
-                'train_cost': convert_value(history['train_cost'][epoch]) if 'train_cost' in history and epoch < len(history['train_cost']) else float('nan'),
-                'val_cost': convert_value(history['val_cost'][epoch]) if 'val_cost' in history and epoch < len(history['val_cost']) else float('nan'),
-                'learning_rate': convert_value(history['learning_rate'][epoch]) if 'learning_rate' in history and epoch < len(history['learning_rate']) else 1e-4,
+                'train_loss': convert_value(history['train_loss'][epoch]) if 'train_loss' in history and epoch < len(history['train_loss']) else None,
+                'train_cost': convert_value(history['train_cost'][epoch]) if 'train_cost' in history and epoch < len(history['train_cost']) else None,
+                'val_cost': convert_value(history['val_cost'][epoch]) if 'val_cost' in history and epoch < len(history['val_cost']) else None,
+                'learning_rate': convert_value(history['learning_rate'][epoch]) if 'learning_rate' in history and epoch < len(history['learning_rate']) else None,
                 'temperature': 2.5,
-                'gpu_memory_gb': convert_value(history['gpu_memory'][epoch]) if 'gpu_memory' in history and epoch < len(history['gpu_memory']) else 0.0,
-                'time_per_epoch': convert_value(history['epoch_time'][epoch]) if 'epoch_time' in history and epoch < len(history['epoch_time']) else 0.0
+                'gpu_memory_gb': convert_value(history['gpu_memory'][epoch]) if 'gpu_memory' in history and epoch < len(history['gpu_memory']) else None,
+                'time_per_epoch': convert_value(history['epoch_time'][epoch]) if 'epoch_time' in history and epoch < len(history['epoch_time']) else None
             }
             self.rows.append(row)
             pd.DataFrame([row]).to_csv(self.csv_path, mode='a', header=False, index=False)
-        
-        self.logger.info(f"Saved {n_epochs} epochs of history to {self.csv_path}")
     
     def finalize(self):
         """Save final summary."""
@@ -344,11 +336,10 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
     else:
         base_output_dir = Path(config.get('working_dir_path', 'results/gpu'))
     
-    # Use base_output_dir directly, no model-specific subdirectory
-    output_dir = base_output_dir
+    output_dir = base_output_dir / model_name.replace('+', '_')
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Initialize CSV writer for incremental history saving (uses shared directories)
+    # Initialize CSV writer for incremental history saving
     csv_writer = IncrementalCSVWriter(model_name, output_dir, logger)
     
     # Check if model already exists
@@ -396,8 +387,8 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
                        f"to {optimal_batch_size}")
             config['training']['batch_size'] = optimal_batch_size
     
-    # Save configuration with model name
-    config_save_path = output_dir / f"{model_name.replace('+', '_')}_training_config.yaml"
+    # Save configuration
+    config_save_path = output_dir / "training_config.yaml"
     with open(config_save_path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
     logger.info(f"Configuration saved to {config_save_path}")
@@ -407,7 +398,7 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
     start_time = time.time()
     
     try:
-        trained_model, training_result = advanced_train_model_gpu(
+        trained_model, history = advanced_train_model_gpu(
             model=model,
             model_name=model_name,
             data_generator=data_generator,
@@ -417,14 +408,6 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
         )
         
         end_time = time.time()
-        
-        # Extract history from result
-        history = training_result.get('history', {}) if isinstance(training_result, dict) else {}
-        
-        # Debug: log what we got
-        logger.info(f"History keys: {list(history.keys()) if history else 'None'}")
-        if history and 'train_cost' in history:
-            logger.info(f"History has {len(history['train_cost'])} epochs of training data")
         
         # Save history to CSV
         csv_writer.save_all_history(history)
@@ -436,12 +419,12 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
             model=trained_model,
             history=history,
             config=config,
-            base_dir=output_dir,  # Use output_dir directly (e.g., training_gpu/results/tiny/)
+            base_dir=output_dir.parent,  # Use parent to get the config-level directory
             logger=logger,
             training_time=end_time - start_time
         )
         
-        # Save final model in the base directory with model name
+        # Also save in the model-specific directory for compatibility
         model_save_path = output_dir / f"{model_name.replace('+', '_')}_final.pt"
         torch.save({
             'model_state_dict': trained_model.state_dict(),
@@ -455,7 +438,7 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
             trained_model, history, config, start_time, end_time
         )
         
-        summary_path = output_dir / f"{model_name.replace('+', '_')}_training_summary.json"
+        summary_path = output_dir / "training_summary.json"
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2)
         logger.info(f"Training summary saved to {summary_path}")
