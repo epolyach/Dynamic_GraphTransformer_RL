@@ -1,0 +1,37 @@
+# Tiny GPU test config - 10 epochs for testing all models
+working_dir_path: "training_gpu/results/tiny_test"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 20
+
+training:
+  batches_per_epoch: 5         # Very small for quick testing
+  batch_size: 32               # Smaller batch size for faster epochs
+  n_epochs: 10                 # 10 epochs as requested
+  baseline:
+    eval_batches: 1            # Minimal for speed
+    update_frequency: 5        # Update every 5 epochs
+    warmup_epochs: 0
+
+# GPU-specific settings
+gpu:
+  enabled: true
+  device: "cuda:0"
+  mixed_precision: false
+  memory_fraction: 0.95
+  pin_memory: true
+  non_blocking: true
+  gradient_accumulation_steps: 1
+  num_workers: 2
+
+# Smaller model for faster training
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 2                # Even smaller for speed
+
+# GAT-specific architecture
+model_gat:
+  gat_hidden_dim: 128
+  gat_layers: 2
