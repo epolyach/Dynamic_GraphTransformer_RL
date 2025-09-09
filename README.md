@@ -43,7 +43,7 @@ Location: training_cpu/
 - Generate comparison plots from saved results
   ```bash
   cd training_cpu
-  python scripts/make_comparative_plot.py --config ../configs/small.yaml
+  python scripts/regenerate_analysis.py --config ../configs/small.yaml
   ```
 
 Notes:
@@ -211,7 +211,7 @@ python3 benchmark_gpu_truly_optimal_n10.py --num-instances 100 --capacity 20
 
 # 6. Generate comparison plots
 cd training_cpu
-python scripts/make_comparative_plot.py --config ../configs/small.yaml
+python scripts/regenerate_analysis.py --config ../configs/small.yaml
 ```
 
 ## 5) Directory Structure (Updated Sept 2025)
@@ -228,6 +228,15 @@ Dynamic_GraphTransformer_RL/
 ├── configs/                      # YAML configuration files
 ├── training_cpu/                 # Neural network training
 │   ├── scripts/                 # Training scripts
+│   │   ├── run_training.py      # Main training script
+│   │   ├── regenerate_analysis.py # Re-analyze results
+│   │   ├── run_training.sh      # Shell wrapper
+│   │   ├── experiments/         # Experimental scripts
+│   │   │   ├── run_training_gt_experiments.py
+│   │   │   └── run_training_optimizer_experiment.py
+│   │   ├── plotting/            # Plotting utilities
+│   │   │   └── plot_training_80mm.py
+│   │   └── table_generation/    # Table generation tools
 │   ├── lib/                     # Training utilities
 │   └── results/                 # Training results
 ├── benchmark_cpu/                # CPU benchmarking ⭐
