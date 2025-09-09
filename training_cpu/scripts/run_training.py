@@ -235,6 +235,11 @@ def main():
     config_path = Path(original_cwd) / args.config if not Path(args.config).is_absolute() else Path(args.config)
     config = load_config(str(config_path))
     
+    # Fix relative paths to be relative to script location
+    if 'working_dir_path' in config and config['working_dir_path'].startswith('..'):
+        script_dir = Path(__file__).parent
+        config['working_dir_path'] = str((script_dir / config['working_dir_path']).resolve())
+    
     # Change back to original directory
     os.chdir(original_cwd)
     

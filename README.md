@@ -250,6 +250,32 @@ Dynamic_GraphTransformer_RL/
 │   │   ├── benchmark_gpu_*.py            # Core GPU benchmarks
 │   │   ├── gpu_cvrp_solver_truly_optimal_fixed.py  # DP exact solver (bug-free)
 
+## Configuration
+
+The project uses YAML configuration files located in the `configs/` directory. Key configuration files include:
+
+- `default.yaml`: Base configuration with all default parameters
+- `tiny.yaml`: Quick experiments with reduced training (10 customers, fewer epochs)
+- `small.yaml`: Small problem instances (20 customers)
+- `medium.yaml`: Medium problem instances (50 customers)
+- `large.yaml`: Large problem instances (100 customers)
+
+### Relative Paths in Configurations
+
+Configuration files support relative paths for the `working_dir_path` parameter. When using relative paths (starting with `../`), they are resolved relative to the script location, not the current working directory. This allows the same configuration file to work correctly for both CPU and GPU training:
+
+```yaml
+# In configs/tiny.yaml
+working_dir_path: "../results/tiny"
+```
+
+This will resolve to:
+- `training_cpu/results/tiny/` when using CPU training scripts
+- `training_gpu/results/tiny/` when using GPU training scripts
+
+This approach ensures clean separation of results while using a single configuration file.
+
+
 │   │   ├── gpu_cvrp_solver_scip_optimal_fixed.py   # SCIP MIP solver
 │   │   ├── plotting/            # Visualization
 │   │   ├── table_generation/    # LaTeX tables

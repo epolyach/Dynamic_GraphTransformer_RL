@@ -150,7 +150,7 @@ def advanced_train_model_gpu(
     
     # Training parameters
     train_config = config.get('training', {})
-    n_epochs = train_config.get('n_epochs', 100)
+    n_epochs = train_config.get('num_epochs', 100)
     batch_size = train_config.get('batch_size', 32)
     learning_rate = train_config.get('learning_rate', 1e-4)
     gradient_accumulation_steps = gpu_config.get('gradient_accumulation_steps', 1)
@@ -251,8 +251,8 @@ def advanced_train_model_gpu(
         wandb.watch(model)
     
     # Training loop
-    print(f"[{model_name}] Training with {n_epochs * train_config.get('batches_per_epoch', 100) * batch_size} total instances over {n_epochs} epochs")
-    print(f"[{model_name}] Batches per epoch: {train_config.get('batches_per_epoch', 100)}, batch size: {batch_size}")
+    print(f"[{model_name}] Training with {n_epochs * train_config.get('num_batches_per_epoch', 150) * batch_size} total instances over {n_epochs} epochs")
+    print(f"[{model_name}] Batches per epoch: {train_config.get('num_batches_per_epoch', 150)}, batch size: {batch_size}")
     
     for epoch in range(n_epochs):
         epoch_start = time.time()
@@ -273,7 +273,7 @@ def advanced_train_model_gpu(
         train_cost_epoch = []
         
         # Generate training batches
-        n_batches = train_config.get('batches_per_epoch', 100)
+        n_batches = train_config.get('num_batches_per_epoch', 150)
         
         for batch_idx in range(n_batches):
             # Generate problem instances

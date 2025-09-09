@@ -1,6 +1,6 @@
 # Tiny config - Quick experiments with reduced training
 # Same problem as small (N=10) but reduced training data
-working_dir_path: "training_cpu/results/tiny"
+working_dir_path: "../results/tiny"
 
 problem:
   num_customers: 10
