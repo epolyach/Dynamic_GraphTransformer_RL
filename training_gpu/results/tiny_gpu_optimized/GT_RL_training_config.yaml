@@ -6,7 +6,7 @@ baseline:
     frequency: 2
     p_value: 0.1
     significance_test: true
-batch_size: 512
+batch_size: 4096
 benchmark:
   scaling:
     distance_scale: 100000
@@ -80,7 +80,7 @@ model_gat:
 num_customers: 10
 num_epochs: 60
 num_heads: 4
-num_instances: 46848000
+num_instances: 6246400
 num_layers: 3
 problem:
   coord_range: 100
@@ -90,11 +90,11 @@ problem:
 temp_min: 0.15
 temp_start: 2.5
 training:
-  batch_size: 512
+  batch_size: 4096
   learning_rate: 0.0001
-  num_batches_per_epoch: 1500
+  num_batches_per_epoch: 25
   num_epochs: 60
-  num_instances: 46848000
+  num_instances: 6246400
   use_geometric_mean: true
   validation_frequency: 2
 training_advanced:
@@ -116,4 +116,4 @@ training_advanced:
   use_lr_scheduling: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_optimized

@@ -1,9 +1,9 @@
 baseline:
-  eval_batches: 2
+  eval_batches: 5
   type: rollout
   update:
     enabled: true
-    frequency: 2
+    frequency: 1
     p_value: 0.1
     significance_test: true
 batch_size: 512
@@ -18,9 +18,9 @@ demand_range: &id001
 entropy_coef: 0.03
 entropy_min: 0.002
 experiment:
-  device: cuda
+  device: cpu
   random_seed: 42
-  strict_validation: false
+  strict_validation: true
   use_advanced_features: true
 gat_training:
   baseline:
@@ -47,8 +47,8 @@ gpu:
   memory_fraction: 0.95
   mixed_precision: false
   non_blocking: true
-  num_workers: 0
-  pin_memory: false
+  num_workers: 4
+  pin_memory: true
   prefetch_factor: 2
 grad_clip: 2.0
 hidden_dim: 128
@@ -78,9 +78,9 @@ model_gat:
   gat_layers: 3
   gat_negative_slope: 0.2
 num_customers: 10
-num_epochs: 60
+num_epochs: 10
 num_heads: 4
-num_instances: 46848000
+num_instances: 844800
 num_layers: 3
 problem:
   coord_range: 100
@@ -92,9 +92,9 @@ temp_start: 2.5
 training:
   batch_size: 512
   learning_rate: 0.0001
-  num_batches_per_epoch: 1500
-  num_epochs: 60
-  num_instances: 46848000
+  num_batches_per_epoch: 150
+  num_epochs: 10
+  num_instances: 844800
   use_geometric_mean: true
   validation_frequency: 2
 training_advanced:
@@ -116,4 +116,4 @@ training_advanced:
   use_lr_scheduling: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_1
