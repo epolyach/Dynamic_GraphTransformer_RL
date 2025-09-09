@@ -31,7 +31,8 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 
 from src.metrics.costs import compute_route_cost
-from src.eval.validation import validate_route
+from src.metrics.gpu_costs import compute_route_cost_gpu
+from .validation_gpu import validate_route
 from .rollout_baseline_gpu_fixed import RolloutBaselineGPU
 from .gpu_utils import GPUManager, DataLoaderGPU
 
@@ -201,11 +202,15 @@ def advanced_train_model_gpu(
         # Create eval dataset (same as CPU version)
         eval_batches = baseline_config.get('eval_batches', 5)
         print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
+        import sys; sys.stdout.flush()
         eval_dataset = []
         for i in range(eval_batches):
             # Use fixed seeds to keep eval set stable
             seed_val = 123456 + i
-            eval_dataset.append(data_generator(batch_size, seed=seed_val))
+            batch_data = data_generator(batch_size, seed=seed_val)
+            # Pre-convert batch to GPU tensors to minimize transfers during baseline evaluation
+            gpu_batch = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in batch_data]
+            eval_dataset.append(gpu_batch)
         print(f"[INIT] Eval dataset built: {len(eval_dataset)} batches")
         
         # Create baseline with CPU-identical parameters
@@ -253,19 +258,12 @@ def advanced_train_model_gpu(
     # Training loop
     print(f"[{model_name}] Training with {n_epochs * train_config.get('num_batches_per_epoch', 150) * batch_size} total instances over {n_epochs} epochs")
     print(f"[{model_name}] Batches per epoch: {train_config.get('num_batches_per_epoch', 150)}, batch size: {batch_size}")
+    # Match CPU-side informational print about CPC aggregation
+    use_geometric_mean = config.get('training', {}).get('use_geometric_mean', True)
+    print(f"[{model_name}] Using {'geometric' if use_geometric_mean else 'arithmetic'} mean for CPC aggregation")
     
-    for epoch in range(n_epochs):
+    for epoch in range(n_epochs):        
         epoch_start = time.time()
-        
-        # Rollout baseline update (exactly like CPU)
-        if baseline is not None:
-            try:
-                # Only allow baseline updates after warmup epochs
-                warmup = train_config.get('baseline', {}).get('warmup_epochs', 0)
-                if epoch >= warmup:
-                    baseline.epoch_callback(model, epoch)
-            except Exception as e:
-                print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
         
         # Training phase
         model.train()
@@ -286,12 +284,14 @@ def advanced_train_model_gpu(
             with gpu_manager.autocast_context():
                 routes, log_probs, entropy = model(instances)
                 
-                # Compute costs
+                # Compute costs using GPU-optimized function
                 batch_costs = []
                 for b in range(len(instances)):
-                    c = compute_route_cost(routes[b], instances[b]['distances']) / (len(instances[b]['coords']) - 1)
-                    batch_costs.append(c)
-                costs = torch.tensor(batch_costs, device=gpu_manager.device)
+                    distances = instances[b]["distances"]
+                    route = routes[b]
+                    c = compute_route_cost_gpu(route, distances) / (len(instances[b]["coords"]) - 1)
+                    batch_costs.append(c if isinstance(c, torch.Tensor) else torch.tensor(c, device=gpu_manager.device))
+                costs = torch.stack(batch_costs)
                 
                 
                 # Compute baseline (matching CPU)
@@ -361,12 +361,14 @@ def advanced_train_model_gpu(
                 with gpu_manager.autocast_context():
                     routes_val, log_probs_val, entropy_val = model(val_instances)
                     
-                    # Compute validation costs
+                    # Compute validation costs using GPU-optimized function
                     val_batch_costs = []
                     for b in range(len(val_instances)):
-                        c = compute_route_cost(routes_val[b], val_instances[b]['distances']) / (len(val_instances[b]['coords']) - 1)
-                        val_batch_costs.append(c)
-                    val_costs = torch.tensor(val_batch_costs, device=gpu_manager.device)
+                        distances = val_instances[b]["distances"]
+                        route = routes_val[b]
+                        c = compute_route_cost_gpu(route, distances) / (len(val_instances[b]["coords"]) - 1)
+                        val_batch_costs.append(c if isinstance(c, torch.Tensor) else torch.tensor(c, device=gpu_manager.device))
+                    val_costs = torch.stack(val_batch_costs)
                     
                     # val_costs already computed above
                 
@@ -398,6 +400,16 @@ def advanced_train_model_gpu(
             else:
                 scheduler.step()
         
+
+        # Rollout baseline update (exactly like CPU)
+        if baseline is not None:
+            try:
+                # Only allow baseline updates after warmup epochs
+                warmup = train_config.get('baseline', {}).get('warmup_epochs', 0)
+                if epoch >= warmup:
+                    baseline.epoch_callback(model, epoch)
+            except Exception as e:
+                print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
         # Get current learning rate for logging
         current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
         

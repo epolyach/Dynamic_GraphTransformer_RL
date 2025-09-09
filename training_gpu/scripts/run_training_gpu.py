@@ -541,7 +541,7 @@ Examples:
     # GPU-specific settings
     parser.add_argument('--device', type=str, default=None,
                        help='GPU device (e.g., cuda:0, cuda:1)')
-    parser.add_argument('--mixed_precision', action='store_true',
+    parser.add_argument('--mixed_precision', action='store_true', default=None,
                        help='Enable mixed precision training')
     parser.add_argument('--no_mixed_precision', action='store_false', 
                        dest='mixed_precision',

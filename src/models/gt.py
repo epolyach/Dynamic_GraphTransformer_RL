@@ -455,8 +455,8 @@ class GraphTransformer(nn.Module):
         
         for i, inst in enumerate(instances):
             n_nodes = len(inst['coords'])
-            coords_tensor = torch.tensor(inst['coords'], dtype=torch.float32, device=device)
-            demands_tensor = torch.tensor(inst['demands'], dtype=torch.float32, device=device)
+            coords_tensor = inst["coords"].detach().clone().to(device) if isinstance(inst["coords"], torch.Tensor) else torch.tensor(inst["coords"], dtype=torch.float32, device=device)
+            demands_tensor = inst["demands"].detach().clone().float().to(device) if isinstance(inst["demands"], torch.Tensor) else torch.tensor(inst["demands"], dtype=torch.float32, device=device)
             
             node_coords[i, :n_nodes] = coords_tensor
             node_features[i, :n_nodes, :2] = coords_tensor

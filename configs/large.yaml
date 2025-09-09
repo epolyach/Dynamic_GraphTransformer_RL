@@ -17,3 +17,15 @@ model_gat:
   gat_hidden_dim: 512          # Larger hidden dim for N=50
   gat_layers: 5                # More layers for complex problems
   gat_dropout: 0.5             # Higher dropout for larger problems
+
+# GPU Configuration (recommendations)
+gpu:
+  enabled: true
+  device: "cuda:0"
+  mixed_precision: true        # Recommended for N>=20
+  memory_fraction: 0.95
+  pin_memory: true
+  non_blocking: true
+  gradient_accumulation_steps: 1
+  num_workers: 4
+  prefetch_factor: 2

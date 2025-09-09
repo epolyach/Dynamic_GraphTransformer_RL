@@ -1,0 +1,31 @@
+# GPU-optimized medium config - this size should show GPU benefits
+working_dir_path: "../results/medium_gpu"
+
+problem:
+  num_customers: 50  # Larger problem size
+  vehicle_capacity: 40
+
+training:
+  num_batches_per_epoch: 100
+  batch_size: 1024  # Good batch size for GPU
+  num_epochs: 30    # Fewer epochs for testing
+
+model:
+  hidden_dim: 256
+  num_heads: 8
+  num_layers: 4
+
+model_gat:
+  gat_hidden_dim: 256
+  gat_layers: 4
+
+gpu:
+  device: cuda:0
+  enabled: true
+  gradient_accumulation_steps: 1
+  memory_fraction: 0.95
+  mixed_precision: true  # Worth it for larger models
+  non_blocking: true
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2

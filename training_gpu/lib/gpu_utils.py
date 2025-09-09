@@ -17,7 +17,8 @@ import warnings
 
 import torch
 import torch.cuda as cuda
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast
+from torch.amp import GradScaler
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class GPUManager:
         self.enable_mixed_precision = enable_mixed_precision and cuda.is_available()
         
         if self.enable_mixed_precision:
-            self.scaler = GradScaler()
+            self.scaler = GradScaler('cuda')
         else:
             self.scaler = None
             
@@ -131,9 +132,16 @@ class GPUManager:
             Dictionary with tensors moved to device
         """
         result = {}
+        import numpy as np
         for key, value in data.items():
             if isinstance(value, torch.Tensor):
                 result[key] = self.to_device(value, non_blocking)
+            elif isinstance(value, np.ndarray):
+                # Convert numpy arrays directly to GPU tensors
+                if key == "demands":
+                    result[key] = torch.from_numpy(value).long().to(self.device, non_blocking=non_blocking)
+                else:
+                    result[key] = torch.from_numpy(value).float().to(self.device, non_blocking=non_blocking)
             elif isinstance(value, dict):
                 result[key] = self.to_device_dict(value, non_blocking)
             elif isinstance(value, (list, tuple)):
@@ -195,7 +203,7 @@ class GPUManager:
             Autocast context manager or nullcontext
         """
         if self.enable_mixed_precision and self.device.type == 'cuda':
-            return autocast(device_type='cuda', dtype=torch.float16)
+            return autocast('cuda', dtype=torch.float16)
         else:
             # Return a no-op context manager
             from contextlib import nullcontext

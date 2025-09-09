@@ -7,7 +7,7 @@ problem:
   vehicle_capacity: 20
 
 training:
-  num_batches_per_epoch: 150  # Paper's scale: 768,000 instances per epoch
+  num_batches_per_epoch: 1500  # Paper's scale: 768,000 instances per epoch
   batch_size: 512             # Default batch size (paper's value)
   num_epochs: 60             # Default number of epochs
 
@@ -21,3 +21,32 @@ model:
 model_gat:
   gat_hidden_dim: 128          # Smaller for quick experiments
   gat_layers: 3                # Fewer layers for speed
+
+# Optimized baseline settings
+baseline:
+  type: "rollout"
+  eval_batches: 2           # Reduced for faster evaluation
+  update:
+    enabled: true
+    frequency: 2            # Update every 2 epochs
+    significance_test: true
+    p_value: 0.10
+
+# Experiment settings
+experiment:
+  random_seed: 42
+  device: "cuda"
+  use_advanced_features: true
+  strict_validation: false  # Disabled for speed
+
+# GPU Configuration
+gpu:
+  enabled: true
+  device: "cuda:0"
+  mixed_precision: false    # Disabled for N=10 (overhead > benefit)
+  memory_fraction: 0.95
+  pin_memory: false
+  non_blocking: true
+  gradient_accumulation_steps: 1
+  num_workers: 0           # 0 for small problems
+  prefetch_factor: 2
