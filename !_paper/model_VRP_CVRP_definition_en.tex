@@ -1,0 +1,70 @@
+% CVRP mathematical definition (English translation from model_VRP.pdf)
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{mathtools}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+
+\title{Capacitated Vehicle Routing Problem (CVRP)\\Mathematical Definition}
+\author{English translation from model\_VRP.pdf}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Problem summary}
+Given a single depot and a set of customers with nonnegative demands, the goal is to design a set of vehicle routes of limited capacity so that each customer is visited exactly once, every route starts and ends at the depot, and the total traveled distance (or cost) is minimized.
+
+\section*{Notation}
+\paragraph{Sets and indices}
+\begin{itemize}
+  \item $N = \{1,2,\dots,n\}$: set of customers.
+  \item $V = \{0\} \cup N$: set of nodes, where node $0$ is the depot.
+  \item $M = \{1,2,\dots,|M|\}$: set of available vehicles.
+  \item $A = \{(i,j) \in V \times V : i \neq j\}$: set of directed arcs.
+  \item For any node $i \in V$, let $\delta^+(i) = \{(i,j) \in A\}$ and $\delta^-(i) = \{(j,i) \in A\}$ denote outgoing and incoming arcs, respectively.
+\end{itemize}
+
+\paragraph{Parameters}
+\begin{itemize}
+  \item $c_{ij} \ge 0$: travel cost (or distance) of arc $(i,j)$ for $(i,j)\in A$.
+  \item $q_i \ge 0$: demand of customer $i$ for $i \in N$; by convention $q_0 = 0$.
+  \item $Q_m > 0$: capacity of vehicle $m$ for $m \in M$.
+\end{itemize}
+
+\paragraph{Decision variables}
+\begin{itemize}
+  \item $x_{ijm} \in \{0,1\}$: equals $1$ if vehicle $m \in M$ traverses arc $(i,j) \in A$, and $0$ otherwise.
+  \item $\ell_{ijm} \ge 0$: load carried by vehicle $m$ on arc $(i,j)$, interpreted as the amount on board immediately after departing $i$ and before arriving at $j$.
+\end{itemize}
+
+\section*{Model}
+\begin{align}
+\min \quad & \sum_{m\in M} \sum_{(i,j)\in A} c_{ij} \, x_{ijm} && \text{(total travel cost)} \label{obj} \\
+\text{s.t.}\quad
+& \sum_{m\in M} \sum_{i\in V\setminus\{j\}} x_{ijm} = 1 && \forall\, j\in N \quad \text{(each customer visited once)} \label{unique-visit} \\
+& \sum_{j\in N} x_{0jm} = 1 && \forall\, m\in M \quad \text{(each vehicle departs depot once)} \label{depart} \\
+& \sum_{i\in N} x_{i0m} = 1 && \forall\, m\in M \quad \text{(each vehicle returns to depot once)} \label{return} \\
+& \sum_{(i,k)\in \delta^-(k)} x_{ikm} - \sum_{(k,j)\in \delta^+(k)} x_{kjm} = 0 && \forall\, m\in M,\ \forall\, k\in N \quad \text{(flow conservation in $x$)} \label{flow-x}
+\end{align}
+
+Demand flow and capacity relations (single-commodity flow per vehicle):
+\begin{align}
+& \sum_{(i,j)\in \delta^-(j)} \sum_{m\in M} \ell_{ijm} - \sum_{(j,k)\in \delta^+(j)} \sum_{m\in M} \ell_{jkm} = q_j && \forall\, j\in N \quad \text{(demand balance)} \label{demand-balance} \\
+& q_j \, x_{ijm} \le \ell_{ijm} \le (Q_m - q_i) \, x_{ijm} && \forall\, (i,j)\in A,\ \forall\, m\in M \quad \text{(capacity bounds on arc loads)} \label{cap-bounds} \\
+& x_{ijm} \in \{0,1\},\ \ \ell_{ijm} \ge 0 && \forall\, (i,j)\in A,\ \forall\, m\in M. \label{domain}
+\end{align}
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item Constraints \eqref{depart}--\eqref{return} enforce that all vehicles are used exactly once and that every route starts and ends at the depot, as expressed in the source text.
+  \item Constraint \eqref{flow-x} ensures route continuity (no accumulation at intermediate nodes).
+  \item Constraint \eqref{demand-balance} states that, across all vehicles, the inflow of load to a customer minus the outflow equals its demand.
+  \item Bounds in \eqref{cap-bounds} follow the description in the source: if arc $(i,j)$ is used by vehicle $m$, then the load carried on that arc must be at least the demand of the next customer $j$ and at most the remaining capacity after delivering at $i$.
+  \item This flow-based formulation implicitly eliminates subtours via the load flow; no additional subtour-elimination constraints are required.
+\end{itemize}
+
+\end{document}
+

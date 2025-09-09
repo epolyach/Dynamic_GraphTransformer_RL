@@ -22,6 +22,7 @@ training:
   num_epochs: 100            # Default number of epochs
   learning_rate: 1e-4        # Base LR
   validation_frequency: 2    # Run validation every N epochs
+  use_geometric_mean: true   # Use geometric mean for CPC aggregation (log-normal friendly)
 
 # =============================
 # Rollout baseline (optional)
@@ -85,6 +86,9 @@ training_advanced:
   # Optimizer settings
   weight_decay: 0.0001         # L2 regularization
   gradient_clip_norm: 2.0      # Gradient clipping
+  adam_beta1: 0.9              # Adam/AdamW β1 (momentum of gradients)
+  adam_beta2: 0.999            # Adam/AdamW β2 (EMA of squared gradients)
+  adam_eps: 1.0e-8             # Numerical stability epsilon
   
   # Learning rate scheduling  
   use_lr_scheduling: true

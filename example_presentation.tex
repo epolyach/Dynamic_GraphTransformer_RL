@@ -1,0 +1,195 @@
+%% ========================================================================
+%% EXAMPLE PRESENTATION WITH SLIDE REFERENCES
+%% ========================================================================
+%% This file demonstrates how to use the slide reference commands
+%% created for formatting references in presentations.
+%% ========================================================================
+
+\documentclass[aspectratio=169]{beamer}
+
+% Basic packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xparse}  % For enhanced command definitions (optional)
+
+% Include the slide references commands
+\input{slide_references_command.tex}
+
+% Theme (choose your preferred one)
+\usetheme{Madrid}
+\usecolortheme{default}
+
+% Title information
+\title{Dynamic Graph Transformers for CVRP}
+\subtitle{Reinforcement Learning Approach}
+\author{Your Name}
+\institute{Your Institution}
+\date{\today}
+
+\begin{document}
+
+% Title slide (Slide 1) - no references
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% Slide 2 - Basic usage with your example text
+\begin{frame}
+    \frametitle{Problem Formulation}
+    
+    \begin{itemize}
+        \item The Capacitated Vehicle Routing Problem (CVRP) is a classical optimization challenge
+        \item We propose a novel Graph Transformer approach
+        \item Our method leverages reinforcement learning for dynamic route construction
+    \end{itemize}
+    
+    \bigskip
+    
+    Graph neural networks have shown promising results in combinatorial optimization tasks.
+    
+    % Your example references with basic command
+    \sliderefs{Weinberg (1994), Heggie+ (2020), Landau (1946), van Kampen (1955), Case (1959), Ng et al. (1999, 2004); Ng \& Bhattacharjee (2021)}
+    
+\end{frame}
+
+% Slide 3 - Using smaller text version
+\begin{frame}
+    \frametitle{Graph Transformer Architecture}
+    
+    \begin{columns}
+        \begin{column}{0.6\textwidth}
+            \begin{itemize}
+                \item Multi-head attention mechanism
+                \item Node and edge embeddings
+                \item Dynamic graph construction
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.4\textwidth}
+            % Add your figure here
+            \begin{center}
+                [Architecture Diagram]
+            \end{center}
+        \end{column}
+    \end{columns}
+    
+    % Using even smaller text version
+    \sliderefsSmaller{Transformer architectures have revolutionized sequence modeling tasks. Recent work extends these concepts to graph-structured data with impressive results.}
+    
+\end{frame}
+
+% Slide 4 - Using custom line length
+\begin{frame}
+    \frametitle{Reinforcement Learning Framework}
+    
+    Our approach treats route construction as a sequential decision-making process:
+    
+    \begin{enumerate}
+        \item State representation using graph embeddings
+        \item Action space defined by customer selection
+        \item Reward based on tour improvement
+    \end{enumerate}
+    
+    The policy network learns to make optimal routing decisions through trial and error.
+    
+    % Using custom line length (4cm instead of default 3.5cm)
+    \sliderefsCustom[4cm]{Policy gradient methods provide stable learning for discrete action spaces in combinatorial problems.}
+    
+\end{frame}
+
+% Slide 5 - Bottom-aligned references
+\begin{frame}
+    \frametitle{Experimental Results}
+    
+    \begin{itemize}
+        \item Tested on standard CVRP benchmarks
+        \item Compared against state-of-the-art methods
+        \item Achieved competitive performance
+    \end{itemize}
+    
+    \begin{table}[h]
+        \centering
+        \small
+        \begin{tabular}{|l|c|c|}
+        \hline
+        \textbf{Method} & \textbf{Cost} & \textbf{Time} \\
+        \hline
+        OR-Tools & 0.425 & 58s \\
+        Our Method & \textbf{0.420} & \textbf{12s} \\
+        \hline
+        \end{tabular}
+        \caption{Performance comparison on N=10 instances}
+    \end{table}
+    
+    % Bottom-aligned references
+    \sliderefsBottom{Benchmark results demonstrate significant improvements in both solution quality and computational efficiency.}
+    
+\end{frame}
+
+% Slide 6 - Using longer line
+\begin{frame}
+    \frametitle{Computational Efficiency}
+    
+    \begin{columns}
+        \begin{column}{0.5\textwidth}
+            \textbf{GPU Implementation:}
+            \begin{itemize}
+                \item Parallel graph processing
+                \item Batch policy evaluation
+                \item Memory-efficient attention
+            \end{itemize}
+        \end{column}
+        \begin{column}{0.5\textwidth}
+            \textbf{Performance Gains:}
+            \begin{itemize}
+                \item 10x speedup vs CPU
+                \item Scales to larger instances
+                \item Real-time applications
+            \end{itemize}
+        \end{column}
+    \end{columns}
+    
+    % Using longer line version
+    \sliderefsLong{GPU acceleration enables handling of large-scale routing problems that were previously computationally prohibitive.}
+    
+\end{frame}
+
+% Slide 7 - Regular references again
+\begin{frame}
+    \frametitle{Future Directions}
+    
+    \begin{itemize}
+        \item Extension to multi-objective optimization
+        \item Integration with real-world constraints
+        \item Online learning for dynamic environments
+    \end{itemize}
+    
+    \bigskip
+    
+    The framework provides a foundation for addressing more complex variants of vehicle routing problems.
+    
+    % Back to regular references
+    \sliderefs{Dynamic vehicle routing presents significant challenges for logistics optimization in changing environments.}
+    
+\end{frame}
+
+% Slide 8 - Conclusion
+\begin{frame}
+    \frametitle{Conclusion}
+    
+    \textbf{Key Contributions:}
+    \begin{enumerate}
+        \item Novel Graph Transformer architecture for CVRP
+        \item Efficient GPU implementation
+        \item Competitive results on standard benchmarks
+    \end{enumerate}
+    
+    \bigskip
+    
+    \textbf{Thank you for your attention!}
+    
+    % Final slide references
+    \sliderefs{This work opens new possibilities for applying deep learning to classical optimization problems.}
+    
+\end{frame}
+
+\end{document}

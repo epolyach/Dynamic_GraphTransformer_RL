@@ -142,6 +142,7 @@ def advanced_train_model(
     batch_size = config['training']['batch_size']
     num_epochs = config['training']['num_epochs']
     base_lr = config['training']['learning_rate']
+    use_geometric_mean = config['training'].get('use_geometric_mean', True)
     
     # Advanced training parameters
     adv_config = config.get('training_advanced', {})
@@ -154,12 +155,15 @@ def advanced_train_model(
     
     # Initialize optimizer with weight decay for regularization
     if model_name != 'GT-Greedy':
+        beta1 = adv_config.get('adam_beta1', 0.9)
+        beta2 = adv_config.get('adam_beta2', 0.999)
+        adam_eps = adv_config.get('adam_eps', 1e-8)
         optimizer = optim.AdamW(
             model.parameters(), 
             lr=base_lr,
             weight_decay=adv_config.get('weight_decay', 1e-4),
-            betas=(0.9, 0.999),
-            eps=1e-8
+            betas=(beta1, beta2),
+            eps=adam_eps
         )
     else:
         optimizer = None
@@ -215,6 +219,7 @@ def advanced_train_model(
     batches_per_epoch = max(1, num_instances // (batch_size * (num_epochs + 1)))  # +1 because we have epoch 0
     logger_print(f"[{model_name}] Training with {num_instances} total instances over {num_epochs + 1} epochs")
     logger_print(f"[{model_name}] Batches per epoch: {batches_per_epoch}, batch size: {batch_size}")
+    logger_print(f"[{model_name}] Using {'geometric' if use_geometric_mean else 'arithmetic'} mean for CPC aggregation")
     
     start_time = time.time()
     
@@ -269,14 +274,29 @@ def advanced_train_model(
             
             # Compute costs and validate routes
             batch_costs = []
+            n_customers = len(instances[0]['coords']) - 1  # Number of customers (excluding depot)
             for b in range(len(instances)):
                 r = routes[b]
                 if strict_validation:
-                    validate_route(r, len(instances[b]['coords']) - 1, f"{model_name}-TRAIN", instances[b])
-                c = compute_route_cost(r, instances[b]['distances']) / (len(instances[b]['coords']) - 1)
-                batch_costs.append(c)
+                    validate_route(r, n_customers, f"{model_name}-TRAIN", instances[b])
+                route_cost = compute_route_cost(r, instances[b]['distances'])
+                
+                # Compute CPC in appropriate space
+                if use_geometric_mean:
+                    # In log space: ln(cost/N) = ln(cost) - ln(N)
+                    cpc = np.log(route_cost + 1e-10) - np.log(n_customers)
+                else:
+                    # Regular arithmetic CPC
+                    cpc = route_cost / n_customers
+                batch_costs.append(cpc)
             
-            batch_cost = float(np.mean(batch_costs))
+            # Aggregate using appropriate mean
+            if use_geometric_mean:
+                # Geometric mean: exp(mean of log values)
+                batch_cost = float(np.exp(np.mean(batch_costs)))
+            else:
+                # Arithmetic mean
+                batch_cost = float(np.mean(batch_costs))
             epoch_costs.append(batch_cost)
             
             # Update metrics
@@ -291,7 +311,15 @@ def advanced_train_model(
             if optimizer is not None and model_name != 'GT-Greedy':
                 optimizer.zero_grad()
                 
-                costs_tensor = torch.tensor(batch_costs, dtype=torch.float32)
+                # For REINFORCE, we need actual costs (not log-transformed)
+                if use_geometric_mean:
+                    # Convert back from log space for loss computation
+                    actual_costs = [np.exp(log_cpc) * n_customers for log_cpc in batch_costs]
+                    costs_tensor = torch.tensor(actual_costs, dtype=torch.float32)
+                else:
+                    # Already in regular space, just scale back
+                    actual_costs = [cpc * n_customers for cpc in batch_costs]
+                    costs_tensor = torch.tensor(actual_costs, dtype=torch.float32)
 
                 # Compute baseline (rollout or mean)
                 if baseline is not None:
@@ -375,13 +403,25 @@ def advanced_train_model(
                     config=config
                 )
                 val_batch_costs = []
+                n_customers = len(val_instances[0]['coords']) - 1
                 for b in range(len(val_instances)):
                     r = routes_g[b]
                     if strict_validation:
-                        validate_route(r, len(val_instances[b]['coords']) - 1, f"{model_name}-VAL", val_instances[b])
-                    c = compute_route_cost(r, val_instances[b]['distances']) / (len(val_instances[b]['coords']) - 1)
-                    val_batch_costs.append(c)
-                val_cost = float(np.mean(val_batch_costs))
+                        validate_route(r, n_customers, f"{model_name}-VAL", val_instances[b])
+                    route_cost = compute_route_cost(r, val_instances[b]['distances'])
+                    
+                    # Compute CPC in appropriate space
+                    if use_geometric_mean:
+                        cpc = np.log(route_cost + 1e-10) - np.log(n_customers)
+                    else:
+                        cpc = route_cost / n_customers
+                    val_batch_costs.append(cpc)
+                
+                # Aggregate using appropriate mean
+                if use_geometric_mean:
+                    val_cost = float(np.exp(np.mean(val_batch_costs)))
+                else:
+                    val_cost = float(np.mean(val_batch_costs))
                 val_costs.append(val_cost)
                 
                 # Update adaptive temperature based on validation performance
@@ -430,8 +470,8 @@ def advanced_train_model(
                 else:
                     baseline_value = None  # Skip computing on non-update epochs to save time
             else:
-                # Mean baseline (cheap)
-                baseline_value = float(np.mean(epoch_costs))
+                # Mean baseline (using same aggregation as training)
+                baseline_value = float(np.mean(epoch_costs))  # Already aggregated costs
         
         # Call epoch callback for incremental CSV writing
         if epoch_callback is not None:

@@ -154,6 +154,9 @@ def load_results(base_dir):
             if train_costs and isinstance(train_costs[0], tuple):
                 train_costs_only = [cost for epoch, cost in train_costs]
                 result['history']['train_costs'] = train_costs_only
+        
+        # Note: The plotting script will work with either mean type (geometric or arithmetic)
+        # The values are already aggregated correctly by advanced_trainer.py
     
     logger.info(f"\n✅ Loaded data for {len(available_models)} models: {list(available_models)}")
     

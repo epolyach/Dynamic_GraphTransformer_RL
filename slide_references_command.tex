@@ -1,0 +1,97 @@
+%% ========================================================================
+%% SLIDE REFERENCES COMMANDS
+%% ========================================================================
+%% This file contains LaTeX commands for formatting references in slides
+%% with small text and separation lines.
+%% 
+%% Usage: Include this file in your presentation preamble with:
+%% \input{slide_references_command.tex}
+%% 
+%% Then use the commands in your slides as needed.
+%% ========================================================================
+
+%% Required packages (include in your document preamble)
+%% \usepackage{xparse}  % For enhanced command definitions (optional)
+
+%% ========================================================================
+%% BASIC COMMAND: \sliderefs{text}
+%% ========================================================================
+%% Creates a 3.5cm horizontal line followed by very small reference text
+\newcommand{\sliderefs}[1]{%
+    \vspace{0.5em}%                          % Add space before line
+    \noindent\rule{3.5cm}{0.4pt}%           % Horizontal line (3.5cm length)
+    \\[-0.2em]%                              % Reduce space after line
+    {\scriptsize #1}%                        % Very small text
+    \vspace{0.2em}%                          % Small space after references
+}
+
+%% ========================================================================
+%% ENHANCED COMMAND: \sliderefsCustom[line_length]{text}
+%% ========================================================================
+%% Allows customization of line length (default: 3.5cm)
+%% Requires: \usepackage{xparse}
+\NewDocumentCommand{\sliderefsCustom}{O{3.5cm} m}{%
+    \vspace{0.5em}%                          % Add space before line
+    \noindent\rule{#1}{0.4pt}%              % Horizontal line (customizable length)
+    \\[-0.2em]%                              % Reduce space after line
+    {\scriptsize #2}%                        % Very small text
+    \vspace{0.2em}%                          % Small space after references
+}
+
+%% ========================================================================
+%% TINY TEXT VERSION: \sliderefsSmaller{text}
+%% ========================================================================
+%% Uses \tiny instead of \scriptsize for even smaller text
+\newcommand{\sliderefsSmaller}[1]{%
+    \vspace{0.5em}%                          % Add space before line
+    \noindent\rule{3.5cm}{0.4pt}%           % Horizontal line (3.5cm length)
+    \\[-0.2em]%                              % Reduce space after line
+    {\tiny #1}%                              % Even smaller text
+    \vspace{0.2em}%                          % Small space after references
+}
+
+%% ========================================================================
+%% BOTTOM-ALIGNED VERSION: \sliderefsBottom{text}
+%% ========================================================================
+%% Automatically pushes references to the bottom of the slide
+\newcommand{\sliderefsBottom}[1]{%
+    \vfill%                                  % Push to bottom
+    \noindent\rule{3.5cm}{0.4pt}%           % Horizontal line (3.5cm length)
+    \\[-0.2em]%                              % Reduce space after line
+    {\scriptsize #1}%                        % Very small text
+}
+
+%% ========================================================================
+%% LONGER LINE VERSION: \sliderefsLong{text}  
+%% ========================================================================
+%% Uses a 4cm line instead of 3.5cm
+\newcommand{\sliderefsLong}[1]{%
+    \vspace{0.5em}%                          % Add space before line
+    \noindent\rule{4cm}{0.4pt}%             % Longer horizontal line (4cm length)
+    \\[-0.2em]%                              % Reduce space after line
+    {\scriptsize #1}%                        % Very small text
+    \vspace{0.2em}%                          % Small space after references
+}
+
+%% ========================================================================
+%% USAGE EXAMPLES
+%% ========================================================================
+%% 
+%% In your slides, use any of these commands:
+%% 
+%% Basic usage:
+%% \sliderefs{Weinberg (1994), Heggie+ (2020), Landau (1946), van Kampen (1955)}
+%%
+%% With custom line length (requires xparse package):
+%% \sliderefsCustom[4cm]{Your references here...}
+%%
+%% Even smaller text:
+%% \sliderefsSmaller{Your references here...}
+%%
+%% Bottom-aligned:
+%% \sliderefsBottom{Your references here...}
+%%
+%% Longer line:
+%% \sliderefsLong{Your references here...}
+%%
+%% ========================================================================

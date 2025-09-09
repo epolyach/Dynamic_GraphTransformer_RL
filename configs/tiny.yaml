@@ -9,7 +9,7 @@ problem:
 training:
   num_batches_per_epoch: 150  # Paper's scale: 768,000 instances per epoch
   batch_size: 512             # Default batch size (paper's value)
-  num_epochs: 100             # Default number of epochs
+  num_epochs: 60             # Default number of epochs
 
 # Smaller model for faster training
 model:

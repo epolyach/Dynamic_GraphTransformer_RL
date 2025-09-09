@@ -134,15 +134,17 @@ def advanced_train_model_opt(
     
     # Initialize optimizer with optional beta2 scaling
     if model_name != 'GT-Greedy':
-        beta2_val = 0.999
+        beta1_val = adv_config.get('adam_beta1', 0.9)
+        beta2_val = adv_config.get('adam_beta2', 0.999)
         if override_beta2:
             beta2_val = _scale_beta2_for_batch_size(config, logger_print)
+        adam_eps = adv_config.get('adam_eps', 1e-8)
         optimizer = optim.AdamW(
             model.parameters(), 
             lr=base_lr,
             weight_decay=adv_config.get('weight_decay', 1e-4),
-            betas=(0.9, beta2_val),
-            eps=1e-8
+            betas=(beta1_val, beta2_val),
+            eps=adam_eps
         )
     else:
         optimizer = None
