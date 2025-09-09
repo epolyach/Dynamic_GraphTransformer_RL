@@ -51,6 +51,64 @@ Notes:
 - Models live in src/models; advanced trainer in training_cpu/lib/advanced_trainer.py
 - Results saved locally in training_cpu/results/ (models in pytorch/, CSVs in csv/, plots in plots/)
 
+
+## 1.5) Training (GPU)
+Location: training_gpu/
+
+GPU-optimized training with mixed precision support and efficient batch processing.
+
+### Quick Start
+```bash
+# Train a single model with GPU optimizations
+cd /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL
+source venv/bin/activate
+python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
+
+# Force retrain if model exists
+python training_gpu/scripts/run_training_gpu.py --config configs/tiny.yaml --model GT+RL --force-retrain
+
+# Train with optimized tiny config (large batch size)
+python training_gpu/scripts/run_training_gpu.py --config configs/tiny_gpu_optimized.yaml --model GT+RL
+```
+
+### GPU-Specific Features
+- **Mixed Precision Training**: Automatically enabled for N≥20 (FP16/FP32)
+- **GPU Cost Computation**: Route costs computed on GPU via `src/metrics/gpu_costs.py`
+- **Optimized Data Pipeline**: Numpy arrays converted to GPU tensors on arrival
+- **Configurable Batch Sizes**: Use larger batches (2048-8192) for better GPU utilization
+- **GPU-Specific Validation**: Handles GPU tensors without CPU transfers
+
+### Configuration Guidelines
+```yaml
+# Recommended GPU settings by problem size
+gpu:
+  mixed_precision: false  # For N≤10 (overhead > benefit)
+  mixed_precision: true   # For N≥20 (significant speedup)
+  batch_size: 4096       # For N=10 with 50GB GPU memory
+  batch_size: 1024-2048  # For N=50-100
+```
+
+### Performance Notes
+- **N≤20**: CPU training may be faster due to GPU overhead
+- **N≥50**: GPU shows significant speedup, especially with large batches
+- **Memory**: RTX A6000 (48GB) can handle batch_size=8192 for N=10
+
+### Available Configurations
+- `configs/tiny_gpu_optimized.yaml` - N=10, batch_size=4096, optimized for GPU
+- `configs/medium_gpu.yaml` - N=50, balanced GPU settings
+- All standard configs now include GPU sections with appropriate settings
+
+### Monitoring
+```bash
+# Check GPU utilization during training
+nvidia-smi -l 1
+
+# View training progress in screen
+screen -ls  # List sessions
+screen -r gpu_tiny_training  # Attach to session
+# Ctrl+A, D to detach
+```
+
 ## 2) CPU Benchmarks
 Location: benchmark_cpu/
 
