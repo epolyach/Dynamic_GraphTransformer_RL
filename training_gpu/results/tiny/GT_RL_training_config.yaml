@@ -6,7 +6,7 @@ baseline:
     frequency: 1
     p_value: 0.1
     significance_test: true
-batch_size: 32
+batch_size: 512
 benchmark:
   scaling:
     distance_scale: 100000
@@ -23,6 +23,14 @@ experiment:
   strict_validation: true
   use_advanced_features: true
 gat_training:
+  baseline:
+    eval_batches: 5
+    update:
+      enabled: true
+      frequency: 1
+      p_value: 0.1
+      significance_test: true
+      warmup_epochs: 5
   early_stopping_patience: 15
   entropy_coef: 0.08
   entropy_min: 0.008
@@ -30,7 +38,8 @@ gat_training:
   learning_rate: 0.0002
   temp_adaptation_rate: 0.12
   temp_min: 0.3
-  temp_start: 3.0
+  temp_start: 2.5
+  use_adaptive_temperature: false
 gpu:
   device: cuda:0
   enabled: true
@@ -38,7 +47,7 @@ gpu:
   memory_fraction: 0.95
   mixed_precision: false
   non_blocking: true
-  num_workers: 2
+  num_workers: 4
   pin_memory: true
   prefetch_factor: 2
 grad_clip: 2.0
@@ -60,19 +69,19 @@ model:
   hidden_dim: 128
   input_dim: 3
   num_heads: 4
-  num_layers: 2
+  num_layers: 3
   transformer_dropout: 0.1
 model_gat:
   gat_dropout: 0.6
   gat_edge_dim: 16
   gat_hidden_dim: 128
-  gat_layers: 2
+  gat_layers: 3
   gat_negative_slope: 0.2
 num_customers: 10
-num_epochs: 100
+num_epochs: 60
 num_heads: 4
-num_instances: 4848000
-num_layers: 2
+num_instances: 4684800
+num_layers: 3
 problem:
   coord_range: 100
   demand_range: *id001
@@ -81,19 +90,17 @@ problem:
 temp_min: 0.15
 temp_start: 2.5
 training:
-  baseline:
-    eval_batches: 1
-    update_frequency: 5
-    warmup_epochs: 0
-  batch_size: 32
-  batches_per_epoch: 5
+  batch_size: 64
   learning_rate: 0.0001
-  n_epochs: 10
-  num_batches_per_epoch: 1500
-  num_epochs: 3
-  num_instances: 4848000
-  validation_frequency: 4
+  num_batches_per_epoch: 150
+  num_epochs: 1
+  num_instances: 4684800
+  use_geometric_mean: true
+  validation_frequency: 2
 training_advanced:
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_eps: 1.0e-08
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
   entropy_coef: 0.03
@@ -109,4 +116,4 @@ training_advanced:
   use_lr_scheduling: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: training_gpu/results/test_csv
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny

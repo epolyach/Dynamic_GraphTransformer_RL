@@ -1,0 +1,2 @@
+epoch,train_loss,train_cost,val_cost,learning_rate,temperature,gpu_memory_gb,time_per_epoch
+0,90.71506576538086,0.7491656466325124,0.7130114197731018,0.0001,2.5,0.027738571166992188,93.5988302230835
