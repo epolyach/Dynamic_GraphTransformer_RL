@@ -1,0 +1,72 @@
+% Updated section for benchmark_exact_cpu_modified.py
+% This should replace the "Instance Generation" and "Instance Generation Algorithm" sections
+
+\subsection{Instance Generation (Modified Version)}
+
+CVRP instances in the modified benchmark are generated with the following specifications:
+
+\begin{itemize}
+    \item \textbf{Number of customers}: $n \in \{5, 6, 7, \ldots, 20\}$ (varies by experiment)
+    \item \textbf{Depot location}: Node $0$ with coordinates sampled uniformly
+    \item \textbf{Customer locations}: Nodes $1, 2, \ldots, n$ with coordinates sampled uniformly
+    \item \textbf{Coordinate generation}: 
+        \begin{enumerate}
+            \item Sample integer coordinates $(x_i, y_i) \sim \text{Uniform}\{0, 1, \ldots, 100\}$ for all nodes $i \in \{0, 1, \ldots, n\}$
+            \item Normalize to unit square: $(x_i', y_i') = (x_i/100, y_i/100)$
+        \end{enumerate}
+    \item \textbf{Customer demands}: $q_i \sim \text{Uniform}\{1, 2, \ldots, 10\}$ for $i \in \{1, \ldots, n\}$
+    \item \textbf{Depot demand}: $q_0 = 0$
+    \item \textbf{Vehicle capacity}: $Q = 30$ (fixed for all instances)
+    \item \textbf{Distance metric}: Euclidean distance in the normalized unit square
+    \item \textbf{Random seed (Modified)}: $\text{seed} = 1000 \times n + (\text{instance\_id} - 1)$
+\end{itemize}
+
+\subsection{Instance Generation Algorithm (Modified Version)}
+
+The modified instance generation procedure:
+
+\begin{algorithm}
+\caption{CVRP Instance Generation (Modified)}
+\begin{algorithmic}[1]
+\REQUIRE Number of customers $n$, instance index $i$ (0-based)
+\ENSURE CVRP instance $(coords, demands, distances, capacity)$
+
+\STATE $\text{seed} \leftarrow 1000 \times n + i$
+\STATE Set random seed to $\text{seed}$
+
+\STATE \textbf{// Generate coordinates using enhanced generator}
+\STATE Call EnhancedCVRPGenerator.generate\_instance with:
+\STATE \quad num\_customers = $n$
+\STATE \quad capacity = 30
+\STATE \quad coord\_range = 100
+\STATE \quad demand\_range = [1, 10]
+\STATE \quad seed = $\text{seed}$
+\STATE \quad instance\_type = RANDOM
+\STATE \quad apply\_augmentation = False
+
+\RETURN instance
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Solver Configuration (Modified Version)}
+
+The modified benchmark uses three solvers with different configurations:
+
+\begin{itemize}
+    \item \textbf{exact\_dp}: Dynamic programming exact solver
+        \begin{itemize}
+            \item Runs only for $n \leq 8$
+            \item Timeout: $\min(60, 2 \times 2^{n-5})$ seconds
+        \end{itemize}
+    \item \textbf{ortools\_greedy}: OR-Tools solver
+        \begin{itemize}
+            \item Runs for $n \leq 20$
+            \item Exact mode for $n \leq 8$ with 30s timeout
+            \item Greedy/heuristic mode for $n > 8$ with 5s timeout
+        \end{itemize}
+    \item \textbf{ortools\_gls}: OR-Tools with Guided Local Search
+        \begin{itemize}
+            \item Runs for $n \leq 20$
+            \item Fixed 2s timeout for all problem sizes
+        \end{itemize}
+\end{itemize}

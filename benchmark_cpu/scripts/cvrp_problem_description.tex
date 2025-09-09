@@ -1,0 +1,234 @@
+% CVRP Problem Description for Scientific Paper
+% Based on benchmark_exact_cpu.py and benchmark_cvrp_n7.py implementations
+
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{booktabs}
+\usepackage{xspace}
+
+% Define commonly used notation
+\newcommand{\depot}{0}
+\newcommand{\customers}{\mathcal{N}}
+\newcommand{\nodes}{\mathcal{V}}
+\newcommand{\vehicles}{\mathcal{K}}
+
+\begin{document}
+
+\section{Capacitated Vehicle Routing Problem (CVRP) Formulation}
+
+\subsection{Problem Definition}
+
+The Capacitated Vehicle Routing Problem (CVRP) studied in our benchmark consists of finding minimum-cost routes for a fleet of homogeneous vehicles to service a set of customers with known demands. Each vehicle has a fixed capacity, starts and ends its route at a central depot, and each customer must be visited exactly once by exactly one vehicle.
+
+\subsection{Instance Generation}
+
+CVRP instances are generated with the following specifications:
+
+\begin{itemize}
+    \item \textbf{Number of customers}: $n \in \{7, 8, 9, 10, \ldots, 20\}$ (varies by experiment)
+    \item \textbf{Depot location}: Node $0$ with coordinates sampled uniformly
+    \item \textbf{Customer locations}: Nodes $1, 2, \ldots, n$ with coordinates sampled uniformly
+    \item \textbf{Coordinate generation}: 
+        \begin{enumerate}
+            \item Sample integer coordinates $(x_i, y_i) \sim \text{Uniform}\{0, 1, \ldots, 100\}$ for all nodes $i \in \{0, 1, \ldots, n\}$
+            \item Normalize to unit square: $(x_i', y_i') = (x_i/100, y_i/100)$
+        \end{enumerate}
+    \item \textbf{Customer demands}: $q_i \sim \text{Uniform}\{1, 2, \ldots, 10\}$ for $i \in \{1, \ldots, n\}$
+    \item \textbf{Depot demand}: $q_0 = 0$
+    \item \textbf{Vehicle capacity}: $Q = 30$ (fixed for all instances)
+    \item \textbf{Distance metric}: Euclidean distance in the normalized unit square
+    \item \textbf{Random seed}: $\text{seed} = 4242 + n \times 1000 + \text{instance\_id} \times 10 + \text{attempt}$
+\end{itemize}
+
+\subsection{Mathematical Formulation}
+
+Let $\mathcal{V} = \{0, 1, \ldots, n\}$ denote the set of all nodes, where node $0$ represents the depot and $\mathcal{N} = \{1, 2, \ldots, n\}$ represents the set of customers. Let $\mathcal{K}$ denote the set of available vehicles (unbounded in our formulation).
+
+\subsubsection{Parameters}
+\begin{itemize}
+    \item $(x_i, y_i) \in [0, 1]^2$: Normalized coordinates of node $i \in \mathcal{V}$
+    \item $d_{ij} = \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2}$: Euclidean distance between nodes $i$ and $j$
+    \item $q_i \in \{1, 2, \ldots, 10\}$: Demand of customer $i \in \mathcal{N}$ (with $q_0 = 0$)
+    \item $Q = 30$: Vehicle capacity
+\end{itemize}
+
+\subsubsection{Decision Variables}
+\begin{itemize}
+    \item $x_{ijk} \in \{0, 1\}$: Binary variable equal to 1 if vehicle $k$ travels directly from node $i$ to node $j$
+    \item $u_i \in [0, Q]$: Cumulative demand served when visiting node $i$ (for subtour elimination)
+\end{itemize}
+
+\subsubsection{Objective Function}
+Minimize the total travel distance:
+\begin{equation}
+\min \sum_{k \in \mathcal{K}} \sum_{i \in \mathcal{V}} \sum_{j \in \mathcal{V}} d_{ij} \cdot x_{ijk}
+\end{equation}
+
+\subsubsection{Constraints}
+
+\textbf{1. Each customer is visited exactly once:}
+\begin{equation}
+\sum_{k \in \mathcal{K}} \sum_{i \in \mathcal{V}, i \neq j} x_{ijk} = 1 \quad \forall j \in \mathcal{N}
+\end{equation}
+
+\textbf{2. Flow conservation (route continuity):}
+\begin{equation}
+\sum_{i \in \mathcal{V}, i \neq h} x_{ihk} = \sum_{j \in \mathcal{V}, j \neq h} x_{hjk} \quad \forall h \in \mathcal{V}, \forall k \in \mathcal{K}
+\end{equation}
+
+\textbf{3. Each vehicle starts from the depot:}
+\begin{equation}
+\sum_{j \in \mathcal{N}} x_{0jk} \leq 1 \quad \forall k \in \mathcal{K}
+\end{equation}
+
+\textbf{4. Each vehicle returns to the depot:}
+\begin{equation}
+\sum_{i \in \mathcal{N}} x_{i0k} \leq 1 \quad \forall k \in \mathcal{K}
+\end{equation}
+
+\textbf{5. Vehicle capacity constraint:}
+\begin{equation}
+\sum_{i \in \mathcal{N}} \sum_{j \in \mathcal{V}, j \neq i} q_i \cdot x_{ijk} \leq Q \quad \forall k \in \mathcal{K}
+\end{equation}
+
+\textbf{6. Subtour elimination (Miller-Tucker-Zemlin):}
+\begin{equation}
+u_i - u_j + Q \cdot x_{ijk} \leq Q - q_j \quad \forall i, j \in \mathcal{N}, i \neq j, \forall k \in \mathcal{K}
+\end{equation}
+\begin{equation}
+q_i \leq u_i \leq Q \quad \forall i \in \mathcal{N}
+\end{equation}
+
+\subsection{Solution Representation}
+
+A CVRP solution is represented as a set of vehicle routes, where each route is a sequence of customer nodes. The solution format used in the implementation is:
+
+\begin{itemize}
+    \item \textbf{Individual routes}: Each vehicle route is stored as a list $[c_1, c_2, \ldots, c_m]$ containing only customer nodes
+    \item \textbf{Complete solution}: A list of vehicle routes $\mathcal{R} = \{r_1, r_2, \ldots, r_{|\mathcal{K}|}\}$
+    \item \textbf{Flattened representation}: For output, routes are combined with explicit depot nodes: $[0, c_{11}, \ldots, c_{1m_1}, 0, c_{21}, \ldots, c_{2m_2}, 0, \ldots]$
+\end{itemize}
+
+\subsection{Solution Validation Procedure}
+
+The following algorithm validates a CVRP solution and computes its objective value:
+
+\begin{algorithm}
+\caption{CVRP Solution Validation}
+\begin{algorithmic}[1]
+\REQUIRE Solution $\mathcal{R} = \{r_1, r_2, \ldots, r_K\}$, instance data $(d_{ij}, q_i, Q)$
+\ENSURE Feasibility status and total cost
+
+\STATE $\text{visited} \leftarrow \emptyset$ \COMMENT{Track visited customers}
+\STATE $\text{total\_cost} \leftarrow 0$
+\STATE $\text{feasible} \leftarrow \text{true}$
+
+\FOR{each route $r_k \in \mathcal{R}$}
+    \STATE $\text{route\_demand} \leftarrow 0$
+    \STATE $\text{route\_cost} \leftarrow d_{0, r_k[1]}$ \COMMENT{Depot to first customer}
+    
+    \FOR{$i = 1$ to $|r_k|$}
+        \IF{$r_k[i] \in \text{visited}$}
+            \STATE $\text{feasible} \leftarrow \text{false}$ \COMMENT{Customer visited twice}
+            \RETURN $(\text{false}, \infty)$
+        \ENDIF
+        \STATE $\text{visited} \leftarrow \text{visited} \cup \{r_k[i]\}$
+        \STATE $\text{route\_demand} \leftarrow \text{route\_demand} + q_{r_k[i]}$
+        
+        \IF{$i < |r_k|$}
+            \STATE $\text{route\_cost} \leftarrow \text{route\_cost} + d_{r_k[i], r_k[i+1]}$
+        \ELSE
+            \STATE $\text{route\_cost} \leftarrow \text{route\_cost} + d_{r_k[i], 0}$ \COMMENT{Last customer to depot}
+        \ENDIF
+    \ENDFOR
+    
+    \IF{$\text{route\_demand} > Q$}
+        \STATE $\text{feasible} \leftarrow \text{false}$ \COMMENT{Capacity violated}
+        \RETURN $(\text{false}, \infty)$
+    \ENDIF
+    
+    \STATE $\text{total\_cost} \leftarrow \text{total\_cost} + \text{route\_cost}$
+\ENDFOR
+
+\IF{$|\text{visited}| \neq n$}
+    \STATE $\text{feasible} \leftarrow \text{false}$ \COMMENT{Not all customers visited}
+    \RETURN $(\text{false}, \infty)$
+\ENDIF
+
+\RETURN $(\text{true}, \text{total\_cost})$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Distance Calculation}
+
+The exact Euclidean distance calculation used in the implementation:
+
+\begin{algorithm}
+\caption{Distance Matrix Computation}
+\begin{algorithmic}[1]
+\REQUIRE Coordinates $\{(x_i, y_i)\}_{i=0}^n$
+\ENSURE Distance matrix $D \in \mathbb{R}^{(n+1) \times (n+1)}$
+
+\FOR{$i = 0$ to $n$}
+    \FOR{$j = 0$ to $n$}
+        \STATE $D[i][j] \leftarrow \sqrt{(x_i - x_j)^2 + (y_i - y_j)^2}$
+    \ENDFOR
+\ENDFOR
+\RETURN $D$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Instance Generation Algorithm}
+
+The complete instance generation procedure as implemented:
+
+\begin{algorithm}
+\caption{CVRP Instance Generation}
+\begin{algorithmic}[1]
+\REQUIRE Number of customers $n$, instance ID $id$, attempt number $a$
+\ENSURE CVRP instance $(coords, demands, distances, capacity)$
+
+\STATE $\text{seed} \leftarrow 4242 + n \times 1000 + id \times 10 + a$
+\STATE Set random seed to $\text{seed}$
+
+\STATE \textbf{// Generate coordinates}
+\FOR{$i = 0$ to $n$}
+    \STATE $x_i \leftarrow \text{RandomInt}(0, 100)$
+    \STATE $y_i \leftarrow \text{RandomInt}(0, 100)$
+    \STATE $\text{coords}[i] \leftarrow (x_i/100, y_i/100)$
+\ENDFOR
+
+\STATE \textbf{// Generate demands}
+\STATE $\text{demands}[0] \leftarrow 0$ \COMMENT{Depot has no demand}
+\FOR{$i = 1$ to $n$}
+    \STATE $\text{demands}[i] \leftarrow \text{RandomInt}(1, 10)$
+\ENDFOR
+
+\STATE \textbf{// Compute distance matrix}
+\STATE $\text{distances} \leftarrow \text{ComputeDistanceMatrix}(\text{coords})$
+
+\STATE \textbf{// Set capacity}
+\STATE $\text{capacity} \leftarrow 30$
+
+\RETURN $(\text{coords}, \text{demands}, \text{distances}, \text{capacity})$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Key Implementation Notes}
+
+\begin{enumerate}
+    \item \textbf{Coordinate Precision}: Coordinates are first sampled as integers from $\{0, 1, \ldots, 100\}$ then normalized to $[0, 1]$ by dividing by 100, ensuring consistent precision across instances.
+    
+    \item \textbf{Distance Computation}: Distances are computed using double-precision floating-point arithmetic to minimize rounding errors.
+    
+    \item \textbf{Vehicle Fleet}: The number of vehicles is unbounded (sufficient vehicles are always available), making this effectively a fleet-size-and-mix VRP with homogeneous unlimited vehicles.
+    
+    \item \textbf{Solution Quality}: Solutions are evaluated solely by total distance traveled; the number of vehicles used is not part of the objective function.
+    
+    \item \textbf{Reproducibility}: The deterministic seeding scheme ensures that instances can be exactly reproduced given the problem size, instance ID, and attempt number.
+\end{enumerate}
+
+\end{document}

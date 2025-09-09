@@ -1,0 +1,20 @@
+\begin{table*}[htbp]
+\centering
+\caption{Comparison of Mean, Geometric Mean, and Median with Standard Errors}
+\label{tab:central-tendency-comparison}
+\begin{tabular}{@{}l c c c c c c c c@{}}
+\toprule
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & \textbf{Timeout} & \textbf{Mean $\pm$ SE GM $\pm$ SE Median $\pm$ SE} & \textbf{95\% Range} & \textbf{SE(Mean)} & \textbf{KS CPC} & \textbf{KS log(CPC)} \\
+\midrule
+GPU-DP-Exact & 8 & 30 & ∞ & $0.4265 \pm 7.06e-05$ $0.4206 \pm 7.08e-05$ $0.4237 \pm 9.07e-05$ & [0.2966, 0.5696] & 7.06e-05 & $<0.01$ & $<0.01$ \
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Mean: Arithmetic mean; GM: Geometric mean; SE: Standard error
+\item SE(Mean) = s/√n; SE(GM) via delta method = GM × s_log/√n; SE(Median) via KDE at sample median
+\item 95\% Range: [2.5th percentile, 97.5th percentile] of CPC values
+\item KS: Kolmogorov-Smirnov test p-values for normality (CPC and log(CPC))
+\item All SE values formatted in scientific notation with 3 significant digits
+\end{tablenotes}
+\end{table*}
