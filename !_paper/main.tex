@@ -332,7 +332,7 @@ The complete instance generation procedure as implemented:
 \centering
    \includegraphics[width=80mm]{figures/cpc_histogram_paper_100k.eps}
    \caption{Distribution of CPC for N=10 CVRP instances solved using GPU dynamic programming. The histogram shows 100,000 random instances with the fitted log-normal distribution overlaid ($\mu=-0.748$, $\sigma=0.183$). The log-normal fit demonstrates that CPC follows a log-normal distribution (Kolmogorov-Smirnov test, $p=0.189$).}
-\label{fig:benchmark}
+\label{fig:cpc_histogram}
 % trim={5pt 10pt 5pt 8pt}, clip
 \end{figure}
 
@@ -341,7 +341,7 @@ The complete instance generation procedure as implemented:
 \centering
    \includegraphics[width=80mm]{figures/tiny_n10.eps}
    \caption{Training batch 75}
-\label{fig:benchmark}
+\label{fig:training_batch}
 % trim={5pt 10pt 5pt 8pt}, clip
 \end{figure}
 
@@ -376,7 +376,7 @@ OR-Tools Greedy (sub) & 20 & 30 & 0.022s & 0.3448 & 0.3414 & 0.3439 & 1.88e-03 &
 \begin{tablenotes}
 \small
 \item - Statistics computed over $10^6/10^3$ instances for GPU-DP-Exact/Others per configuration
-\item - CPU DP-Exact solver uses brute-force enumeration of all customer partitions and route permutations (${\cal O}(n! × 2^n)$), ensuring truly optimal solutions but restricting feasibility to $N\le 8$. 
+\item - CPU DP-Exact solver uses brute-force enumeration of all customer partitions and route permutations (${\cal O}(n! \times 2^n)$), ensuring truly optimal solutions but restricting feasibility to $N\le 8$.
 \item - GPU ``DP-Exact'' solver combines optimal Held-Karp dynamic programming for partitioning (${\cal O}(n^2 2^n)$) with nearest neighbor heuristic for route ordering, achieving near-optimal solutions with dramatically improved scalability through GPU parallelization.
 \item - Time: Average time required to solve 1 instance
 \item - Mean: Arithmetic mean; GM: Geometric mean
@@ -390,6 +390,32 @@ OR-Tools Greedy (sub) & 20 & 30 & 0.022s & 0.3448 & 0.3414 & 0.3439 & 1.88e-03 &
 \end{table*}
 
 
+\begin{table}[htbp]
+\centering
+\caption{Timing Comparison: Exact DP vs OR-Tools Greedy (Optimal Mode)}
+\label{tab:timing-comparison}
+\small
+\begin{tabular}{@{}c c c c c c c@{}}
+\toprule
+\textbf{N} & \textbf{Exact DP} & \textbf{OR-Tools} & \textbf{1K Exact} & \textbf{1K OR-Tools} & \textbf{10K Exact} & \textbf{10K OR-Tools} \\
+\midrule
+5 & 18ms & 15ms & 0.3m & 0.2m & 3.0m & 2.5m \\
+6 & 230ms & 131ms & 3.8m & 2.2m & 38.3m & 21.8m \\
+7 & 3.5s & 1.1s & 57.5m & 17.7m & 09.35h & 02.56h \\
+8 & 58.5s & 7.5s & 16.15h & 02.04h & 06.18d & 20.46h \\
+\midrule
+9 & 19.3m & 48.2s & 13.08d & 13.22h & 133.17d & 05.13d \\
+10 & 7.3h & 4.6m & 303.12d & 03.05d & 3035.09d & 32.04d \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Single instance timing per method (N=5-8: actual data; N=9-10: quadratic extrapolation)
+\item 1K/10K columns show total time for 1,000/10,000 instances
+\item Time format: ms=milliseconds, s=seconds, m=minutes, h=hours (HH.MM), d=days (DD.HH)
+\item OR-Tools run in optimal mode with same solution quality as Exact DP
+\end{tablenotes}
+\end{table}
 
 
 \begin{table*}[htbp] 
@@ -652,7 +678,7 @@ Gradient clip norm & 2.0$^{\dagger}$ & 2.0$^{\dagger}$ & 2.0$^{\dagger}$ & 2.0$^
        OR-Tools GLS with 2-second time limit maintains consistent performance across all problem sizes (dotted line). 
        \textbf{Bottom panel:} Cost per customer (CPC) showing solution quality with error bars indicating standard deviation across 1000 instances per problem size. 
        The vertical line at N=8.5 marks the transition point between exact and heuristic approaches for OR-Tools Greedy.}
-\label{fig:benchmark}
+\label{fig:benchmark_duplicate}
 % trim={5pt 10pt 5pt 8pt}, clip
 \end{figure*}
 
