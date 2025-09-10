@@ -7,8 +7,8 @@ problem:
   vehicle_capacity: 20
 
 training:
-  num_batches_per_epoch: 150  # Paper's scale: 768,000 instances per epoch
-  batch_size: 512             # Default batch size (paper's value)
+  num_batches_per_epoch: 25   # Paper's scale: 768,000 instances per epoch
+  batch_size: 128             # Default batch size (paper's value)
   num_epochs: 10              # Default number of epochs
 
 # Smaller model for faster training

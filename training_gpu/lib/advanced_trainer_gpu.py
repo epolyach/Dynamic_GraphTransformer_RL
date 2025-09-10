@@ -39,6 +39,42 @@ from .gpu_utils import GPUManager, DataLoaderGPU
 logger = logging.getLogger(__name__)
 
 
+
+class AdaptiveTemperatureScheduler:
+    """Adaptive temperature scheduling for exploration-exploitation balance."""
+    
+    def __init__(self, temp_start: float = 2.0, temp_min: float = 0.5, 
+                 adaptation_rate: float = 0.1, performance_window: int = 5):
+        self.temp_start = temp_start
+        self.temp_min = temp_min
+        self.adaptation_rate = adaptation_rate
+        self.performance_window = performance_window
+        self.current_temp = temp_start
+        self.performance_history = []
+    
+    def update(self, performance: float) -> float:
+        """Update temperature based on recent performance."""
+        self.performance_history.append(performance)
+        
+        if len(self.performance_history) >= self.performance_window:
+            # Keep only recent history
+            self.performance_history = self.performance_history[-self.performance_window:]
+            
+            # Calculate performance trend
+            recent_mean = np.mean(self.performance_history[-self.performance_window//2:])
+            older_mean = np.mean(self.performance_history[:self.performance_window//2])
+            
+            # If performance is improving, reduce temperature (more exploitation)
+            # If performance is stagnating, increase temperature (more exploration)
+            if recent_mean < older_mean:  # Lower cost is better
+                self.current_temp = max(self.temp_min, 
+                                      self.current_temp * (1 - self.adaptation_rate))
+            else:
+                self.current_temp = min(self.temp_start,
+                                      self.current_temp * (1 + self.adaptation_rate))
+        
+        return self.current_temp
+
 class EarlyStopping:
     """Early stopping utility to prevent overfitting."""
     
@@ -151,10 +187,17 @@ def advanced_train_model_gpu(
     
     # Training parameters
     train_config = config.get('training', {})
+    adv_config = config.get('training_advanced', {})
     n_epochs = train_config.get('num_epochs', 100)
     batch_size = train_config.get('batch_size', 32)
-    learning_rate = train_config.get('learning_rate', 1e-4)
+    base_lr = train_config.get('learning_rate', 1e-4)
+    validation_frequency = train_config.get('validation_frequency', 1)
     gradient_accumulation_steps = gpu_config.get('gradient_accumulation_steps', 1)
+
+    # Feature flags (match CPU)
+    use_lr_scheduling = adv_config.get('use_lr_scheduling', True)
+    use_adaptive_temp = adv_config.get('use_adaptive_temperature', True)
+    strict_validation = config.get('experiment', {}).get('strict_validation', True)
     
     # Adjust effective batch size
     effective_batch_size = batch_size * gradient_accumulation_steps
@@ -171,31 +214,41 @@ def advanced_train_model_gpu(
     dataloader_kwargs = dataloader_gpu.get_dataloader_kwargs()
     
     # Optimizer
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    beta1 = adv_config.get('adam_beta1', 0.9)
+    beta2 = adv_config.get('adam_beta2', 0.999)
+    adam_eps = adv_config.get('adam_eps', 1e-8)
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=base_lr,
+        weight_decay=adv_config.get('weight_decay', 1e-4),
+        betas=(beta1, beta2),
+        eps=adam_eps
+    )
     
     # Learning rate scheduler
-    scheduler_config = train_config.get('scheduler', {})
-    if scheduler_config.get('type') == 'cosine':
-        scheduler = CosineAnnealingLR(
-            optimizer, 
-            T_max=n_epochs,
-            eta_min=scheduler_config.get('eta_min', 1e-6)
-        )
-    elif scheduler_config.get('type') == 'plateau':
-        scheduler = ReduceLROnPlateau(
-            optimizer,
-            mode='min',
-            factor=scheduler_config.get('factor', 0.5),
-            patience=scheduler_config.get('patience', 10),
-            min_lr=scheduler_config.get('min_lr', 1e-6)
-        )
-    else:
-        scheduler = None
+    scheduler = None
+    if use_lr_scheduling:
+        if adv_config.get('scheduler_type', 'cosine') == 'cosine':
+            scheduler = CosineAnnealingLR(
+                optimizer,
+                T_max=n_epochs,
+                eta_min=adv_config.get('min_lr', base_lr * 0.01)
+            )
+        else:
+            scheduler = ReduceLROnPlateau(
+                optimizer,
+                mode='min',
+                factor=adv_config.get('lr_factor', 0.5),
+                patience=adv_config.get('lr_patience', 5),
+                min_lr=adv_config.get('min_lr', base_lr * 0.01)
+            )
     
     # Initialize baseline
     baseline = None
-    baseline_config = train_config.get('baseline', {})
+    baseline_config = config.get('baseline', {})
+    baseline_update_warmup_epochs = int(baseline_config.get('update', {}).get('warmup_epochs', 0))
     
+    baseline_update_frequency = int(baseline_config.get('update', {}).get('frequency', 1))
     # Only initialize RolloutBaseline for RL training (matching CPU)
     print("[INIT] Checking if baseline needed for RL training...")
     if 'RL' in model_name:
@@ -223,6 +276,15 @@ def advanced_train_model_gpu(
             )
         print("[INIT] Baseline initialized")
     
+    # Adaptive temperature scheduler (matching CPU)
+    temp_scheduler = None
+    if use_adaptive_temp:
+        temp_scheduler = AdaptiveTemperatureScheduler(
+            temp_start=adv_config.get('temp_start', 2.0),
+            temp_min=adv_config.get('temp_min', 0.5),
+            adaptation_rate=adv_config.get('temp_adaptation_rate', 0.1)
+        )
+    
     # Early stopping
     early_stop_config = train_config.get('early_stopping', {})
     early_stopping = EarlyStopping(
@@ -238,11 +300,14 @@ def advanced_train_model_gpu(
     # Training history
     history = {
         'train_loss': [],
-        'train_cost': [],
-        'val_cost': [],
+        'train_cost_arithmetic': [],
+        'val_cost_arithmetic': [],
         'learning_rate': [],
         'epoch_time': [],
-        'gpu_memory': []
+        'gpu_memory': [],
+        'baseline_type': [],
+        'baseline_value': [],
+        'mean_type': []
     }
     
     # Initialize wandb if requested
@@ -256,13 +321,29 @@ def advanced_train_model_gpu(
         wandb.watch(model)
     
     # Training loop
-    print(f"[{model_name}] Training with {n_epochs * train_config.get('num_batches_per_epoch', 150) * batch_size} total instances over {n_epochs} epochs")
-    print(f"[{model_name}] Batches per epoch: {train_config.get('num_batches_per_epoch', 150)}, batch size: {batch_size}")
+    num_batches_per_epoch = train_config.get('num_batches_per_epoch', 150)
+    # Match CPU semantics: include epoch 0, so epochs are (num_epochs + 1)
+    total_epochs = n_epochs + 1
+    total_instances = train_config.get('num_instances', total_epochs * num_batches_per_epoch * batch_size)
+    print(f"[{model_name}] Training with {total_instances} total instances over {total_epochs} epochs")
+    print(f"[{model_name}] Batches per epoch: {num_batches_per_epoch}, batch size: {batch_size}")
     # Match CPU-side informational print about CPC aggregation
     use_geometric_mean = config.get('training', {}).get('use_geometric_mean', True)
     print(f"[{model_name}] Using {'geometric' if use_geometric_mean else 'arithmetic'} mean for CPC aggregation")
     
-    for epoch in range(n_epochs):        
+    for epoch in range(0, total_epochs):        
+        epoch_start = time.time()
+        
+        # Current temperature (adaptive or scheduled) - matching CPU exactly
+        if temp_scheduler:
+            current_temp = temp_scheduler.current_temp
+        else:
+            # Original temperature scheduling
+            temp_progress = (epoch - 1) / max(1, n_epochs - 1)
+            temp_start = adv_config.get("temp_start", 1.5)
+            temp_min = adv_config.get("temp_min", 0.2)
+            current_temp = temp_min + (temp_start - temp_min) * (0.5 * (1 + np.cos(np.pi * temp_progress)))
+        
         epoch_start = time.time()
         
         # Training phase
@@ -271,50 +352,93 @@ def advanced_train_model_gpu(
         train_cost_epoch = []
         
         # Generate training batches
-        n_batches = train_config.get('num_batches_per_epoch', 150)
+        n_batches = num_batches_per_epoch
         
         for batch_idx in range(n_batches):
-            # Generate problem instances
-            instances = data_generator(batch_size, epoch=epoch)
+            # Generate problem instances (align seeds with CPU)
+            batch_seed = epoch * n_batches * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            instances = data_generator(batch_size, epoch=epoch, seed=batch_seed)
             
             # Move to GPU
             instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in instances]
             
+
             # Forward pass with mixed precision
             with gpu_manager.autocast_context():
-                routes, log_probs, entropy = model(instances)
+                routes, log_probs, entropy = model(
+                    instances,
+                    max_steps=len(instances[0]['coords']) * config.get('inference', {}).get('max_steps_multiplier', 10),
+                    temperature=current_temp,
+                    greedy=False,
+                    config=config
+                )
                 
-                # Compute costs using GPU-optimized function
-                batch_costs = []
+                # Compute per-instance route costs and CPC (log or arithmetic)
+                rcosts = []  # actual route costs per instance
+                cpc_vals = []  # arithmetic CPC values
+                cpc_logs = []  # log-CPC values for geometric mean
                 for b in range(len(instances)):
                     distances = instances[b]["distances"]
                     route = routes[b]
-                    c = compute_route_cost_gpu(route, distances) / (len(instances[b]["coords"]) - 1)
-                    batch_costs.append(c if isinstance(c, torch.Tensor) else torch.tensor(c, device=gpu_manager.device))
-                costs = torch.stack(batch_costs)
+                    # Use CPU cost computation to match CPU trainer exactly
+                    distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
+                    rc = compute_route_cost(route, distances_cpu)
+                    # Convert to tensor on GPU
+                    if not isinstance(rc, torch.Tensor):
+                        rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                    rcosts.append(rc)
+                    n_customers = (len(instances[b]["coords"]) - 1)
+                    if use_geometric_mean:
+                        cpc_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
+                    else:
+                        cpc_vals.append(rc / float(n_customers))
                 
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    batch_cost = torch.exp(torch.stack(cpc_logs).mean())
+                else:
+                    batch_cost = torch.stack(cpc_vals).mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = torch.stack(rcosts).to(dtype=torch.float32)
                 
                 # Compute baseline (matching CPU)
                 if baseline is not None:
-                    baseline_value = baseline.eval_batch(instances)
-                    if baseline_value.device != costs.device:
-                        baseline_value = baseline_value.to(costs.device)
+                    bl_vals = baseline.eval_batch(instances)  # per-instance costs (GPU tensor)
+                    if bl_vals.device != costs_tensor.device:
+                        bl_vals = bl_vals.to(costs_tensor.device)
+                    if bl_vals.numel() != costs_tensor.numel():
+                        base_scalar = costs_tensor.mean().detach()
+                        advantages = base_scalar - costs_tensor
+                    else:
+                        advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
                 else:
-                    baseline_value = torch.zeros_like(costs)
+                    base_scalar = costs_tensor.mean().detach()
+                    advantages = base_scalar - costs_tensor
                 
-                # Compute advantage
-                advantage = costs - baseline_value
+                # REINFORCE loss with optional entropy regularization
+                adv = advantages
+                adv_mean = adv.mean()
+                adv_std = adv.std()
+                adv_norm = (adv - adv_mean) / (adv_std + 1e-8)
+                # Fix: log_probs is already the total log probability for the sequence
+                # Don't sum it - use it directly like CPU trainer
+                # Policy loss (matching CPU exactly)
+                policy_loss = -(adv_norm * log_probs).mean()
                 
-                # REINFORCE loss
-                reinforce_loss = (advantage * log_probs.sum(dim=-1)).mean()
+                # Entropy regularization (matching CPU)
+                entropy_coef = adv_config.get("entropy_coef", 0.01)
+                entropy_min = adv_config.get("entropy_min", 0.0)
+                if n_epochs > 1:
+                    cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (n_epochs - 1)))
+                    entropy_coef = entropy_min + (entropy_coef - entropy_min) * cosine_factor
                 
-                # Add entropy regularization if configured
-                if train_config.get('entropy_weight', 0) > 0:
-                    entropy = -(log_probs * log_probs.exp()).sum(dim=-1).mean()
-                    reinforce_loss = reinforce_loss - train_config['entropy_weight'] * entropy
+                entropy_loss = -entropy_coef * entropy.mean()
+                total_loss = policy_loss + entropy_loss
                 
                 # Scale loss for gradient accumulation
-                loss = reinforce_loss / gradient_accumulation_steps
+                # Only scale for gradient accumulation if steps > 1
+                loss = total_loss if gradient_accumulation_steps == 1 else total_loss / gradient_accumulation_steps
             
             # Backward pass with gradient scaling
             if gpu_manager.scaler is not None:
@@ -333,12 +457,12 @@ def advanced_train_model_gpu(
                 optimizer.zero_grad()
             
             # Track metrics
-            train_loss_epoch.append(reinforce_loss.item())
-            train_cost_epoch.append(costs.mean().item())
+            train_loss_epoch.append(total_loss.item())  # Track unscaled total loss
+            train_cost_epoch.append(batch_cost.item())
             train_metrics.update(
-                loss=reinforce_loss.item(),
-                cost=costs.mean().item(),
-                advantage=advantage.mean().item()
+                loss=(loss.item() * gradient_accumulation_steps),
+                cost=batch_cost.item(),
+                advantage=adv_norm.mean().item()
             )
             
             # Check memory usage periodically
@@ -349,45 +473,58 @@ def advanced_train_model_gpu(
         if n_batches % gradient_accumulation_steps != 0:
             optimizer.zero_grad()
         
-        # Validation phase
+        # Validation phase (align with CPU validation_frequency)
         model.eval()
         val_cost_epoch = []
-        
-        with torch.no_grad():
-            for _ in range(train_config.get('val_batches', 10)):
-                val_instances = data_generator(batch_size, epoch=epoch)
+        do_validate = (epoch % validation_frequency) == 0 or epoch == n_epochs
+        if do_validate:
+            with torch.no_grad():
+                val_seed = 1000000 + epoch * batch_size
+                val_instances = data_generator(batch_size, seed=val_seed)
                 val_instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in val_instances]
-                
                 with gpu_manager.autocast_context():
-                    routes_val, log_probs_val, entropy_val = model(val_instances)
-                    
-                    # Compute validation costs using GPU-optimized function
-                    val_batch_costs = []
-                    for b in range(len(val_instances)):
-                        distances = val_instances[b]["distances"]
-                        route = routes_val[b]
-                        c = compute_route_cost_gpu(route, distances) / (len(val_instances[b]["coords"]) - 1)
-                        val_batch_costs.append(c if isinstance(c, torch.Tensor) else torch.tensor(c, device=gpu_manager.device))
-                    val_costs = torch.stack(val_batch_costs)
-                    
-                    # val_costs already computed above
+                    routes_val, _, _ = model(
+                        val_instances,
+                        max_steps=len(val_instances[0]['coords']) * config.get('inference', {}).get('max_steps_multiplier', 10),
+                        temperature=current_temp,
+                        greedy=False,
+                        config=config
+                    )
+                    # Compute validation CPC using requested mean
+                    if use_geometric_mean:
+                        val_logs = []
+                        for b in range(len(val_instances)):
+                            distances = val_instances[b]["distances"]
+                            route = routes_val[b]
+                            rc = compute_route_cost_gpu(route, distances)
+                            if not isinstance(rc, torch.Tensor):
+                                rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                            n_customers = (len(val_instances[b]["coords"]) - 1)
+                            val_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
+                        batch_val_cost = float(torch.exp(torch.stack(val_logs).mean()).item())
+                    else:
+                        val_cpcs = []
+                        for b in range(len(val_instances)):
+                            distances = val_instances[b]["distances"]
+                            route = routes_val[b]
+                            rc = compute_route_cost_gpu(route, distances)
+                            if not isinstance(rc, torch.Tensor):
+                                rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                            n_customers = (len(val_instances[b]["coords"]) - 1)
+                            val_cpcs.append((rc / float(n_customers)).item())
+                        batch_val_cost = float(np.mean(val_cpcs))
+                val_cost_epoch.append(batch_val_cost)
+                val_metrics.update(cost=batch_val_cost)
                 
-                val_cost_epoch.append(val_costs.mean().item())
-                val_metrics.update(cost=val_costs.mean().item())
-        
+                # Update adaptive temperature based on validation performance
+                if temp_scheduler and 'batch_val_cost' in locals():
+                    temp_scheduler.update(batch_val_cost)
         # Epoch statistics
         epoch_time = time.time() - epoch_start
         avg_train_loss = np.mean(train_loss_epoch)
         avg_train_cost = np.mean(train_cost_epoch)
-        avg_val_cost = np.mean(val_cost_epoch)
+        avg_val_cost = np.mean(val_cost_epoch) if val_cost_epoch else float('nan')
         current_lr = optimizer.param_groups[0]['lr']
-        
-        # Update history
-        history['train_loss'].append(avg_train_loss)
-        history['train_cost'].append(avg_train_cost)
-        history['val_cost'].append(avg_val_cost)
-        history['learning_rate'].append(current_lr)
-        history['epoch_time'].append(epoch_time)
         
         # GPU memory tracking
         mem_info = gpu_manager.get_memory_info()
@@ -405,35 +542,70 @@ def advanced_train_model_gpu(
         if baseline is not None:
             try:
                 # Only allow baseline updates after warmup epochs
-                warmup = train_config.get('baseline', {}).get('warmup_epochs', 0)
-                if epoch >= warmup:
+                if epoch >= baseline_update_warmup_epochs:
                     baseline.epoch_callback(model, epoch)
             except Exception as e:
                 print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
+                # Compute baseline value for CSV logging (match CPU behavior)
+        baseline_type = 'rollout' if baseline is not None else 'mean'
+        baseline_value = None
+        if train_cost_epoch:  # if epoch_costs
+            if baseline is not None:
+                # Only compute when the baseline update is scheduled
+                if (epoch % baseline_update_frequency) == 0:
+                    try:
+                        # Get a representative baseline value from the rollout
+                        test_instances = data_generator(batch_size, seed=999999 + epoch)
+                        # Move to GPU
+                        test_instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in test_instances]
+                        with torch.no_grad():
+                            baseline_costs = baseline.eval_batch(test_instances)
+                        baseline_value = float(baseline_costs.mean())
+                    except:
+                        baseline_value = float(avg_train_cost)
+                else:
+                    baseline_value = None  # Skip computing on non-update epochs to save time
+            else:
+                # Mean baseline (using same aggregation as training)
+                baseline_value = float(avg_train_cost)  # Already aggregated costs
+        # Update history
+        history['train_loss'].append(avg_train_loss)
+        history['train_cost_arithmetic'].append(avg_train_cost)
+        history['val_cost_arithmetic'].append(avg_val_cost)
+        history['learning_rate'].append(current_lr)
+        history['epoch_time'].append(epoch_time)
+        history.setdefault('baseline_type', []).append(baseline_type)
+        history.setdefault('baseline_value', []).append(baseline_value)
+        history.setdefault('mean_type', []).append('geometric' if use_geometric_mean else 'arithmetic')
+        history.setdefault('temperature', []).append(float(current_temp))
+                
         # Get current learning rate for logging
-        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+        current_lr = scheduler.get_last_lr()[0] if (scheduler and not isinstance(scheduler, ReduceLROnPlateau)) else optimizer.param_groups[0]['lr']
         
         # Logging
-        print(
-            f"[{model_name}] Epoch {epoch:03d}: "
-            f"train={np.mean(train_cost_epoch):.4f}, "
-            f"val={np.mean(val_cost_epoch) if val_cost_epoch else 0:.4f}, "
-            f"lr={current_lr:.2e}, temp=2.500, "
-            f"time={epoch_time:.1f}s"
-        ) if val_cost_epoch else print(
-            f"[{model_name}] Epoch {epoch:03d}: "
-            f"train={np.mean(train_cost_epoch):.4f}, "
-            f"lr={current_lr:.2e}, temp=2.500, "
-            f"time={epoch_time:.1f}s"
-        )
+        if val_cost_epoch:
+            print(
+                f"[{model_name}] Epoch {epoch:03d}: "
+                f"train={np.mean(train_cost_epoch):.4f}, val={np.mean(val_cost_epoch):.4f}, "
+                f"lr={current_lr:.2e}, temp={current_temp:.3f}, time={epoch_time:.1f}s"
+            )
+        else:
+            print(
+                f"[{model_name}] Epoch {epoch:03d}: "
+                f"train={np.mean(train_cost_epoch):.4f}, "
+                f"lr={current_lr:.2e}, temp={current_temp:.3f}, time={epoch_time:.1f}s"
+            )
         
         # Wandb logging
         if use_wandb:
             wandb.log({
                 'epoch': epoch + 1,
                 'train_loss': avg_train_loss,
-                'train_cost': avg_train_cost,
-                'val_cost': avg_val_cost,
+                'train_cost_arithmetic': avg_train_cost,
+                'val_cost_arithmetic': avg_val_cost,
+                'baseline_type': baseline_type,
+                'baseline_value': baseline_value,
+                'mean_type': 'geometric' if use_geometric_mean else 'arithmetic',
                 'learning_rate': current_lr,
                 'epoch_time': epoch_time,
                 'gpu_memory_gb': mem_info['allocated'],
@@ -478,12 +650,12 @@ def advanced_train_model_gpu(
     
     # Compile final metrics
     final_metrics = {
-        'final_train_cost': history['train_cost'][-1],
-        'final_val_cost': history['val_cost'][-1],
-        'best_val_cost': min(history['val_cost']),
-        'total_time': sum(history['epoch_time']),
-        'avg_epoch_time': np.mean(history['epoch_time']),
-        'peak_gpu_memory': max(history['gpu_memory']),
+        'final_train_cost': history['train_cost_arithmetic'][-1] if history.get('train_cost_arithmetic') else None,
+        'final_val_cost': history['val_cost_arithmetic'][-1] if history.get('val_cost_arithmetic') else None,
+        'best_val_cost': min(history['val_cost_arithmetic']) if history.get('val_cost_arithmetic') else None,
+        'total_time': float(sum(history['epoch_time'])) if history.get('epoch_time') else 0.0,
+        'avg_epoch_time': float(np.mean(history['epoch_time'])) if history.get('epoch_time') else 0.0,
+        'peak_gpu_memory': float(max(history['gpu_memory'])) if history.get('gpu_memory') else 0.0,
         'device': gpu_manager.get_device_name()
     }
     

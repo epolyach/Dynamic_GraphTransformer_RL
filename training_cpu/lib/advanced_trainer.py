@@ -211,6 +211,7 @@ def advanced_train_model(
     train_losses: List[float] = []
     train_costs: List[float] = []
     val_costs: List[float] = []
+    epoch_times: List[float] = []
     learning_rates: List[float] = []
     temperatures: List[float] = []
     
@@ -473,6 +474,8 @@ def advanced_train_model(
                 # Mean baseline (using same aggregation as training)
                 baseline_value = float(np.mean(epoch_costs))  # Already aggregated costs
         
+        # Compute epoch time before callback to avoid unbound variable
+        epoch_time = time.time() - epoch_start
         # Call epoch callback for incremental CSV writing
         if epoch_callback is not None:
             epoch_callback(
@@ -482,11 +485,13 @@ def advanced_train_model(
                 val_cost=val_cost,
                 learning_rate=current_lr,
                 temperature=current_temp,
+                time_per_epoch=epoch_time,
                 baseline_value=baseline_value
             )
         
         # Epoch summary
         epoch_time = time.time() - epoch_start
+        epoch_times.append(epoch_time)
         epoch_summary = metrics.epoch_summary("train_")
         
         if val_cost is not None:
@@ -511,6 +516,7 @@ def advanced_train_model(
         'train_losses': train_losses,
         'train_costs': train_costs,
         'val_costs': val_costs,
+        'epoch_times': epoch_times,
         'final_val_cost': val_costs[-1] if val_costs else (train_costs[-1] if train_costs else 0.0),
         'learning_rates': learning_rates,
         'temperatures': temperatures,

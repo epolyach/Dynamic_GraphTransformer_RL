@@ -69,14 +69,14 @@ class IncrementalCSVWriter:
         # Initialize file with headers - include mean type
         mean_type = 'geometric' if self.use_geometric_mean else 'arithmetic'
         headers = ['epoch', 'train_loss', f'train_cost_{mean_type}', f'val_cost_{mean_type}', 
-                   'learning_rate', 'temperature', 'baseline_type', 'baseline_value', 'mean_type']
+                   'learning_rate', 'temperature', 'time_per_epoch', 'baseline_type', 'baseline_value', 'mean_type']
         pd.DataFrame(columns=headers).to_csv(self.csv_path, index=False)
         self.logger.info(f'Created CSV history file: {self.csv_path}')
         self.logger.info(f'Using {mean_type} mean for CPC aggregation')
     
     def write_epoch(self, epoch: int, train_loss: float, train_cost: float, 
                     val_cost: Optional[float], learning_rate: float, 
-                    temperature: float, baseline_value: float = None):
+                    temperature: float, time_per_epoch: float = 0.0, baseline_value: float = None):
         """Write data for a single epoch."""
         mean_type = 'geometric' if self.use_geometric_mean else 'arithmetic'
         row = {
@@ -86,6 +86,7 @@ class IncrementalCSVWriter:
             f'val_cost_{mean_type}': val_cost if val_cost is not None else float('nan'),
             'learning_rate': learning_rate,
             'temperature': temperature,
+            'time_per_epoch': time_per_epoch,
             'baseline_type': self.baseline_type,
             'baseline_value': baseline_value if baseline_value is not None else float('nan'),
             'mean_type': mean_type

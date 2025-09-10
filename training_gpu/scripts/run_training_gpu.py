@@ -241,26 +241,38 @@ class IncrementalCSVWriter:
         self.logger = logger
         self.rows = []
         
-        # Initialize CSV with headers
-        headers = ['epoch', 'train_loss', 'train_cost', 'val_cost', 'learning_rate', 
-                   'temperature', 'gpu_memory_gb', 'time_per_epoch']
-        pd.DataFrame(columns=headers).to_csv(self.csv_path, index=False)
+        # Initialize CSV with headers (overwrite any existing file)
+        headers = [
+            'epoch',
+            'train_loss',
+            'train_cost_arithmetic',
+            'val_cost_arithmetic',
+            'learning_rate',
+            'temperature',
+            'time_per_epoch',
+            'baseline_type',
+            'baseline_value',
+            'mean_type'
+        ]
+        pd.DataFrame(columns=headers).to_csv(self.csv_path, index=False, mode='w')
         self.logger.info(f'Created CSV history file: {self.csv_path}')
     
     def write_epoch(self, history: dict, epoch: int):
         """Write data for a single epoch from history dict."""
-        if epoch >= len(history.get('train_cost', [])):
+        if epoch >= len(history.get('train_cost_arithmetic', [])):
             return
             
         row = {
             'epoch': epoch,
-            'train_loss': history['train_loss'][epoch] if 'train_loss' in history else None,
-            'train_cost': history['train_cost'][epoch] if 'train_cost' in history else None,
-            'val_cost': history['val_cost'][epoch] if 'val_cost' in history and epoch < len(history['val_cost']) else None,
-            'learning_rate': history['learning_rate'][epoch] if 'learning_rate' in history else None,
-            'temperature': 2.5,  # Default temperature
-            'gpu_memory_gb': history['gpu_memory'][epoch] if 'gpu_memory' in history else None,
-            'time_per_epoch': history['epoch_time'][epoch] if 'epoch_time' in history else None
+            'train_loss': history.get('train_loss', [None]* (epoch+1))[epoch],
+            'train_cost_arithmetic': history.get('train_cost_arithmetic', [None]* (epoch+1))[epoch],
+            'val_cost_arithmetic': history.get('val_cost_arithmetic', [None]* (epoch+1))[epoch] if epoch < len(history.get('val_cost_arithmetic', [])) else None,
+            'learning_rate': history.get('learning_rate', [None]* (epoch+1))[epoch],
+            'temperature': (history.get('temperature', [2.5]* (epoch+1))[epoch]),
+            'time_per_epoch': history.get('epoch_time', [None]* (epoch+1))[epoch],
+            'baseline_type': history.get('baseline_type', [None]* (epoch+1))[epoch] if 'baseline_type' in history else None,
+            'baseline_value': history.get('baseline_value', [None]* (epoch+1))[epoch] if 'baseline_value' in history else None,
+            'mean_type': history.get('mean_type', [None]* (epoch+1))[epoch] if 'mean_type' in history else None
         }
         
         self.rows.append(row)
@@ -278,7 +290,7 @@ class IncrementalCSVWriter:
                 return float('nan')
             return float(val) if not isinstance(val, float) else val
         
-        n_epochs = len(history.get('train_cost', []))
+        n_epochs = len(history.get('train_cost_arithmetic', []))
         if n_epochs == 0:
             self.logger.warning(f"No history data to save to CSV")
             return
@@ -287,12 +299,14 @@ class IncrementalCSVWriter:
             row = {
                 'epoch': epoch,
                 'train_loss': convert_value(history['train_loss'][epoch]) if 'train_loss' in history and epoch < len(history['train_loss']) else float('nan'),
-                'train_cost': convert_value(history['train_cost'][epoch]) if 'train_cost' in history and epoch < len(history['train_cost']) else float('nan'),
-                'val_cost': convert_value(history['val_cost'][epoch]) if 'val_cost' in history and epoch < len(history['val_cost']) else float('nan'),
+                'train_cost_arithmetic': convert_value(history['train_cost_arithmetic'][epoch]) if 'train_cost_arithmetic' in history and epoch < len(history['train_cost_arithmetic']) else float('nan'),
+                'val_cost_arithmetic': convert_value(history['val_cost_arithmetic'][epoch]) if 'val_cost_arithmetic' in history and epoch < len(history['val_cost_arithmetic']) else float('nan'),
                 'learning_rate': convert_value(history['learning_rate'][epoch]) if 'learning_rate' in history and epoch < len(history['learning_rate']) else 1e-4,
-                'temperature': 2.5,
-                'gpu_memory_gb': convert_value(history['gpu_memory'][epoch]) if 'gpu_memory' in history and epoch < len(history['gpu_memory']) else 0.0,
-                'time_per_epoch': convert_value(history['epoch_time'][epoch]) if 'epoch_time' in history and epoch < len(history['epoch_time']) else 0.0
+                'temperature': convert_value(history['temperature'][epoch]) if 'temperature' in history and epoch < len(history['temperature']) else 2.5,
+                'time_per_epoch': convert_value(history['epoch_time'][epoch]) if 'epoch_time' in history and epoch < len(history['epoch_time']) else 0.0,
+                'baseline_type': history['baseline_type'][epoch] if 'baseline_type' in history and epoch < len(history['baseline_type']) else '',
+                'baseline_value': convert_value(history['baseline_value'][epoch]) if 'baseline_value' in history and epoch < len(history['baseline_value']) else float('nan'),
+                'mean_type': history['mean_type'][epoch] if 'mean_type' in history and epoch < len(history['mean_type']) else 'arithmetic'
             }
             self.rows.append(row)
             pd.DataFrame([row]).to_csv(self.csv_path, mode='a', header=False, index=False)
@@ -413,6 +427,7 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
             data_generator=data_generator,
             config=config,
             checkpoint_dir=checkpoint_dir,
+            callbacks=[lambda epoch, _model, hist: csv_writer.write_epoch(hist, epoch)],
             use_wandb=args.wandb
         )
         
@@ -428,7 +443,15 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
             logger.info(f"History has {len(history['train_cost'])} epochs of training data")
         
         # Save history to CSV
-        csv_writer.save_all_history(history)
+        # If incremental per-epoch writes already populated the CSV, avoid duplicating rows.
+        try:
+            with open(csv_writer.csv_path, 'r') as f:
+                existing_rows = sum(1 for _ in f) - 1  # exclude header
+        except Exception:
+            existing_rows = 0
+        n_epochs = len(history.get('train_cost_arithmetic', []))
+        if existing_rows < n_epochs:
+            csv_writer.save_all_history(history)
         csv_writer.finalize()
         
         # Save model with full structure (in pytorch/ directory)

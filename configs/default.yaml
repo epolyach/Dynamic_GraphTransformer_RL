@@ -22,7 +22,7 @@ training:
   num_epochs: 100            # Default number of epochs
   learning_rate: 1e-4        # Base LR
   validation_frequency: 2    # Run validation every N epochs
-  use_geometric_mean: true   # Use geometric mean for CPC aggregation (log-normal friendly)
+  use_geometric_mean: false  # Use geometric mean for CPC aggregation (log-normal friendly)
 
 # =============================
 # Rollout baseline (optional)
@@ -151,7 +151,7 @@ benchmark:
 gpu:
   enabled: true                        # Enable GPU training if available
   device: "cuda:0"                     # GPU device to use (cuda:0, cuda:1, etc.)
-  mixed_precision: true                # Enable automatic mixed precision (FP16)
+  mixed_precision: false                # Enable automatic mixed precision (FP16)
   memory_fraction: 0.95                # Fraction of GPU memory to use
   pin_memory: true                     # Pin memory for faster CPU-GPU transfer
   non_blocking: true                   # Non-blocking tensor transfers

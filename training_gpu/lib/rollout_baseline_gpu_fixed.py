@@ -90,10 +90,11 @@ class RolloutBaselineGPU:
             # Validate strictly; raise if invalid to catch issues early
             if self.strict_validation:
                 validate_route(r, n_customers, model_name="Baseline-Greedy", instance=inst)
-            # Use GPU-optimized cost computation
+            # Use CPU cost computation to match CPU trainer exactly
             distances = inst["distances"]
-            c_gpu = compute_route_cost_gpu(r, distances)
-            c = c_gpu.item() if isinstance(c_gpu, torch.Tensor) else c_gpu
+            # Convert distances to CPU numpy if needed
+            distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
+            c = compute_route_cost(r, distances_cpu)
             c_norm = c / max(1, n_customers)
             costs.append(float(c_norm))
         return np.asarray(costs, dtype=np.float32)
