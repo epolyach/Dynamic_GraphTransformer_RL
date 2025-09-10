@@ -1,0 +1,20 @@
+2025-09-09 14:52:08 - INFO - ======================================================================
+2025-09-09 14:52:08 - INFO - OR-Tools Greedy (Optimal Mode) Parallel Benchmark Runner
+2025-09-09 14:52:08 - INFO - ======================================================================
+2025-09-09 14:52:08 - INFO - Configuration:
+2025-09-09 14:52:08 - INFO -   Problem size (N): 10
+2025-09-09 14:52:08 - INFO -   Vehicle capacity: 30
+2025-09-09 14:52:08 - INFO -   Total instances: 10000
+2025-09-09 14:52:08 - INFO -   Per-instance timeout: disabled (no time limit)
+2025-09-09 14:52:08 - INFO -   Retry strategy: disabled
+2025-09-09 14:52:08 - INFO -   Parallel threads: 25
+2025-09-09 14:52:08 - INFO -   Base seed: 42
+2025-09-09 14:52:08 - INFO -   Output mode: CPC only
+2025-09-09 14:52:08 - INFO -   Output directory: benchmark_cpu/results/ortools_greedy_opt_N10_C30_25t_10k
+2025-09-09 14:52:08 - INFO -   Log file: benchmark_cpu/results/ortools_greedy_opt_N10_C30_25t_10k/benchmark_log.txt
+2025-09-09 14:52:08 - INFO - Instance distribution across threads: [400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400, 400]
+2025-09-09 14:52:08 - INFO - Total instances to process: 10000
+2025-09-09 14:52:08 - INFO - Seed range: 42 to 10041
+2025-09-09 14:52:08 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-09 14:52:08 - INFO - No per-instance timeouts; runtime depends on instance hardness distribution
+2025-09-09 14:52:08 - INFO - Starting parallel execution...

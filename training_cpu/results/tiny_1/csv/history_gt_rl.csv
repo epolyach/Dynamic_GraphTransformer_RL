@@ -1,0 +1,2 @@
+epoch,train_loss,train_cost_geometric,val_cost_geometric,learning_rate,temperature,baseline_type,baseline_value,mean_type
+0,-0.4179679896434148,0.6926017557039887,0.6943265716081441,0.0001,2.5,rollout,0.6948205232620239,geometric

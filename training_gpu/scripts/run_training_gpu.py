@@ -421,6 +421,7 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
         # Extract history from result
         history = training_result.get('history', {}) if isinstance(training_result, dict) else {}
         
+        metrics = training_result.get('metrics', {}) if isinstance(training_result, dict) else {}
         # Debug: log what we got
         logger.info(f"History keys: {list(history.keys()) if history else 'None'}")
         if history and 'train_cost' in history:
@@ -452,7 +453,7 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
         
         # Create and save training summary
         summary = create_training_summary(
-            trained_model, history, config, start_time, end_time
+            trained_model, {'history': history, 'metrics': metrics}, config, start_time, end_time
         )
         
         summary_path = output_dir / f"{model_name.replace('+', '_')}_training_summary.json"
@@ -540,7 +541,7 @@ Examples:
     # GPU-specific settings
     parser.add_argument('--device', type=str, default=None,
                        help='GPU device (e.g., cuda:0, cuda:1)')
-    parser.add_argument('--mixed_precision', action='store_true',
+    parser.add_argument('--mixed_precision', action='store_true', default=None,
                        help='Enable mixed precision training')
     parser.add_argument('--no_mixed_precision', action='store_false', 
                        dest='mixed_precision',
@@ -580,6 +581,21 @@ Examples:
         config_path = project_root / args.config
     
     config = load_config(str(config_path))
+    
+    # Fix relative paths to be relative to script location
+    if 'working_dir_path' in config and config['working_dir_path'].startswith('..'):
+        script_dir = Path(__file__).parent
+        config['working_dir_path'] = str((script_dir / config['working_dir_path']).resolve())
+    
+    # Automatically replace "training_cpu" with "training_gpu" in working_dir_path
+    # This ensures GPU training results go to training_gpu/ directory structure
+    if 'working_dir_path' in config and config['working_dir_path']:
+        original_path = config['working_dir_path']
+        # Replace training_cpu with training_gpu in the path
+        modified_path = original_path.replace('training_cpu', 'training_gpu')
+        if modified_path != original_path:
+            config['working_dir_path'] = modified_path
+            print(f"Auto-adjusted output path: {original_path} -> {modified_path}")
     
     # Override configuration with command line arguments
     if args.problem_size is not None:

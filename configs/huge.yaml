@@ -22,3 +22,15 @@ model_gat:
 training_advanced:
   early_stopping_patience: 40  # More patience for huge problems
   gradient_clip_norm: 1.5      # Tighter clipping for stability
+
+# GPU Configuration (recommendations)
+gpu:
+  enabled: true
+  device: "cuda:0"
+  mixed_precision: true        # Recommended for N>=20
+  memory_fraction: 0.95
+  pin_memory: true
+  non_blocking: true
+  gradient_accumulation_steps: 1
+  num_workers: 4
+  prefetch_factor: 2

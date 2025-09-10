@@ -43,13 +43,71 @@ Location: training_cpu/
 - Generate comparison plots from saved results
   ```bash
   cd training_cpu
-  python scripts/make_comparative_plot.py --config ../configs/small.yaml
+  python scripts/regenerate_analysis.py --config ../configs/small.yaml
   ```
 
 Notes:
 - Training uses src/generator/generator.py; no augmentation/curriculum
 - Models live in src/models; advanced trainer in training_cpu/lib/advanced_trainer.py
 - Results saved locally in training_cpu/results/ (models in pytorch/, CSVs in csv/, plots in plots/)
+
+
+## 1.5) Training (GPU)
+Location: training_gpu/
+
+GPU-optimized training with mixed precision support and efficient batch processing.
+
+### Quick Start
+```bash
+# Train a single model with GPU optimizations
+cd /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL
+source venv/bin/activate
+python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
+
+# Force retrain if model exists
+python training_gpu/scripts/run_training_gpu.py --config configs/tiny.yaml --model GT+RL --force-retrain
+
+# Train with optimized tiny config (large batch size)
+python training_gpu/scripts/run_training_gpu.py --config configs/tiny_gpu_optimized.yaml --model GT+RL
+```
+
+### GPU-Specific Features
+- **Mixed Precision Training**: Automatically enabled for N≥20 (FP16/FP32)
+- **GPU Cost Computation**: Route costs computed on GPU via `src/metrics/gpu_costs.py`
+- **Optimized Data Pipeline**: Numpy arrays converted to GPU tensors on arrival
+- **Configurable Batch Sizes**: Use larger batches (2048-8192) for better GPU utilization
+- **GPU-Specific Validation**: Handles GPU tensors without CPU transfers
+
+### Configuration Guidelines
+```yaml
+# Recommended GPU settings by problem size
+gpu:
+  mixed_precision: false  # For N≤10 (overhead > benefit)
+  mixed_precision: true   # For N≥20 (significant speedup)
+  batch_size: 4096       # For N=10 with 50GB GPU memory
+  batch_size: 1024-2048  # For N=50-100
+```
+
+### Performance Notes
+- **N≤20**: CPU training may be faster due to GPU overhead
+- **N≥50**: GPU shows significant speedup, especially with large batches
+- **Memory**: RTX A6000 (48GB) can handle batch_size=8192 for N=10
+
+### Available Configurations
+- `configs/tiny_gpu_optimized.yaml` - N=10, batch_size=4096, optimized for GPU
+- `configs/medium_gpu.yaml` - N=50, balanced GPU settings
+- All standard configs now include GPU sections with appropriate settings
+
+### Monitoring
+```bash
+# Check GPU utilization during training
+nvidia-smi -l 1
+
+# View training progress in screen
+screen -ls  # List sessions
+screen -r gpu_tiny_training  # Attach to session
+# Ctrl+A, D to detach
+```
 
 ## 2) CPU Benchmarks
 Location: benchmark_cpu/
@@ -211,7 +269,7 @@ python3 benchmark_gpu_truly_optimal_n10.py --num-instances 100 --capacity 20
 
 # 6. Generate comparison plots
 cd training_cpu
-python scripts/make_comparative_plot.py --config ../configs/small.yaml
+python scripts/regenerate_analysis.py --config ../configs/small.yaml
 ```
 
 ## 5) Directory Structure (Updated Sept 2025)
@@ -228,6 +286,15 @@ Dynamic_GraphTransformer_RL/
 ├── configs/                      # YAML configuration files
 ├── training_cpu/                 # Neural network training
 │   ├── scripts/                 # Training scripts
+│   │   ├── run_training.py      # Main training script
+│   │   ├── regenerate_analysis.py # Re-analyze results
+│   │   ├── run_training.sh      # Shell wrapper
+│   │   ├── experiments/         # Experimental scripts
+│   │   │   ├── run_training_gt_experiments.py
+│   │   │   └── run_training_optimizer_experiment.py
+│   │   ├── plotting/            # Plotting utilities
+│   │   │   └── plot_training_80mm.py
+│   │   └── table_generation/    # Table generation tools
 │   ├── lib/                     # Training utilities
 │   └── results/                 # Training results
 ├── benchmark_cpu/                # CPU benchmarking ⭐
@@ -249,6 +316,32 @@ Dynamic_GraphTransformer_RL/
 │   ├── scripts/
 │   │   ├── benchmark_gpu_*.py            # Core GPU benchmarks
 │   │   ├── gpu_cvrp_solver_truly_optimal_fixed.py  # DP exact solver (bug-free)
+
+## Configuration
+
+The project uses YAML configuration files located in the `configs/` directory. Key configuration files include:
+
+- `default.yaml`: Base configuration with all default parameters
+- `tiny.yaml`: Quick experiments with reduced training (10 customers, fewer epochs)
+- `small.yaml`: Small problem instances (20 customers)
+- `medium.yaml`: Medium problem instances (50 customers)
+- `large.yaml`: Large problem instances (100 customers)
+
+### Relative Paths in Configurations
+
+Configuration files support relative paths for the `working_dir_path` parameter. When using relative paths (starting with `../`), they are resolved relative to the script location, not the current working directory. This allows the same configuration file to work correctly for both CPU and GPU training:
+
+```yaml
+# In configs/tiny.yaml
+working_dir_path: "../results/tiny"
+```
+
+This will resolve to:
+- `training_cpu/results/tiny/` when using CPU training scripts
+- `training_gpu/results/tiny/` when using GPU training scripts
+
+This approach ensures clean separation of results while using a single configuration file.
+
 
 │   │   ├── gpu_cvrp_solver_scip_optimal_fixed.py   # SCIP MIP solver
 │   │   ├── plotting/            # Visualization

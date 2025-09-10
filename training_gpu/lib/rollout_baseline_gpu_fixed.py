@@ -6,7 +6,8 @@ import torch
 from scipy.stats import ttest_rel
 
 from src.metrics.costs import compute_route_cost
-from src.eval.validation import validate_route
+from src.metrics.gpu_costs import compute_route_cost_gpu
+from .validation_gpu import validate_route
 
 
 class RolloutBaselineGPU:
@@ -89,7 +90,10 @@ class RolloutBaselineGPU:
             # Validate strictly; raise if invalid to catch issues early
             if self.strict_validation:
                 validate_route(r, n_customers, model_name="Baseline-Greedy", instance=inst)
-            c = compute_route_cost(r, inst['distances'])
+            # Use GPU-optimized cost computation
+            distances = inst["distances"]
+            c_gpu = compute_route_cost_gpu(r, distances)
+            c = c_gpu.item() if isinstance(c_gpu, torch.Tensor) else c_gpu
             c_norm = c / max(1, n_customers)
             costs.append(float(c_norm))
         return np.asarray(costs, dtype=np.float32)

@@ -1,0 +1,23 @@
+# Tiny config - Quick experiments with reduced training
+# Same problem as small (N=10) but reduced training data
+working_dir_path: "../results/tiny_1"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 20
+
+training:
+  num_batches_per_epoch: 150  # Paper's scale: 768,000 instances per epoch
+  batch_size: 512             # Default batch size (paper's value)
+  num_epochs: 10              # Default number of epochs
+
+# Smaller model for faster training
+model:
+  hidden_dim: 128              # Half of default 256
+  num_heads: 4
+  num_layers: 3                # Reduced from default 4
+
+# GAT-specific architecture for tiny experiments
+model_gat:
+  gat_hidden_dim: 128          # Smaller for quick experiments
+  gat_layers: 3                # Fewer layers for speed

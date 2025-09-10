@@ -1,0 +1,34 @@
+# GPU-optimized tiny config
+working_dir_path: "../results/tiny_gpu"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 20
+
+training:
+  num_batches_per_epoch: 50   # Fewer batches
+  batch_size: 2048            # Much larger batch size for GPU efficiency
+  num_epochs: 60
+
+# Model architecture
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+# GAT-specific
+model_gat:
+  gat_hidden_dim: 128
+  gat_layers: 3
+
+# GPU-specific optimizations
+gpu:
+  device: cuda:0
+  enabled: true
+  gradient_accumulation_steps: 1
+  memory_fraction: 0.95
+  mixed_precision: false  # Disable for small models - overhead not worth it
+  non_blocking: true
+  num_workers: 0  # Disable multiprocessing for small data
+  pin_memory: false  # Not needed for small data
+  prefetch_factor: 2

@@ -10,7 +10,7 @@ sys.path.append('/home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL')
 
 from src.generator.generator import _generate_instance
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-import gpu_cvrp_solver_truly_optimal as gpu_exact
+import gpu_cvrp_solver_truly_optimal_fixed as gpu_exact
 import numpy as np
 import time
 import pandas as pd

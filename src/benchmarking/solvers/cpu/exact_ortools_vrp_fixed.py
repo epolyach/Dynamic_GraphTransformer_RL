@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import time
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from src.benchmarking.solvers.types import CVRPSolution
 from src.benchmarking.solvers.utils import calculate_route_cost
 
@@ -13,7 +13,7 @@ except ImportError:
     routing_enums_pb2 = None
 
 
-def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = False) -> CVRPSolution:
+def solve(instance: Dict[str, Any], time_limit: Optional[float] = None, verbose: bool = False) -> CVRPSolution:
     """
     OR-Tools VRP solver configured for EXACT solving (no metaheuristics).
     
@@ -98,7 +98,8 @@ def solve(instance: Dict[str, Any], time_limit: float = 300.0, verbose: bool = F
         search_parameters.use_depth_first_search = True
     
     # Set time limit
-    search_parameters.time_limit.seconds = int(time_limit)
+    if time_limit is not None and time_limit > 0:
+        search_parameters.time_limit.seconds = int(time_limit)
     
     if verbose:
         search_parameters.log_search = True
