@@ -33,7 +33,7 @@ from torch.cuda.amp import autocast, GradScaler
 from src.metrics.costs import compute_route_cost
 from src.metrics.gpu_costs import compute_route_cost_gpu
 from .validation_gpu import validate_route
-from .rollout_baseline_gpu_fixed import RolloutBaselineGPU
+from .rollout_baseline_gpu import RolloutBaselineGPU
 from .gpu_utils import GPUManager, DataLoaderGPU
 
 logger = logging.getLogger(__name__)
