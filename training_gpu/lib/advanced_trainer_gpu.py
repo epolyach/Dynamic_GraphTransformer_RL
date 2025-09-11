@@ -28,15 +28,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
-# Enable TensorFloat32 for better performance
-torch.set_float32_matmul_precision("high")
-
 from torch.cuda.amp import autocast, GradScaler
 
 from src.metrics.costs import compute_route_cost
 from src.metrics.gpu_costs import compute_route_cost_gpu
 from .validation_gpu import validate_route
-from .rollout_baseline_gpu import RolloutBaselineGPU
+from .rollout_baseline_gpu_fixed import RolloutBaselineGPU
 from .gpu_utils import GPUManager, DataLoaderGPU
 
 logger = logging.getLogger(__name__)
@@ -188,19 +185,6 @@ def advanced_train_model_gpu(
     model = model.to(gpu_manager.device)
     logger.info(f"Model moved to {gpu_manager.get_device_name()}")
     
-    # Optional torch.compile
-    compile_config = config.get('training_advanced', {}).get('compile', {})
-    use_compile = compile_config.get('enabled', False)
-    compile_mode = compile_config.get('mode', 'default')
-    
-    if use_compile and hasattr(torch, 'compile'):
-        logger.info(f"Compiling model with torch.compile (mode='{compile_mode}')...")
-        model = torch.compile(model, mode=compile_mode)
-        logger.info("Model compilation complete")
-    elif use_compile:
-        logger.warning("torch.compile requested but not available in this PyTorch version")
-    
-    
     # Training parameters
     train_config = config.get('training', {})
     adv_config = config.get('training_advanced', {})
@@ -268,17 +252,9 @@ def advanced_train_model_gpu(
     # Only initialize RolloutBaseline for RL training (matching CPU)
     print("[INIT] Checking if baseline needed for RL training...")
     if 'RL' in model_name:
-        # Log training configuration parameters
-        print(f"[INIT] Training Configuration:")
-        print(f"[INIT]   Validation frequency: every {validation_frequency} epochs")
-        print(f"[INIT]   Baseline type: rollout")
-        print(f"[INIT]   Baseline update frequency: every {baseline_update_frequency} epochs")
-        print(f"[INIT]   Baseline warmup epochs: {baseline_update_warmup_epochs}")
-        print(f"[INIT]   Eval batches: {baseline_config.get('eval_batches', 5)}")
-        
         # Create eval dataset (same as CPU version)
         eval_batches = baseline_config.get('eval_batches', 5)
-        # Removed duplicate print - already logged above
+        print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
         import sys; sys.stdout.flush()
         eval_dataset = []
         for i in range(eval_batches):
@@ -308,10 +284,6 @@ def advanced_train_model_gpu(
             temp_min=adv_config.get('temp_min', 0.5),
             adaptation_rate=adv_config.get('temp_adaptation_rate', 0.1)
         )
-    else:
-        print(f"[INIT] Training Configuration:")
-        print(f"[INIT]   Model: {model_name} (greedy baseline not needed)")
-        print(f"[INIT]   Validation frequency: every {validation_frequency} epochs")
     
     # Early stopping
     early_stop_config = train_config.get('early_stopping', {})
@@ -406,12 +378,15 @@ def advanced_train_model_gpu(
                 cpc_vals = []  # arithmetic CPC values
                 cpc_logs = []  # log-CPC values for geometric mean
                 for b in range(len(instances)):
-                    distances = instances[b]["distances"]  # [num_nodes, num_nodes] on GPU
-                    route = routes[b]  # list[int]
-                    # Compute route cost fully on GPU without syncs (vectorized)
-                    route_tensor = torch.as_tensor(route, dtype=torch.long, device=gpu_manager.device)
-                    rc = distances[route_tensor[:-1], route_tensor[1:]].sum()
-                    rcosts.append(rc.to(dtype=torch.float32))
+                    distances = instances[b]["distances"]
+                    route = routes[b]
+                    # Use CPU cost computation to match CPU trainer exactly
+                    distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
+                    rc = compute_route_cost(route, distances_cpu)
+                    # Convert to tensor on GPU
+                    if not isinstance(rc, torch.Tensor):
+                        rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                    rcosts.append(rc)
                     n_customers = (len(instances[b]["coords"]) - 1)
                     if use_geometric_mean:
                         cpc_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
@@ -568,20 +543,9 @@ def advanced_train_model_gpu(
             try:
                 # Only allow baseline updates after warmup epochs
                 if epoch >= baseline_update_warmup_epochs:
-                    print(f"[DEBUG] Baseline update check: epoch={epoch}, warmup_epochs={baseline_update_warmup_epochs}, update_freq={baseline.update_frequency}")
-                    print(f"[DEBUG] Update enabled: {baseline.update_enabled}, epoch % freq = {epoch % baseline.update_frequency}")
-                    try:
-                        print(f"[DEBUG] Calling baseline.epoch_callback at epoch {epoch}")
-                        baseline.epoch_callback(model, epoch)
-                        print(f"[DEBUG] baseline.epoch_callback completed successfully")
-                    except Exception as e:
-                        print(f"[ERROR] Exception in baseline.epoch_callback: {type(e).__name__}: {e}")
-                        import traceback
-                        traceback.print_exc()
-                else:
-                    print(f"[DEBUG] Skipping baseline update - still in warmup (epoch {epoch} < {baseline_update_warmup_epochs})")
+                    baseline.epoch_callback(model, epoch)
             except Exception as e:
-                print(f"[ERROR] Outer exception in baseline update block: {type(e).__name__}: {e}")
+                print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
                 # Compute baseline value for CSV logging (match CPU behavior)
         baseline_type = 'rollout' if baseline is not None else 'mean'
         baseline_value = None

@@ -6,7 +6,6 @@ baseline:
     frequency: 1
     p_value: 0.1
     significance_test: true
-    warmup_epochs: 0
 batch_size: 128
 benchmark:
   scaling:
@@ -19,10 +18,19 @@ demand_range: &id001
 entropy_coef: 0.03
 entropy_min: 0.002
 experiment:
+  device: cpu
   random_seed: 42
   strict_validation: true
   use_advanced_features: true
 gat_training:
+  baseline:
+    eval_batches: 5
+    update:
+      enabled: true
+      frequency: 1
+      p_value: 0.1
+      significance_test: true
+      warmup_epochs: 5
   early_stopping_patience: 15
   entropy_coef: 0.08
   entropy_min: 0.008
@@ -37,7 +45,7 @@ gpu:
   enabled: true
   gradient_accumulation_steps: 1
   memory_fraction: 0.95
-  mixed_precision: true
+  mixed_precision: false
   non_blocking: true
   num_workers: 4
   pin_memory: true
@@ -93,9 +101,6 @@ training_advanced:
   adam_beta1: 0.9
   adam_beta2: 0.999
   adam_eps: 1.0e-08
-  compile:
-    enabled: true
-    mode: default
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
   entropy_coef: 0.03
