@@ -136,19 +136,6 @@ def advanced_train_model(
     """
     device = torch.device('cpu')
     model.to(device)
-    
-    # Optional torch.compile
-    compile_config = config.get('training_advanced', {}).get('compile', {})
-    use_compile = compile_config.get('enabled', False)
-    compile_mode = compile_config.get('mode', 'default')
-    
-    if use_compile and hasattr(torch, 'compile'):
-        logger_print(f"[{model_name}] Compiling model with torch.compile (mode='{compile_mode}')...")
-        model = torch.compile(model, mode=compile_mode)
-    elif use_compile:
-        logger_print(f"[{model_name}] Warning: torch.compile requested but not available in this PyTorch version")
-    
-    # Continue with training
     model.train()
 
     # Training hyperparameters

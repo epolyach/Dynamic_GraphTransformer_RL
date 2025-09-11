@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--output_dir', type=str, default=None, help='Output directory root for results')
     parser.add_argument('--profile', action='store_true', help='Enable profiling for first N epochs')
     parser.add_argument('--profile_epochs', type=int, default=10, help='Number of epochs to profile when --profile is set')
+    parser.add_argument('--force-retrain', action='store_true', help='Force retraining even if artifacts exist (compatibility flag; v2 has no checkpoint resume)')
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -35,6 +36,7 @@ def main():
         out_dir=args.output_dir,
         epochs_override=args.epochs,
         profile_epochs=profile_epochs,
+        force_retrain=args.force_retrain,
     )
 
     print(f"v2 training finished. CSV: {out.csv_path}")
@@ -42,4 +44,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

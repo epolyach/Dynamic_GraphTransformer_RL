@@ -185,6 +185,19 @@ def advanced_train_model_gpu(
     model = model.to(gpu_manager.device)
     logger.info(f"Model moved to {gpu_manager.get_device_name()}")
     
+    # Optional torch.compile
+    compile_config = config.get('training_advanced', {}).get('compile', {})
+    use_compile = compile_config.get('enabled', False)
+    compile_mode = compile_config.get('mode', 'default')
+    
+    if use_compile and hasattr(torch, 'compile'):
+        logger.info(f"Compiling model with torch.compile (mode='{compile_mode}')...")
+        model = torch.compile(model, mode=compile_mode)
+        logger.info("Model compilation complete")
+    elif use_compile:
+        logger.warning("torch.compile requested but not available in this PyTorch version")
+    
+    
     # Training parameters
     train_config = config.get('training', {})
     adv_config = config.get('training_advanced', {})

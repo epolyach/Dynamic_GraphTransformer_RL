@@ -11,7 +11,17 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.cuda.amp import autocast, GradScaler
+try:
+    from torch.amp import autocast as _autocast  # PyTorch >= 2.1
+    def autocast(enabled=True, dtype=None):
+        return _autocast('cuda', enabled=enabled, dtype=dtype)
+except Exception:
+    from torch.cuda.amp import autocast  # type: ignore[no-redef]
+
+try:
+    from torch.amp import GradScaler  # PyTorch = 2.1
+except Exception:  # Fallback for older PyTorch
+    from torch.cuda.amp import GradScaler  # type: ignore[no-redef]
 
 # Project imports
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -140,8 +150,34 @@ def train_v2(
     out_dir: Optional[str] = None,
     epochs_override: Optional[int] = None,
     profile_epochs: Optional[int] = None,
+    force_retrain: bool = False,
 ) -> TrainOutputs:
+    """
+    GPU-optimized v2 trainer with incremental saving and performance improvements.
+    
+    Performance optimizations vs original v2:
+    1. Baseline update frequency (default every 10 epochs instead of every epoch)
+    2. Configurable torch.compile (can disable or change mode)
+    3. TensorFloat32 enabled for faster matmul
+    4. Proper handling of compiled model state dicts
+    
+    To improve performance further:
+    - Set baseline.update.frequency to 20-50 in config
+    - Disable torch.compile for short runs: training_advanced.compile.enabled = false
+    - Use larger batch sizes (512-2048) for better GPU utilization
+    """
     device = assert_cuda_device()
+
+    # Enable TensorFloat32 for faster float32 matmul on supported GPUs
+    # Addresses torch.compile warning about TF32; safe on Ampere+
+    if hasattr(torch, 'set_float32_matmul_precision'):
+        torch.set_float32_matmul_precision('high')
+    else:
+        # Older PyTorch: enable TF32 via backend flag if available
+        try:
+            torch.backends.cuda.matmul.allow_tf32 = True  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
     config = load_config(config_path)
     if epochs_override is not None:
@@ -152,6 +188,41 @@ def train_v2(
     csv_dir = out_root / 'csv'
     csv_dir.mkdir(parents=True, exist_ok=True)
     csv_path = csv_dir / f"history_{model_name.lower().replace('+','_')}_v2.csv"
+    checkpoint_dir = out_root / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    history_rows: List[Dict[str, Any]] = []
+
+    # Check for existing checkpoint to resume from
+    start_epoch = 0
+    existing_checkpoints = sorted(checkpoint_dir.glob("checkpoint_epoch_*.pt"))
+    if existing_checkpoints and not force_retrain:
+        latest_checkpoint = existing_checkpoints[-1]
+        print(f"Found checkpoint: {latest_checkpoint.name}")
+        checkpoint = torch.load(latest_checkpoint, map_location=device)
+        start_epoch = checkpoint["epoch"] + 1
+        if hasattr(model, "_orig_mod"):
+            model._orig_mod.load_state_dict(checkpoint["model_state_dict"])
+        else:
+            model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scaler.load_state_dict(checkpoint["scaler_state_dict"])
+        if "history" in checkpoint:
+            history_rows = checkpoint["history"]
+        print(f"Resuming from epoch {start_epoch}")
+    elif force_retrain and existing_checkpoints:
+        print("Force retrain: removing existing checkpoints")
+        for ckpt in existing_checkpoints:
+            ckpt.unlink()
+
+    # Initialize CSV with header
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=[
+            "epoch","train_loss","train_cost_geometric","val_cost_geometric",
+            "learning_rate","temperature","baseline_type","baseline_value","mean_type","time_per_epoch"
+        ])
+        writer.writeheader()
+
 
     # Data generators (CPU canonical -> GPU wrapper)
     base_gen = create_data_generator(config)
@@ -160,28 +231,37 @@ def train_v2(
     # Create model via factory
     model = ModelFactory.create_model(model_name, config).to(device)
 
-    # Force torch.compile (no fallback by default)
-    if not hasattr(torch, 'compile'):
-        raise RuntimeError("torch.compile is not available in this PyTorch version.")
-    model = torch.compile(model, mode='reduce-overhead')
+    # Optional torch.compile with configurable mode
+    compile_config = config.get('training_advanced', {}).get('compile', {})
+    use_compile = compile_config.get('enabled', False)  # Disabled by default for performance
+    compile_mode = compile_config.get('mode', 'default')  # 'default', 'reduce-overhead', 'max-autotune'
+    
+    if use_compile and hasattr(torch, 'compile'):
+        print(f"[v2] Compiling model with mode='{compile_mode}'...")
+        uncompiled_model = model  # Keep reference before compile
+        model = torch.compile(model, mode=compile_mode)
+    elif use_compile:
+        print("[v2] Warning: torch.compile not available, running eager mode")
 
     # Optimizer & mixed precision scaler
     lr = float(config['training']['learning_rate'])
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scaler = GradScaler(enabled=True)
+    scaler = GradScaler('cuda', enabled=True)
 
     # Baseline eval set (few fixed batches)
     eval_batches = int(config.get('baseline', {}).get('eval_batches', 3))
     batch_size = int(config['training']['batch_size'])
     eval_dataset = [gpu_gen(batch_size, epoch=9999, seed=42 + i) for i in range(eval_batches)]
-    baseline = RolloutBaselineV2(model, eval_dataset, config)
+    # Use uncompiled model for baseline to avoid compilation overhead
+    baseline_model = uncompiled_model if use_compile and "uncompiled_model" in locals() else model
+    baseline = RolloutBaselineV2(baseline_model, eval_dataset, config)
+
 
     # Training parameters
     n_epochs = int(config['training']['num_epochs'])
     n_batches = int(config['training'].get('num_batches_per_epoch', 50))
     temperature = float(config.get('inference', {}).get('default_temperature', 2.5))
 
-    history_rows: List[Dict[str, Any]] = []
 
     # Optional profiling
     use_profiler = profile_epochs is not None and profile_epochs > 0
@@ -200,7 +280,7 @@ def train_v2(
         prof_ctx = None
 
     try:
-        for epoch in range(n_epochs):
+        for epoch in range(start_epoch, n_epochs):
             t0 = time.time()
             model.train()
             epoch_costs = []
@@ -266,17 +346,35 @@ def train_v2(
             print(f"[v2] Epoch {epoch:03d}: train={row['train_cost_geometric']:.4f}, val={row['val_cost_geometric']:.4f}, time={dt:.1f}s")
 
             # Baseline update each epoch
-            baseline.epoch_callback(model, epoch)
+            baseline.epoch_callback(baseline_model, epoch)
 
-        # Write CSV compatible with CPU history format (plus time_per_epoch)
-        with open(csv_path, 'w', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                'epoch','train_loss','train_cost_geometric','val_cost_geometric',
-                'learning_rate','temperature','baseline_type','baseline_value','mean_type','time_per_epoch'
-            ])
-            writer.writeheader()
-            for r in history_rows:
-                writer.writerow(r)
+            # Incremental CSV append
+            with open(csv_path, "a", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "epoch","train_loss","train_cost_geometric","val_cost_geometric",
+                    "learning_rate","temperature","baseline_type","baseline_value","mean_type","time_per_epoch"
+                ])
+                writer.writerow(row)
+
+            # Save checkpoint
+            checkpoint = {
+                "epoch": epoch,
+                "model_state_dict": model._orig_mod.state_dict() if hasattr(model, "_orig_mod") else model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+                "baseline_mean": baseline.mean,
+                "history": history_rows,
+            }
+            checkpoint_path = checkpoint_dir / f"checkpoint_epoch_{epoch:04d}.pt"
+            torch.save(checkpoint, checkpoint_path)
+            
+            # Keep only last 3 checkpoints
+            all_checkpoints = sorted(checkpoint_dir.glob("checkpoint_epoch_*.pt"))
+            if len(all_checkpoints) > 3:
+                for old_ckpt in all_checkpoints[:-3]:
+                    old_ckpt.unlink()
+
+
 
         return TrainOutputs(history=history_rows, csv_path=csv_path)
 

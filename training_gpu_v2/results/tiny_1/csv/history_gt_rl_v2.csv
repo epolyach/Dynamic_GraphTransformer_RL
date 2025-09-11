@@ -1,0 +1,1 @@
+epoch,train_loss,train_cost_geometric,val_cost_geometric,learning_rate,temperature,baseline_type,baseline_value,mean_type,time_per_epoch

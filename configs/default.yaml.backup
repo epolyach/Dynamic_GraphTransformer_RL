@@ -8,32 +8,54 @@ working_dir_path: "results/default"
 # Core CVRP problem parameters
 # =============================
 problem:
-  num_customers: 20            # Default customers (excluding depot)
-  vehicle_capacity: 30         # Integer capacity
-  demand_range: [1, 10]        # Integer demands [min, max]
-  coord_range: 100             # Coordinates 0..coord_range, then normalized to [0,1]
+  num_customers: 20         # Default customers (excluding depot)
+  vehicle_capacity: 30      # Integer capacity
+  demand_range: [1, 10]     # Integer demands [min, max]
+  coord_range: 100          # Coordinates 0..coord_range, then normalized to [0,1]
 
 # =============================
 # Training parameters
 # =============================
 training:
-  num_batches_per_epoch: 1500  # Paper's scale: 768,000 instances per epoch
-  batch_size: 512              # Default batch size (paper's value)
-  num_epochs: 100              # Default number of epochs
-  learning_rate: 1e-4          # Base LR
-  validation_frequency: 2      # Run validation every N epochs
-  use_geometric_mean: false    # Use geometric mean for CPC aggregation (log-normal friendly)
+  num_batches_per_epoch: 1500 # Paper's scale: 768,000 instances per epoch
+  batch_size: 512            # Default batch size (paper's value)
+  num_epochs: 100            # Default number of epochs
+  learning_rate: 1e-4        # Base LR
+  validation_frequency: 2    # Run validation every N epochs
+  use_geometric_mean: false  # Use geometric mean for CPC aggregation (log-normal friendly)
+
+# =============================
+# Rollout baseline (optional)
+# =============================
+baseline:
+  type: "rollout"
+  eval_batches: 5         # Slight reduction from 5
+  update:
+    enabled: true
+    frequency: 1          # Check every 1 epochs instead of 4
+    significance_test: true  
+    p_value: 0.10         # More lenient from 0.05
+
+
+# =============================
+# Experiment control
+# =============================
+experiment:
+  random_seed: 42
+  device: "cpu"
+  use_advanced_features: true
+  strict_validation: true
 
 # =============================
 # Model architecture - Graph Transformer (GT/DGT)
 # =============================
 model:
   input_dim: 3                 # Node feature dimension
-  hidden_dim: 256              # Hidden dimension for transformers
-  num_heads: 4                 # Number of attention heads
-  num_layers: 4                # Number of transformer layers
-  transformer_dropout: 0.1     # Dropout rate for transformers
-  feedforward_multiplier: 2    # Feedforward expansion factor
+  hidden_dim: 256               # Hidden dimension for transformers
+  num_heads: 4                  # Number of attention heads
+  num_layers: 4                 # Number of transformer layers
+  transformer_dropout: 0.1      # Dropout rate for transformers
+  feedforward_multiplier: 2     # Feedforward expansion factor
 
 # =============================
 # Model architecture - GAT specific
@@ -45,6 +67,7 @@ model_gat:
   gat_layers: 4                # Number of GAT layers
   gat_dropout: 0.6             # Higher dropout for GAT (prevents overfitting)
   gat_negative_slope: 0.2      # LeakyReLU slope for GAT attention
+
 
 # =============================
 # Advanced training parameters - Graph Transformer (GT/DGT)
@@ -96,27 +119,14 @@ gat_training:
   gradient_clip_norm: 1.5      # Tighter gradient clipping for GAT stability
   early_stopping_patience: 15  # More patience for GAT convergence
   use_adaptive_temperature: false  # Disable adaptive temperature for GAT (moved from code)
-
-# =============================
-# Rollout baseline
-# =============================
-baseline:
-  type: "rollout"
-  eval_batches: 5              # Number of batches for baseline evaluation
-  update:
-    enabled: true
-    frequency: 1               # Check every N epochs
-    significance_test: true  
-    p_value: 0.10              # P-value threshold for update
-    warmup_epochs: 5           # Skip baseline updates during warmup
-
-# =============================
-# Experiment control
-# =============================
-experiment:
-  random_seed: 42              # Random seed for reproducibility
-  use_advanced_features: true  # Enable advanced training features (CPU only)
-  strict_validation: true      # Strict CVRP route validation
+  baseline:
+    eval_batches: 5   
+    update:
+      enabled: true
+      frequency: 1
+      significance_test: true
+      p_value: 0.10
+      warmup_epochs: 5
 
 # =============================
 # Inference and evaluation
@@ -125,27 +135,6 @@ inference:
   default_temperature: 1.0
   max_steps_multiplier: 2
 
-# =============================
-# GPU Configuration
-# =============================
-gpu:
-  enabled: true                # Enable GPU training if available
-  device: "cuda:0"             # GPU device to use (cuda:0, cuda:1, etc.)
-  mixed_precision: true        # Enable automatic mixed precision (FP16)
-  memory_fraction: 0.95        # Fraction of GPU memory to use
-  pin_memory: true             # Pin memory for faster CPU-GPU transfer
-  non_blocking: true           # Non-blocking tensor transfers
-  gradient_accumulation_steps: 1  # Gradient accumulation for larger effective batch size
-  num_workers: 4               # Data loading workers
-  prefetch_factor: 2           # Batches to prefetch
-
-# =============================
-# Memory optimization
-# =============================
-memory:
-  clear_cache_interval: 5      # Clear GPU cache every N epochs
-  memory_check_interval: 50    # Check memory usage every N batches
-  memory_warning_threshold: 0.9 # Warn if memory usage exceeds this fraction
 
 # =============================
 # Logging
@@ -159,4 +148,26 @@ logging:
 # =============================
 benchmark:
   scaling:
-    distance_scale: 100000     # Used by GPU/CPU internals for integer distance scaling
+    distance_scale: 100000  # Used by GPU/CPU internals for integer distance scaling (results scaled back)
+
+# =============================
+# GPU Configuration
+# =============================
+gpu:
+  enabled: true                        # Enable GPU training if available
+  device: "cuda:0"                     # GPU device to use (cuda:0, cuda:1, etc.)
+  mixed_precision: true                # Enable automatic mixed precision (FP16)
+  memory_fraction: 0.95                # Fraction of GPU memory to use
+  pin_memory: true                     # Pin memory for faster CPU-GPU transfer
+  non_blocking: true                   # Non-blocking tensor transfers
+  gradient_accumulation_steps: 1       # Gradient accumulation for larger effective batch size
+  num_workers: 4                       # Data loading workers
+  prefetch_factor: 2                   # Batches to prefetch
+
+# =============================
+# Memory optimization
+# =============================
+memory:
+  clear_cache_interval: 5              # Clear GPU cache every N epochs
+  memory_check_interval: 50            # Check memory usage every N batches
+  memory_warning_threshold: 0.9        # Warn if memory usage exceeds this fraction
