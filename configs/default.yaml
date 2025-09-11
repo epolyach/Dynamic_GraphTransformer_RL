@@ -114,7 +114,6 @@ baseline:
 # Experiment control
 # =============================
 experiment:
-  device: "cpu"                # Device for training
   random_seed: 42              # Random seed for reproducibility
   use_advanced_features: true  # Enable advanced training features (CPU only)
   strict_validation: true      # Strict CVRP route validation
@@ -141,14 +140,6 @@ gpu:
   prefetch_factor: 2           # Batches to prefetch
 
 # =============================
-# Memory optimization
-# =============================
-memory:
-  clear_cache_interval: 5      # Clear GPU cache every N epochs
-  memory_check_interval: 50    # Check memory usage every N batches
-  memory_warning_threshold: 0.9 # Warn if memory usage exceeds this fraction
-
-# =============================
 # Logging
 # =============================
 logging:
@@ -156,8 +147,9 @@ logging:
   format: "%(message)s"
 
 # =============================
-# Benchmark settings
+# UNUSED/DEPRECATED PARAMETERS
 # =============================
-benchmark:
-  scaling:
-    distance_scale: 100000     # Used by GPU/CPU internals for integer distance scaling
+# The following parameters were removed as they are not used in the current codebase:
+# - memory section (clear_cache_interval, memory_check_interval, memory_warning_threshold)
+# - benchmark section (scaling.distance_scale)
+# - experiment.device (misleading - CPU training uses default device, GPU training uses gpu.device)
