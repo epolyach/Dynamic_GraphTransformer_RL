@@ -28,6 +28,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
+\n# Enable TensorFloat32 for better performance
+torch.set_float32_matmul_precision("high")
+
 from torch.cuda.amp import autocast, GradScaler
 
 from src.metrics.costs import compute_route_cost
@@ -563,17 +566,22 @@ def advanced_train_model_gpu(
         # Rollout baseline update (exactly like CPU)
         if baseline is not None:
             try:
-                print(f"[DEBUG] Baseline update check: epoch={epoch}, warmup_epochs={baseline_update_warmup_epochs}, update_freq={baseline.update_frequency}")
-                print(f"[DEBUG] Update enabled: {baseline.update_enabled}, epoch % freq = {epoch % baseline.update_frequency}")
                 # Only allow baseline updates after warmup epochs
                 if epoch >= baseline_update_warmup_epochs:
-                    print(f"[DEBUG] Calling baseline.epoch_callback at epoch {epoch}")
-                    baseline.epoch_callback(model, epoch)
+                    print(f"[DEBUG] Baseline update check: epoch={epoch}, warmup_epochs={baseline_update_warmup_epochs}, update_freq={baseline.update_frequency}")
+                    print(f"[DEBUG] Update enabled: {baseline.update_enabled}, epoch % freq = {epoch % baseline.update_frequency}")
+                    try:
+                        print(f"[DEBUG] Calling baseline.epoch_callback at epoch {epoch}")
+                        baseline.epoch_callback(model, epoch)
+                        print(f"[DEBUG] baseline.epoch_callback completed successfully")
+                    except Exception as e:
+                        print(f"[ERROR] Exception in baseline.epoch_callback: {type(e).__name__}: {e}")
+                        import traceback
+                        traceback.print_exc()
                 else:
                     print(f"[DEBUG] Skipping baseline update - still in warmup (epoch {epoch} < {baseline_update_warmup_epochs})")
             except Exception as e:
-                print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
-                import traceback; traceback.print_exc()
+                print(f"[ERROR] Outer exception in baseline update block: {type(e).__name__}: {e}")
                 # Compute baseline value for CSV logging (match CPU behavior)
         baseline_type = 'rollout' if baseline is not None else 'mean'
         baseline_value = None

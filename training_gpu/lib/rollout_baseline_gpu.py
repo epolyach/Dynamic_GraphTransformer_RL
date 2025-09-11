@@ -55,10 +55,15 @@ class RolloutBaselineGPU:
         self.eval_dataset: List[List[Dict[str, Any]]] = eval_dataset
 
         # Initialize baseline model and stats
+        self.logger_print(f"[RolloutBaseline] Initializing baseline with model type: {type(model).__name__}")
         self.epoch: int = 0
         self._update_model(model, epoch=0)
 
     def _deepcopy_model(self, model: torch.nn.Module) -> torch.nn.Module:
+        if model is None:
+            raise ValueError("Cannot deepcopy None model")
+        if not isinstance(model, torch.nn.Module):
+            raise TypeError(f"Expected torch.nn.Module, got {type(model).__name__}")
         clone = copy.deepcopy(model)
         clone.to(self.device)
         clone.eval()
@@ -140,6 +145,9 @@ class RolloutBaselineGPU:
             return
         self.logger_print(f"[RolloutBaseline] epoch_callback: Processing update at epoch {epoch}")
 
+        if model is None:
+            raise ValueError("Model passed to epoch_callback is None")
+        
         self.logger_print("[RolloutBaseline] Evaluating candidate on eval dataset...")
         candidate_model = self._deepcopy_model(model)
         candidate_vals = self._compute_dataset_costs(candidate_model)

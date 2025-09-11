@@ -79,7 +79,7 @@ training_advanced:
 
   # PyTorch compilation (torch.compile)
   compile:
-    enabled: false             # Enable torch.compile for potential speedup
+    enabled: true              # Enable torch.compile for potential speedup
     mode: "default"            # Options: "default", "reduce-overhead", "max-autotune"
 
 # =============================
@@ -108,7 +108,7 @@ baseline:
     frequency: 1               # Check every N epochs
     significance_test: true  
     p_value: 0.10              # P-value threshold for update
-    warmup_epochs: 5           # Skip baseline updates during warmup
+    warmup_epochs: 0           # Skip baseline updates during warmup
 
 # =============================
 # Experiment control

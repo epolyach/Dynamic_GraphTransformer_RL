@@ -6,7 +6,7 @@ baseline:
     frequency: 1
     p_value: 0.1
     significance_test: true
-    warmup_epochs: 5
+    warmup_epochs: 0
 batch_size: 128
 benchmark:
   scaling:
@@ -94,7 +94,7 @@ training_advanced:
   adam_beta2: 0.999
   adam_eps: 1.0e-08
   compile:
-    enabled: false
+    enabled: true
     mode: default
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
