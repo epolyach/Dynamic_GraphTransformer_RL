@@ -378,15 +378,12 @@ def advanced_train_model_gpu(
                 cpc_vals = []  # arithmetic CPC values
                 cpc_logs = []  # log-CPC values for geometric mean
                 for b in range(len(instances)):
-                    distances = instances[b]["distances"]
-                    route = routes[b]
-                    # Use CPU cost computation to match CPU trainer exactly
-                    distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
-                    rc = compute_route_cost(route, distances_cpu)
-                    # Convert to tensor on GPU
-                    if not isinstance(rc, torch.Tensor):
-                        rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
-                    rcosts.append(rc)
+                    distances = instances[b]["distances"]  # [num_nodes, num_nodes] on GPU
+                    route = routes[b]  # list[int]
+                    # Compute route cost fully on GPU without syncs (vectorized)
+                    route_tensor = torch.as_tensor(route, dtype=torch.long, device=gpu_manager.device)
+                    rc = distances[route_tensor[:-1], route_tensor[1:]].sum()
+                    rcosts.append(rc.to(dtype=torch.float32))
                     n_customers = (len(instances[b]["coords"]) - 1)
                     if use_geometric_mean:
                         cpc_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
