@@ -114,6 +114,7 @@ baseline:
 # Experiment control
 # =============================
 experiment:
+  device: "cpu"                # Device for training
   random_seed: 42              # Random seed for reproducibility
   use_advanced_features: true  # Enable advanced training features (CPU only)
   strict_validation: true      # Strict CVRP route validation
