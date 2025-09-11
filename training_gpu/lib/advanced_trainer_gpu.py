@@ -563,11 +563,17 @@ def advanced_train_model_gpu(
         # Rollout baseline update (exactly like CPU)
         if baseline is not None:
             try:
+                print(f"[DEBUG] Baseline update check: epoch={epoch}, warmup_epochs={baseline_update_warmup_epochs}, update_freq={baseline.update_frequency}")
+                print(f"[DEBUG] Update enabled: {baseline.update_enabled}, epoch % freq = {epoch % baseline.update_frequency}")
                 # Only allow baseline updates after warmup epochs
                 if epoch >= baseline_update_warmup_epochs:
+                    print(f"[DEBUG] Calling baseline.epoch_callback at epoch {epoch}")
                     baseline.epoch_callback(model, epoch)
+                else:
+                    print(f"[DEBUG] Skipping baseline update - still in warmup (epoch {epoch} < {baseline_update_warmup_epochs})")
             except Exception as e:
                 print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
+                import traceback; traceback.print_exc()
                 # Compute baseline value for CSV logging (match CPU behavior)
         baseline_type = 'rollout' if baseline is not None else 'mean'
         baseline_value = None

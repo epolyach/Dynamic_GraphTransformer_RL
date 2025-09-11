@@ -46,6 +46,11 @@ class RolloutBaselineGPU:
         self.use_significance_test: bool = bool(upd_cfg.get('significance_test', True))
         self.significance_p_value: float = float(upd_cfg.get('p_value', 0.05))
 
+        # Debug print the baseline configuration
+        self.logger_print(f"[RolloutBaseline] Init with update_enabled={self.update_enabled}, "
+                         f"update_frequency={self.update_frequency}, "
+                         f"significance_test={self.use_significance_test}")
+
         # Fixed evaluation dataset (list of batches of instances)
         self.eval_dataset: List[List[Dict[str, Any]]] = eval_dataset
 
@@ -127,9 +132,13 @@ class RolloutBaselineGPU:
         significant (or simply lower if significance disabled), update baseline.
         """
         if not self.update_enabled:
+            self.logger_print(f"[RolloutBaseline] epoch_callback: Updates disabled, skipping (epoch {epoch})")
             return
         if (epoch % self.update_frequency) != 0:
+            self.logger_print(f"[RolloutBaseline] epoch_callback: Not scheduled for update "
+                            f"(epoch {epoch} % {self.update_frequency} = {epoch % self.update_frequency})")
             return
+        self.logger_print(f"[RolloutBaseline] epoch_callback: Processing update at epoch {epoch}")
 
         self.logger_print("[RolloutBaseline] Evaluating candidate on eval dataset...")
         candidate_model = self._deepcopy_model(model)
