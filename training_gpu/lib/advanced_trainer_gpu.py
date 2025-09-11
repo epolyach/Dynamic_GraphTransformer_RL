@@ -265,9 +265,17 @@ def advanced_train_model_gpu(
     # Only initialize RolloutBaseline for RL training (matching CPU)
     print("[INIT] Checking if baseline needed for RL training...")
     if 'RL' in model_name:
+        # Log training configuration parameters
+        print(f"[INIT] Training Configuration:")
+        print(f"[INIT]   Validation frequency: every {validation_frequency} epochs")
+        print(f"[INIT]   Baseline type: rollout")
+        print(f"[INIT]   Baseline update frequency: every {baseline_update_frequency} epochs")
+        print(f"[INIT]   Baseline warmup epochs: {baseline_update_warmup_epochs}")
+        print(f"[INIT]   Eval batches: {baseline_config.get('eval_batches', 5)}")
+        
         # Create eval dataset (same as CPU version)
         eval_batches = baseline_config.get('eval_batches', 5)
-        print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
+        # Removed duplicate print - already logged above
         import sys; sys.stdout.flush()
         eval_dataset = []
         for i in range(eval_batches):
@@ -297,6 +305,10 @@ def advanced_train_model_gpu(
             temp_min=adv_config.get('temp_min', 0.5),
             adaptation_rate=adv_config.get('temp_adaptation_rate', 0.1)
         )
+    else:
+        print(f"[INIT] Training Configuration:")
+        print(f"[INIT]   Model: {model_name} (greedy baseline not needed)")
+        print(f"[INIT]   Validation frequency: every {validation_frequency} epochs")
     
     # Early stopping
     early_stop_config = train_config.get('early_stopping', {})
