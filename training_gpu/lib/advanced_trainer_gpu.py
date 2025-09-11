@@ -28,7 +28,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, ReduceLROnPlateau
 from torch.utils.data import DataLoader
-\n# Enable TensorFloat32 for better performance
+# Enable TensorFloat32 for better performance
 torch.set_float32_matmul_precision("high")
 
 from torch.cuda.amp import autocast, GradScaler
