@@ -524,7 +524,7 @@ def advanced_train_model_gpu(
         avg_train_loss = np.mean(train_loss_epoch)
         avg_train_cost = np.mean(train_cost_epoch)
         avg_val_cost = np.mean(val_cost_epoch) if val_cost_epoch else float('nan')
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = scheduler.get_last_lr()[0] if (scheduler and not isinstance(scheduler, ReduceLROnPlateau)) else optimizer.param_groups[0]['lr']
         
         # GPU memory tracking
         mem_info = gpu_manager.get_memory_info()
@@ -579,9 +579,6 @@ def advanced_train_model_gpu(
         history.setdefault('mean_type', []).append('geometric' if use_geometric_mean else 'arithmetic')
         history.setdefault('temperature', []).append(float(current_temp))
                 
-        # Get current learning rate for logging
-        current_lr = scheduler.get_last_lr()[0] if (scheduler and not isinstance(scheduler, ReduceLROnPlateau)) else optimizer.param_groups[0]['lr']
-        
         # Logging
         if val_cost_epoch:
             print(
