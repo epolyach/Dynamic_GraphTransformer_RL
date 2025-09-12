@@ -1,0 +1,28 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug GT+RL Training (tiny_1)",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/training_gpu/scripts/run_training_gpu.py",
+            "args": [
+                "--model", "GT+RL",
+                "--config", "configs/tiny_1.yaml",
+                "--epochs", "3",
+                "--verbose"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/training_gpu",
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "python": "${workspaceFolder}/venv/bin/python",
+            "justMyCode": false,
+            "stopOnEntry": false,
+            "showReturnValue": true,
+            "subProcess": true
+        }
+    ]
+}

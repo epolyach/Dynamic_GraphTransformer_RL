@@ -1,0 +1,25 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.formatting.provider": "black",
+    "files.associations": {
+        "*.yaml": "yaml",
+        "*.yml": "yaml"
+    },
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/training_gpu/lib",
+        "${workspaceFolder}/training_cpu/lib"
+    ],
+    "python.envFile": "${workspaceFolder}/.env",
+    "debug.internalConsoleOptions": "neverOpen",
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": false,
+    "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}:${workspaceFolder}/training_gpu"
+    }
+}

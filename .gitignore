@@ -57,6 +57,7 @@ temp_results/  # Temporary results only
 
 # Virtual environments
 .env
+.env.local
 .venv
 env/
 venv/
@@ -66,7 +67,8 @@ venv.bak/
 gpu_env/
 
 # IDE/editor
-.vscode/
+# .vscode/  # Allow VSCode configs for remote debugging
+.vscode/settings.json.local
 .idea/
 *.swp
 *.swo
