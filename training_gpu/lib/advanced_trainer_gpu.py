@@ -356,7 +356,7 @@ def advanced_train_model_gpu(
         
         for batch_idx in range(n_batches):
             # Generate problem instances (align seeds with CPU)
-            batch_seed = epoch * n_batches * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            batch_seed = epoch * n_batches * batch_size + batch_idx * batch_size if epoch > 0 else batch_idx * batch_size
             instances = data_generator(batch_size, epoch=epoch, seed=batch_seed)
             
             # Move to GPU
@@ -373,35 +373,129 @@ def advanced_train_model_gpu(
                     config=config
                 )
                 
-                # Compute per-instance route costs and CPC (log or arithmetic)
-                rcosts = []  # actual route costs per instance
-                cpc_vals = []  # arithmetic CPC values
-                cpc_logs = []  # log-CPC values for geometric mean
-                for b in range(len(instances)):
-                    distances = instances[b]["distances"]
-                    route = routes[b]
-                    # Use CPU cost computation to match CPU trainer exactly
-                    distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
-                    rc = compute_route_cost(route, distances_cpu)
-                    # Convert to tensor on GPU
-                    if not isinstance(rc, torch.Tensor):
-                        rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
-                    rcosts.append(rc)
-                    n_customers = (len(instances[b]["coords"]) - 1)
-                    if use_geometric_mean:
-                        cpc_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
-                    else:
-                        cpc_vals.append(rc / float(n_customers))
+                # Vectorized GPU cost computation - no Python loops
+                batch_size = len(instances)
+                max_route_len = max(len(r) for r in routes)
+                
+                # Prepare padded routes tensor
+                routes_tensor = torch.full((batch_size, max_route_len), -1, 
+                                         dtype=torch.long, device=gpu_manager.device)
+                for b, route in enumerate(routes):
+                    routes_tensor[b, :len(route)] = torch.tensor(route, dtype=torch.long)
+                
+                # Stack distances
+                distances_tensor = torch.stack([inst["distances"] for inst in instances])
+                
+                # Vectorized cost computation
+                # Get indices for route transitions
+                from_idx = routes_tensor[:, :-1]
+                to_idx = routes_tensor[:, 1:]
+                valid_mask = (from_idx >= 0) & (to_idx >= 0)
+                
+                # Batch indexing for distances
+                batch_indices = torch.arange(batch_size, device=gpu_manager.device).unsqueeze(1).expand(-1, max_route_len-1)
+                
+                # Get edge costs and mask invalid transitions
+                edge_costs = distances_tensor[batch_indices, from_idx, to_idx]
+                edge_costs = edge_costs * valid_mask.float()
+                
+                # Sum to get total route costs
+                rcosts = edge_costs.sum(dim=1)
+                
+                # Compute CPC
+                n_customers_tensor = torch.tensor([len(inst["coords"]) - 1 for inst in instances], 
+                                                device=gpu_manager.device, dtype=torch.float32)
                 
                 # Aggregated CPC for this batch (to track train_cost_epoch)
                 if use_geometric_mean:
-                    batch_cost = torch.exp(torch.stack(cpc_logs).mean())
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
                 else:
-                    batch_cost = torch.stack(cpc_vals).mean()
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
                 
                 # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = torch.stack(rcosts).to(dtype=torch.float32)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
                 
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
+                # Aggregated CPC for this batch (to track train_cost_epoch)
+                if use_geometric_mean:
+                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
+                    batch_cost = torch.exp(cpc_logs.mean())
+                else:
+                    cpc_vals = rcosts / n_customers_tensor
+                    batch_cost = cpc_vals.mean()
+                
+                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
+                costs_tensor = rcosts.to(dtype=torch.float32)
                 # Compute baseline (matching CPU)
                 if baseline is not None:
                     bl_vals = baseline.eval_batch(instances)  # per-instance costs (GPU tensor)

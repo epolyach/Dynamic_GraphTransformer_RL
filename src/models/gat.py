@@ -547,6 +547,7 @@ class GATModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.edge_dim = edge_dim
         self.config = config or {}
+        self.model_type = "GAT+RL"
         
         # Encoder
         self.encoder = ResidualEdgeGATEncoder(

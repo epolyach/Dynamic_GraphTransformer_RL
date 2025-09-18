@@ -151,5 +151,11 @@ logging:
 # =============================
 # The following parameters were removed as they are not used in the current codebase:
 # - memory section (clear_cache_interval, memory_check_interval, memory_warning_threshold)
-# - benchmark section (scaling.distance_scale)
 # - experiment.device (misleading - CPU training uses default device, GPU training uses gpu.device)
+
+# =============================
+# Benchmark settings
+# =============================
+benchmark:
+  scaling:
+    distance_scale: 100000     # Used by GPU/CPU internals for integer distance scaling

@@ -13,7 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import List, Dict, Any, Tuple, Optional
 
 
 class SpatialPositionalEncoding(nn.Module):
@@ -368,9 +368,6 @@ class GraphTransformer(nn.Module):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
-        self.model_type = "GT+RL"
-        self.training_mode = "RL"  # Set to RL mode for reinforcement learning
-        self.training_mode = "RL"  # Set to RL mode for reinforcement learning
         self.num_layers = num_layers
         
         # Initial node embedding with demand awareness
@@ -644,33 +641,5 @@ class GraphTransformer(nn.Module):
         return mask
 
 
-    
-    def decode(self, instances: List[Dict], return_log_probs: bool = False,
-               temperature: float = 1.0, greedy: bool = False, 
-               max_steps: Optional[int] = None, **kwargs) -> Union[List[List[int]], Tuple[List[List[int]], torch.Tensor]]:
-        """Decode method for RL training compatibility.
-        
-        Args:
-            instances: List of problem instances
-            return_log_probs: Whether to return log probabilities
-            temperature: Temperature for sampling
-            greedy: Whether to use greedy decoding
-            max_steps: Maximum number of steps
-            
-        Returns:
-            Routes if return_log_probs is False, otherwise (routes, log_probs)
-        """
-        routes, log_probs, _ = self.forward(
-            instances, 
-            max_steps=max_steps,
-            temperature=temperature,
-            greedy=greedy,
-            config=kwargs.get("config")
-        )
-        
-        if return_log_probs:
-            return routes, log_probs
-        else:
-            return routes
 # Alias for backward compatibility
 AdvancedGraphTransformer = GraphTransformer
