@@ -7,6 +7,7 @@ class GraphTransformerGreedy(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_heads, num_layers, dropout, feedforward_multiplier, config):
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.model_type = "GT-Greedy"
         self.num_heads = num_heads
         self.node_embedding = nn.Linear(input_dim, hidden_dim)
         self.transformer_layers = nn.ModuleList([

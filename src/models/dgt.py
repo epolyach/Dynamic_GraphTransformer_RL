@@ -326,6 +326,7 @@ class DynamicGraphTransformer(nn.Module):
         self.hidden_dim = hidden_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
+        self.model_type = "DGT+RL"
         
         # ============= Initial Encoding (from GT+RL) =============
         # Node embedding with demand awareness

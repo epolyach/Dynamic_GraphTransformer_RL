@@ -40,8 +40,33 @@ class GPUManager:
         self.device = self._init_device(device)
         self.memory_fraction = memory_fraction
         self.enable_mixed_precision = enable_mixed_precision and cuda.is_available()
-        
-        if self.enable_mixed_precision:
+
+        # Configure math precision for Ampere+ (A6000 is SM 8.6)
+        if self.device.type == 'cuda':
+            try:
+                # Enable TF32 for remaining float32 ops
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                # Prefer higher throughput matmul kernels
+                if hasattr(torch, 'set_float32_matmul_precision'):
+                    torch.set_float32_matmul_precision('high')
+                # Let cuDNN autotune best algorithms for fixed shapes
+                torch.backends.cudnn.benchmark = True
+            except Exception:
+                pass
+
+        # Choose AMP dtype: BF16 on Ampere+ (no scaler overhead), else FP16
+        if self.device.type == 'cuda':
+            try:
+                major, minor = torch.cuda.get_device_capability(self.device)
+            except Exception:
+                major, minor = (0, 0)
+            self.amp_dtype = torch.bfloat16 if getattr(torch.cuda, 'is_bf16_supported', lambda: False)() else torch.float16
+        else:
+            self.amp_dtype = torch.float32
+
+        # GradScaler only needed for float16 AMP; skip for bfloat16
+        if self.enable_mixed_precision and self.device.type == 'cuda' and self.amp_dtype == torch.float16:
             self.scaler = GradScaler('cuda')
         else:
             self.scaler = None
@@ -203,7 +228,7 @@ class GPUManager:
             Autocast context manager or nullcontext
         """
         if self.enable_mixed_precision and self.device.type == 'cuda':
-            return autocast('cuda', dtype=torch.float16)
+            return autocast('cuda', dtype=self.amp_dtype)
         else:
             # Return a no-op context manager
             from contextlib import nullcontext

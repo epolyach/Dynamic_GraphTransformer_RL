@@ -38,6 +38,37 @@ from .gpu_utils import GPUManager, DataLoaderGPU
 
 logger = logging.getLogger(__name__)
 
+# JIT-compiled vectorized route cost computation for GPU optimization
+@torch.jit.script
+def compute_route_costs_vectorized(routes: torch.Tensor, distances: torch.Tensor, valid_mask: torch.Tensor) -> torch.Tensor:
+    """
+    Fully vectorized route cost computation with JIT compilation.
+    
+    Args:
+        routes: (batch_size, max_route_len) tensor of route indices
+        distances: (batch_size, n_nodes, n_nodes) distance matrices
+        valid_mask: (batch_size, max_route_len-1) mask for valid transitions
+    
+    Returns:
+        (batch_size,) tensor of route costs
+    """
+    batch_size, max_route_len = routes.shape
+    
+    # Get from/to indices for all transitions
+    from_idx = routes[:, :-1]
+    to_idx = routes[:, 1:]
+    
+    # Create batch indices
+    batch_indices = torch.arange(batch_size, device=routes.device).unsqueeze(1).expand(-1, max_route_len-1)
+    
+    # Gather edge costs efficiently
+    edge_costs = distances[batch_indices, from_idx, to_idx]
+    
+    # Apply mask and sum
+    masked_costs = edge_costs * valid_mask
+    return masked_costs.sum(dim=1)
+
+
 
 
 class AdaptiveTemperatureScheduler:
@@ -183,7 +214,41 @@ def advanced_train_model_gpu(
     
     # Move model to GPU
     model = model.to(gpu_manager.device)
-    logger.info(f"Model moved to {gpu_manager.get_device_name()}")
+    # Use channels_last memory format for better performance on modern GPUs
+    # model = model.to(memory_format=torch.channels_last) # Only for CNN models
+    logger.info(f"Model moved to {gpu_manager.get_device_name()}")    # Try to compile model for better performance (PyTorch 2.0+)
+    # NOTE: torch.compile can hang or take very long on first invocation
+    # We'll make it optional and use safer settings
+    use_torch_compile = gpu_config.get('use_torch_compile', False)  # Disabled by default to avoid hanging
+    compile_mode = gpu_config.get('compile_mode', 'default')  # Use 'default' instead of 'reduce-overhead'
+    
+    if use_torch_compile:
+        try:
+            if hasattr(torch, 'compile'):
+                logger.info(f"Starting torch.compile with mode='{compile_mode}'... This may take several minutes on first run.")
+                print(f"[COMPILE] Starting model compilation with torch.compile (mode='{compile_mode}')...")
+                print(f"[COMPILE] This can take 2-10 minutes on the first run. Please be patient...")
+                
+                # Use safer compilation settings
+                # - mode='default' is faster to compile than 'reduce-overhead'
+                # - fullgraph=False allows partial compilation if full graph compilation fails
+                # - dynamic=True handles dynamic shapes better
+                model = torch.compile(
+                    model, 
+                    mode=compile_mode,
+                    backend='inductor',
+                    fullgraph=False,  # Allow partial compilation
+                    dynamic=True      # Better handling of dynamic shapes
+                )
+                
+                logger.info("Model compiled successfully with torch.compile")
+                print("[COMPILE] Model compilation completed successfully!")
+        except Exception as e:
+            logger.warning(f"torch.compile failed: {e}. Continuing without compilation.")
+            print(f"[COMPILE] WARNING: torch.compile failed ({e}). Continuing without compilation.")
+    else:
+        logger.info("torch.compile disabled (set gpu.use_torch_compile=true to enable)")
+        print("[COMPILE] torch.compile is disabled. To enable, set 'use_torch_compile: true' in GPU config")
     
     # Training parameters
     train_config = config.get('training', {})
@@ -381,111 +446,28 @@ def advanced_train_model_gpu(
                 routes_tensor = torch.full((batch_size, max_route_len), -1, 
                                          dtype=torch.long, device=gpu_manager.device)
                 for b, route in enumerate(routes):
-                    routes_tensor[b, :len(route)] = torch.tensor(route, dtype=torch.long)
+                    route_len = len(route)
+                    if route_len > 0:
+                        routes_tensor[b, :route_len] = torch.tensor(route, dtype=torch.long, device=gpu_manager.device)
                 
-                # Stack distances
+                # Stack distances (ensure GPU placement)
                 distances_tensor = torch.stack([inst["distances"] for inst in instances])
+                if distances_tensor.device != gpu_manager.device:
+                    distances_tensor = distances_tensor.to(gpu_manager.device, non_blocking=True)
                 
-                # Vectorized cost computation
+                # Vectorized cost computation using JIT-compiled function
                 # Get indices for route transitions
                 from_idx = routes_tensor[:, :-1]
                 to_idx = routes_tensor[:, 1:]
-                valid_mask = (from_idx >= 0) & (to_idx >= 0)
+                valid_mask = ((from_idx >= 0) & (to_idx >= 0)).float()
                 
-                # Batch indexing for distances
-                batch_indices = torch.arange(batch_size, device=gpu_manager.device).unsqueeze(1).expand(-1, max_route_len-1)
-                
-                # Get edge costs and mask invalid transitions
-                edge_costs = distances_tensor[batch_indices, from_idx, to_idx]
-                edge_costs = edge_costs * valid_mask.float()
-                
-                # Sum to get total route costs
-                rcosts = edge_costs.sum(dim=1)
+                # Use JIT-compiled function for better performance
+                rcosts = compute_route_costs_vectorized(routes_tensor, distances_tensor, valid_mask)
                 
                 # Compute CPC
                 n_customers_tensor = torch.tensor([len(inst["coords"]) - 1 for inst in instances], 
                                                 device=gpu_manager.device, dtype=torch.float32)
                 
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
-                # Aggregated CPC for this batch (to track train_cost_epoch)
-                if use_geometric_mean:
-                    cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
-                    batch_cost = torch.exp(cpc_logs.mean())
-                else:
-                    cpc_vals = rcosts / n_customers_tensor
-                    batch_cost = cpc_vals.mean()
-                
-                # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
-                costs_tensor = rcosts.to(dtype=torch.float32)
                 # Aggregated CPC for this batch (to track train_cost_epoch)
                 if use_geometric_mean:
                     cpc_logs = torch.log(rcosts + 1e-10) - torch.log(n_customers_tensor)
