@@ -75,13 +75,24 @@ class RolloutBaselineGPU:
             max_nodes = max(len(inst['coords']) for inst in instances)
             max_steps_mult = int(self.config.get('inference', {}).get('max_steps_multiplier', 2))
             max_steps = max_nodes * max_steps_mult
-            routes, _, _ = model(
-                instances,
+            ctx = self.gpu_manager.autocast_context() if hasattr(self, "gpu_manager") else None
+            if ctx is not None:
+                with ctx:
+                    routes, _, _ = model(
+                        instances,
                 max_steps=max_steps,
                 temperature=self.greedy_temperature,
                 greedy=True,
                 config=self.config,
-            )
+                    )
+            else:
+                routes, _, _ = model(
+                    instances,
+                    max_steps=max_steps,
+                    temperature=self.greedy_temperature,
+                    greedy=True,
+                    config=self.config,
+                )
 
         costs: List[float] = []
         for b, inst in enumerate(instances):
@@ -90,14 +101,13 @@ class RolloutBaselineGPU:
             # Validate strictly; raise if invalid to catch issues early
             if self.strict_validation:
                 validate_route(r, n_customers, model_name="Baseline-Greedy", instance=inst)
-            # Use CPU cost computation to match CPU trainer exactly
-            distances = inst["distances"]
-            # Convert distances to CPU numpy if needed
-            distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
-            c = compute_route_cost(r, distances_cpu)
-            c_norm = c / max(1, n_customers)
-            costs.append(float(c_norm))
-        return np.asarray(costs, dtype=np.float32)
+            # Vectorized GPU cost
+            distances_list = [inst['distances'] for inst in instances]
+            from src.metrics.gpu_costs import compute_batch_costs_gpu
+            total_costs = compute_batch_costs_gpu(routes, distances_list)
+            n_customers = [len(inst['coords']) - 1 for inst in instances]
+            norm_costs = (total_costs / (torch.tensor(n_customers, device=total_costs.device, dtype=torch.float32).clamp(min=1.0))).float()
+        return norm_costs.detach().cpu().numpy().astype(np.float32)
 
     def _compute_dataset_costs(self, model: torch.nn.Module) -> np.ndarray:
         vals: List[np.ndarray] = []
