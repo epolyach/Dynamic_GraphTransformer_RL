@@ -29,7 +29,3 @@ inference:
   max_steps_multiplier: 10
   default_temperature: 2.5
 
-# Temperature scheduling (cosine annealing)
-advanced:
-  temp_start: 2.5      # Starting temperature
-  temp_min: 0.5        # Minimum temperature
