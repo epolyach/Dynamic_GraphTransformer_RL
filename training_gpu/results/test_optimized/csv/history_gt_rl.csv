@@ -1,3 +1,0 @@
-epoch,train_loss,train_cost_arithmetic,val_cost_arithmetic,learning_rate,temperature,time_per_epoch,baseline_type,baseline_value,mean_type
-0,-0.6360543406009674,0.6634260296821595,0.65830357815139,0.0001,2.5,48.39280033111572,rollout,0.6477617025375366,arithmetic
-1,-0.5447844111919403,0.65467276096344,0.6541120116598904,1e-06,2.5,43.67240309715271,rollout,0.6465134620666504,arithmetic

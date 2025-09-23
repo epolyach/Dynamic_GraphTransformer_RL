@@ -1,13 +1,13 @@
 baseline:
-  eval_batches: 2
+  eval_batches: 1
   type: rollout
   update:
     enabled: true
-    frequency: 3
+    frequency: 2
     p_value: 0.1
     significance_test: true
     warmup_epochs: 0
-batch_size: 128
+batch_size: 1024
 benchmark:
   scaling:
     distance_scale: 100000
@@ -45,8 +45,8 @@ gpu:
 grad_clip: 2.0
 hidden_dim: 128
 inference:
-  default_temperature: 1.0
-  max_steps_multiplier: 2
+  default_temperature: 2.5
+  max_steps_multiplier: 10
 learning_rate: 0.0001
 logging:
   format: '%(message)s'
@@ -66,23 +66,23 @@ model_gat:
   gat_layers: 4
   gat_negative_slope: 0.2
 num_customers: 10
-num_epochs: 2
+num_epochs: 100
 num_heads: 4
-num_instances: 9600
+num_instances: 7756800
 num_layers: 3
 problem:
   coord_range: 100
   demand_range: *id001
   num_customers: 10
   vehicle_capacity: 30
-temp_min: 0.15
+temp_min: 2.5
 temp_start: 2.5
 training:
-  batch_size: 128
+  batch_size: 1024
   learning_rate: 0.0001
-  num_batches_per_epoch: 25
-  num_epochs: 2
-  num_instances: 9600
+  num_batches_per_epoch: 75
+  num_epochs: 100
+  num_instances: 7756800
   use_geometric_mean: false
   validation_frequency: 2
 training_advanced:
@@ -100,11 +100,11 @@ training_advanced:
   min_lr: 1.0e-06
   scheduler_type: cosine
   temp_adaptation_rate: 0.18
-  temp_min: 0.15
+  temp_min: 2.5
   temp_start: 2.5
-  use_adaptive_temperature: true
+  use_adaptive_temperature: false
   use_early_stopping: true
   use_lr_scheduling: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/test_gpu_costs_n10
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_512_fixed_temp

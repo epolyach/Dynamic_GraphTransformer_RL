@@ -38,6 +38,24 @@ from .gpu_utils import GPUManager, DataLoaderGPU
 
 logger = logging.getLogger(__name__)
 
+# Speed knobs for Ampere+ GPUs (e.g., A6000):
+# - TF32 can accelerate large matmul-heavy models with minimal accuracy loss
+# - High matmul precision hints PyTorch to use TF32 where possible
+try:
+    import torch.backends.cuda
+    torch.backends.cuda.matmul.allow_tf32 = True  # enable TF32 matmul
+    # cudnn TF32 mainly affects convs; harmless to enable
+    import torch.backends.cudnn as cudnn
+    cudnn.allow_tf32 = True
+except Exception:
+    pass
+
+try:
+    # PyTorch 2.0+: set float32 matmul precision policy
+    torch.set_float32_matmul_precision('high')
+except Exception:
+    pass
+
 
 
 

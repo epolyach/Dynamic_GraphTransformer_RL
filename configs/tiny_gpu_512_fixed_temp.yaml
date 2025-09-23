@@ -1,6 +1,6 @@
 # Tiny GPU config - Larger batch size and more steps for GPU training
 # Batch size 3072, 25 steps per epoch
-working_dir_path: "../results/tiny_gpu_512"
+working_dir_path: "../results/tiny_gpu_512_fixed_temp"
 
 problem:
   num_customers: 10
@@ -28,3 +28,9 @@ baseline:
 inference:
   max_steps_multiplier: 10
   default_temperature: 2.5
+
+# Override temperature settings - fixed at 2.5, no annealing
+training_advanced:
+  use_adaptive_temperature: false  # Disable adaptive temperature
+  temp_start: 2.5                  # Fixed temperature
+  temp_min: 2.5                    # Same as start (no annealing)

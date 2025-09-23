@@ -1,8 +1,5 @@
-advanced:
-  temp_min: 0.5
-  temp_start: 2.5
 baseline:
-  eval_batches: 5
+  eval_batches: 1
   type: rollout
   update:
     enabled: true
@@ -10,7 +7,7 @@ baseline:
     p_value: 0.1
     significance_test: true
     warmup_epochs: 0
-batch_size: 512
+batch_size: 1024
 benchmark:
   scaling:
     distance_scale: 100000
@@ -81,9 +78,9 @@ problem:
 temp_min: 0.15
 temp_start: 2.5
 training:
-  batch_size: 512
+  batch_size: 1024
   learning_rate: 0.0001
-  num_batches_per_epoch: 150
+  num_batches_per_epoch: 75
   num_epochs: 100
   num_instances: 7756800
   use_geometric_mean: false
