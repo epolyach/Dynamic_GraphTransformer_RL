@@ -1,9 +1,8 @@
-# Tiny config - Quick experiments with reduced training
-# Same problem as small (N=10) but reduced training data
-working_dir_path: "../results/tiny_1"
+# Tiny config for n=20 - Quick experiments with 20 customers
+working_dir_path: "../results/tiny_2_n20"
 
 problem:
-  num_customers: 10
+  num_customers: 20
   vehicle_capacity: 30
 
 training:

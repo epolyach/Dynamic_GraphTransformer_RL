@@ -31,7 +31,7 @@ from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast, GradScaler
 
 from src.metrics.costs import compute_route_cost
-from src.metrics.gpu_costs import compute_route_cost_gpu
+# from src.metrics.gpu_costs import compute_route_cost_gpu  # Too slow for small problems
 from .validation_gpu import validate_route
 from .rollout_baseline_gpu_fixed import RolloutBaselineGPU
 from .gpu_utils import GPUManager, DataLoaderGPU
@@ -39,34 +39,6 @@ from .gpu_utils import GPUManager, DataLoaderGPU
 logger = logging.getLogger(__name__)
 
 
-
-
-
-def move_to_gpu_except_distances(instance, gpu_manager):
-    """Move instance to GPU but keep distances on CPU for cost computation."""
-    import numpy as np
-    import torch
-    
-    gpu_inst = {}
-    for key, value in instance.items():
-        if key == 'distances':
-            # Keep distances on CPU as numpy array for cost computation
-            if isinstance(value, torch.Tensor):
-                gpu_inst[key] = value.cpu().numpy()
-            else:
-                gpu_inst[key] = value
-        elif isinstance(value, np.ndarray):
-            # Move other numpy arrays to GPU
-            if key == 'demands':
-                gpu_inst[key] = torch.tensor(value, dtype=torch.long, device=gpu_manager.device)
-            else:
-                gpu_inst[key] = torch.tensor(value, dtype=torch.float32, device=gpu_manager.device)
-        elif isinstance(value, torch.Tensor):
-            # Move existing tensors to GPU
-            gpu_inst[key] = value.to(gpu_manager.device)
-        else:
-            gpu_inst[key] = value
-    return gpu_inst
 
 class AdaptiveTemperatureScheduler:
     """Adaptive temperature scheduling for exploration-exploitation balance."""
@@ -276,12 +248,12 @@ def advanced_train_model_gpu(
     baseline_config = config.get('baseline', {})
     baseline_update_warmup_epochs = int(baseline_config.get('update', {}).get('warmup_epochs', 0))
     
-    baseline_update_frequency = int(baseline_config.get('update', {}).get('frequency', 3))
+    baseline_update_frequency = int(baseline_config.get('update', {}).get('frequency', 1))
     # Only initialize RolloutBaseline for RL training (matching CPU)
     print("[INIT] Checking if baseline needed for RL training...")
     if 'RL' in model_name:
         # Create eval dataset (same as CPU version)
-        eval_batches = baseline_config.get('eval_batches', 2)
+        eval_batches = baseline_config.get('eval_batches', 5)
         print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
         import sys; sys.stdout.flush()
         eval_dataset = []
@@ -290,7 +262,7 @@ def advanced_train_model_gpu(
             seed_val = 123456 + i
             batch_data = data_generator(batch_size, seed=seed_val)
             # Pre-convert batch to GPU tensors to minimize transfers during baseline evaluation
-            gpu_batch = [move_to_gpu_except_distances(inst, gpu_manager) for inst in batch_data]
+            gpu_batch = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in batch_data]
             eval_dataset.append(gpu_batch)
         print(f"[INIT] Eval dataset built: {len(eval_dataset)} batches")
         
@@ -384,11 +356,11 @@ def advanced_train_model_gpu(
         
         for batch_idx in range(n_batches):
             # Generate problem instances (align seeds with CPU)
-            batch_seed = epoch * n_batches * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            batch_seed = epoch * n_batches * batch_size + batch_idx * batch_size if epoch > 0 else batch_idx * batch_size
             instances = data_generator(batch_size, epoch=epoch, seed=batch_seed)
             
             # Move to GPU
-            instances = [move_to_gpu_except_distances(inst, gpu_manager) for inst in instances]
+            instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in instances]
             
 
             # Forward pass with mixed precision
@@ -408,12 +380,11 @@ def advanced_train_model_gpu(
                 for b in range(len(instances)):
                     distances = instances[b]["distances"]
                     route = routes[b]
-                    # Use CPU cost computation to match CPU trainer exactly
+                    # Use CPU cost computation - much faster for small problems
                     distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
                     rc = compute_route_cost(route, distances_cpu)
-                    # Convert to tensor on GPU
-                    if not isinstance(rc, torch.Tensor):
-                        rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                    # Convert result to GPU tensor
+                    rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
                     rcosts.append(rc)
                     n_customers = (len(instances[b]["coords"]) - 1)
                     if use_geometric_mean:
@@ -429,13 +400,16 @@ def advanced_train_model_gpu(
                 
                 # Build actual costs tensor for RL (match CPU: use actual costs, not CPC)
                 costs_tensor = torch.stack(rcosts).to(dtype=torch.float32)
-                
                 # Compute baseline (matching CPU)
                 if baseline is not None:
-                    # FIXED: Don't evaluate baseline on every batch - use pre-computed mean
-                    # The baseline should only be updated periodically, not evaluated per batch
-                    bl_val = torch.tensor(baseline.mean, device=costs_tensor.device, dtype=costs_tensor.dtype)
-                    advantages = bl_val - costs_tensor  # Lower cost -> positive advantage
+                    bl_vals = baseline.eval_batch(instances)  # per-instance costs (GPU tensor)
+                    if bl_vals.device != costs_tensor.device:
+                        bl_vals = bl_vals.to(costs_tensor.device)
+                    if bl_vals.numel() != costs_tensor.numel():
+                        base_scalar = costs_tensor.mean().detach()
+                        advantages = base_scalar - costs_tensor
+                    else:
+                        advantages = bl_vals.detach() - costs_tensor  # Lower cost -> positive advantage
                 else:
                     base_scalar = costs_tensor.mean().detach()
                     advantages = base_scalar - costs_tensor
@@ -505,7 +479,7 @@ def advanced_train_model_gpu(
             with torch.no_grad():
                 val_seed = 1000000 + epoch * batch_size
                 val_instances = data_generator(batch_size, seed=val_seed)
-                val_instances = [move_to_gpu_except_distances(inst, gpu_manager) for inst in val_instances]
+                val_instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in val_instances]
                 with gpu_manager.autocast_context():
                     routes_val, _, _ = model(
                         val_instances,
@@ -520,9 +494,9 @@ def advanced_train_model_gpu(
                         for b in range(len(val_instances)):
                             distances = val_instances[b]["distances"]
                             route = routes_val[b]
-                            rc = compute_route_cost_gpu(route, distances)
-                            if not isinstance(rc, torch.Tensor):
-                                rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                            distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
+                            rc = compute_route_cost(route, distances_cpu)
+                            rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
                             n_customers = (len(val_instances[b]["coords"]) - 1)
                             val_logs.append(torch.log(rc + 1e-10) - torch.log(torch.tensor(float(n_customers), device=gpu_manager.device)))
                         batch_val_cost = float(torch.exp(torch.stack(val_logs).mean()).item())
@@ -531,9 +505,9 @@ def advanced_train_model_gpu(
                         for b in range(len(val_instances)):
                             distances = val_instances[b]["distances"]
                             route = routes_val[b]
-                            rc = compute_route_cost_gpu(route, distances)
-                            if not isinstance(rc, torch.Tensor):
-                                rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
+                            distances_cpu = distances.cpu().numpy() if isinstance(distances, torch.Tensor) else distances
+                            rc = compute_route_cost(route, distances_cpu)
+                            rc = torch.tensor(rc, device=gpu_manager.device, dtype=torch.float32)
                             n_customers = (len(val_instances[b]["coords"]) - 1)
                             val_cpcs.append((rc / float(n_customers)).item())
                         batch_val_cost = float(np.mean(val_cpcs))
@@ -548,7 +522,7 @@ def advanced_train_model_gpu(
         avg_train_loss = np.mean(train_loss_epoch)
         avg_train_cost = np.mean(train_cost_epoch)
         avg_val_cost = np.mean(val_cost_epoch) if val_cost_epoch else float('nan')
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = scheduler.get_last_lr()[0] if (scheduler and not isinstance(scheduler, ReduceLROnPlateau)) else optimizer.param_groups[0]['lr']
         
         # GPU memory tracking
         mem_info = gpu_manager.get_memory_info()
@@ -581,7 +555,7 @@ def advanced_train_model_gpu(
                         # Get a representative baseline value from the rollout
                         test_instances = data_generator(batch_size, seed=999999 + epoch)
                         # Move to GPU
-                        test_instances = [move_to_gpu_except_distances(inst, gpu_manager) for inst in test_instances]
+                        test_instances = [gpu_manager.to_device_dict(inst, non_blocking=True) for inst in test_instances]
                         with torch.no_grad():
                             baseline_costs = baseline.eval_batch(test_instances)
                         baseline_value = float(baseline_costs.mean())
@@ -603,9 +577,6 @@ def advanced_train_model_gpu(
         history.setdefault('mean_type', []).append('geometric' if use_geometric_mean else 'arithmetic')
         history.setdefault('temperature', []).append(float(current_temp))
                 
-        # Get current learning rate for logging
-        current_lr = scheduler.get_last_lr()[0] if (scheduler and not isinstance(scheduler, ReduceLROnPlateau)) else optimizer.param_groups[0]['lr']
-        
         # Logging
         if val_cost_epoch:
             print(
