@@ -1,0 +1,30 @@
+# Tiny GPU config - Larger batch size and more steps for GPU training
+# Batch size 512, 150 steps per epoch
+working_dir_path: "../results/tiny_gpu_512"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 150   # 150 steps per epoch
+  batch_size: 512              # Large batch size for GPU
+  num_epochs: 100              # Default number of epochs
+
+# Smaller model for faster training
+model:
+  hidden_dim: 128              # Half of default 256
+  num_heads: 4
+  num_layers: 3                # Reduced from default 4
+
+# Baseline configuration for efficient training
+baseline:
+  eval_batches: 5              # Small eval dataset
+  update:
+    frequency: 2               # Update every 2 epochs
+    warmup_epochs: 0
+
+# Optional: specify inference settings
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 2.5
