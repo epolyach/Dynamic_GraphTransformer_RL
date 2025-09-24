@@ -1,0 +1,43 @@
+# Medium GPU config - Optimized for n=20
+# Balanced for fast training and good performance
+working_dir_path: "../results/medium_gpu_optimal"
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 50    # 50 × 1024 = 51,200 instances/epoch
+  batch_size: 1024             # Keep 1024 for good GPU utilization
+  num_epochs: 150               # More epochs for n=20
+  learning_rate: 1.5e-4         # Slightly higher LR for larger problem
+  validation_frequency: 5
+
+# Larger model for n=20 (but still efficient)
+model:
+  hidden_dim: 192               # Between 128 and 256
+  num_heads: 4
+  num_layers: 3                 # Keep 3 layers for speed
+
+# Optimized baseline
+baseline:
+  eval_batches: 1              # Only 1024 instances for fast init
+  update:
+    frequency: 3                # Every 3 epochs
+    warmup_epochs: 0            # No warmup delay
+
+# Training settings with annealing
+training_advanced:
+  use_adaptive_temperature: false  # Start with fixed for stability
+  temp_start: 2.0                  # Lower than 2.5 for n=20
+  temp_min: 0.5                    # Allow more exploitation
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  min_lr: 1e-6
+  entropy_coef: 0.02               # Higher entropy for exploration
+  entropy_min: 0.001
+  gradient_clip_norm: 1.0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 1.5
