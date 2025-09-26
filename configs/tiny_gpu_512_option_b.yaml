@@ -1,0 +1,41 @@
+# Tiny GPU config — Option B: Deterministic two-stage schedule (config-only approximation)
+# Based on configs/tiny_gpu_512.yaml
+# NOTE: The current GPU trainer supports either adaptive temperature or a cosine fallback.
+#       A true step schedule (hard drops at epochs 10 and 20) would require a tiny code change.
+#       This config opts for the deterministic cosine fallback with a lower temp_min to create
+#       pronounced drops in the early/mid stages, aligning baseline updates on even epochs.
+
+working_dir_path: "../results/tiny_gpu_512_option_b"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 75   # 150 steps per epoch
+  batch_size: 1024            # Large batch size for GPU
+  num_epochs: 100
+  validation_frequency: 2     # Keep validation on even epochs
+
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+baseline:
+  eval_batches: 1
+  update:
+    frequency: 2              # Update every 2 epochs (aligns with even-epoch "jump")
+    warmup_epochs: 0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 2.5
+
+# Advanced training overrides
+training_advanced:
+  use_adaptive_temperature: false  # Use deterministic fallback (cosine) instead of adaptive
+  temp_start: 2.5
+  temp_min: 0.70                   # Lower mid-stage temperature to create a second pronounced drop
+  # If you want a true two-step schedule at epochs 10 and 20, we can add a tiny code patch
+  # to support e.g. training_advanced.temperature_steps: [{epoch: 9, temp: 1.2}, {epoch: 19, temp: 0.7}].

@@ -3,27 +3,11 @@ working_dir_path: "training_cpu/results/small"
 
 problem:
   num_customers: 10
-  vehicle_capacity: 20
+  vehicle_capacity: 30
 
-# Smaller model appropriate for N=10
 model:
   hidden_dim: 128              # Reduced from default 256
   num_heads: 4                 
   num_layers: 3                # Shallower for small problems
 
-# GAT-specific architecture for N=10
-model_gat:
-  gat_hidden_dim: 128          # Match transformer hidden dim
-  gat_layers: 3                # Match transformer layers
 
-# GPU Configuration (recommendations)
-gpu:
-  enabled: true
-  device: "cuda:0"
-  mixed_precision: true        # Recommended for N>=20
-  memory_fraction: 0.95
-  pin_memory: true
-  non_blocking: true
-  gradient_accumulation_steps: 1
-  num_workers: 4
-  prefetch_factor: 2

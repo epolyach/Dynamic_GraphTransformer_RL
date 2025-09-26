@@ -1,0 +1,40 @@
+# Tiny GPU config — Option A: Stronger adaptive annealing for a deeper first jump
+# Based on configs/tiny_gpu_512.yaml
+# Changes:
+# - Keep validation on even epochs and baseline updates every 2 epochs
+# - Increase adaptive temperature drop size (temp_adaptation_rate)
+# - Allow lower temp_min to enable stronger exploitation after the drop
+
+working_dir_path: "../results/tiny_gpu_512_option_a"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 75   # 150 steps per epoch
+  batch_size: 1024            # Large batch size for GPU
+  num_epochs: 100
+  validation_frequency: 2     # Ensure validation on even epochs
+
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+baseline:
+  eval_batches: 1
+  update:
+    frequency: 2              # Update every 2 epochs (keeps the cadence that causes the jump)
+    warmup_epochs: 0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 2.5
+
+# Advanced training overrides
+training_advanced:
+  use_adaptive_temperature: true
+  temp_start: 2.5
+  temp_adaptation_rate: 0.32  # From 0.18 -> 0.32 (Option A recommendation 0.30–0.35)
+  temp_min: 0.10              # Allow lower floor for stronger exploitation after drops
