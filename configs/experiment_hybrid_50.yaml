@@ -1,0 +1,105 @@
+# Experiment: Hybrid baseline (rollout→critic at epoch 50) with cosine schedules
+# Strategy: Rollout baseline for epochs 0-50, then critic baseline for 50-100
+working_dir_path: "../results/experiment_hybrid_50"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 75      # Maintain current setting
+  batch_size: 1024               # Start with 1024 as specified
+  num_epochs: 100                # 100 epochs as specified
+  learning_rate: 1e-4            # Starting learning rate for cosine schedule
+
+  # Curriculum learning stages
+  curriculum:
+    enabled: true
+    batch_size_schedule:          # Progressive batch size increase
+      - {epoch: 0, batch_size: 1024}
+      - {epoch: 20, batch_size: 2048}
+      - {epoch: 60, batch_size: 4096}
+    
+training_advanced:
+  # Cosine annealing temperature schedule
+  use_adaptive_temperature: false  
+  use_oscillating_temperature: false
+  use_cosine_temperature: true
+  temp_start: 2.5                  # Start temperature
+  temp_min: 0.70                   # Minimum temperature
+  
+  # Cosine annealing learning rate
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  lr_min: 1e-6                     # Final learning rate
+  lr_max: 1e-4                     # Starting learning rate
+  cosine_epochs: 100               # Total epochs for cosine schedule
+  
+  # Entropy settings
+  entropy_coef: 0.01               # Initial entropy
+  entropy_min: 0.001               # Minimum entropy
+  use_adaptive_entropy: true       # Adjust based on performance
+  plateau_detection_window: 10     # Epochs to detect plateau
+  plateau_threshold: 0.001         # Minimum improvement threshold
+  entropy_boost_on_plateau: 0.02   # Boost entropy when plateauing
+  
+  gradient_clip_norm: 1.0
+  
+  # Hybrid baseline strategy
+  use_hybrid_baseline: true
+  baseline_switch_epoch: 50        # Switch from rollout to critic at epoch 50
+  
+# Smaller model for faster training
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+baseline:
+  type: "hybrid"                   # Switches between rollout and critic
+  eval_batches: 3               
+  
+  # Rollout baseline (epochs 0-50)
+  rollout:
+    update:
+      frequency: 2
+      warmup_epochs: 0
+      significance_test: true
+      p_value: 0.10
+  
+  # Critic baseline (epochs 50-100)  
+  critic:
+    hidden_dim: 256
+    num_layers: 2
+    learning_rate: 5e-4
+    optimizer: "adam"
+    update:
+      frequency: 1
+      warmup_epochs: 0
+
+inference:
+  default_temperature: 1.5        # Middle ground temperature
+  max_steps_multiplier: 2
+  
+# Curriculum-specific settings
+curriculum_learning:
+  stages:
+    - name: "exploration"
+      epochs: [0, 50]
+      focus: "high_entropy"
+      baseline: "rollout"
+    - name: "exploitation"
+      epochs: [50, 100]
+      focus: "low_entropy"
+      baseline: "critic"
+      
+  # Anti-overfitting measures
+  dropout_schedule:
+    - {epoch: 0, dropout: 0.0}
+    - {epoch: 30, dropout: 0.1}
+    - {epoch: 70, dropout: 0.05}
+    
+  # Performance tracking
+  track_best_model: true
+  save_best_only: true
+  patience: 30                    # Early stopping patience
