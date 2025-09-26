@@ -1,0 +1,110 @@
+# Experiment 5: Curriculum Learning Strategy
+# Strategy: Progressive difficulty with oscillating temperature to escape local minima
+# Batch size and learning rate adapt throughout training
+working_dir_path: "../results/experiment_5_curriculum"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 75      # Maintain current setting
+  batch_size: 256                # Start small, will increase progressively
+  num_epochs: 150               
+  learning_rate: 5e-5             # Base learning rate for cyclic schedule
+
+  # Curriculum learning stages
+  curriculum:
+    enabled: true
+    batch_size_schedule:          # Progressive batch size increase
+      - {epoch: 0, batch_size: 256}
+      - {epoch: 25, batch_size: 512}
+      - {epoch: 50, batch_size: 1024}
+      - {epoch: 75, batch_size: 2048}
+    
+training_advanced:
+  # Oscillating temperature schedule
+  use_adaptive_temperature: false  # Use custom schedule instead
+  use_oscillating_temperature: true
+  temp_oscillation_period: 20      # Oscillate every 20 epochs
+  temp_high: 2.5                   # High exploration phase
+  temp_low: 1.5                    # Low exploitation phase
+  temp_start: 2.5                  # Start with exploration
+  
+  # Cyclic learning rate
+  use_lr_scheduling: true
+  scheduler_type: "cyclic"
+  lr_base: 5e-5                    # Base (minimum) LR
+  lr_max: 2e-4                     # Maximum LR
+  lr_cycle_epochs: 30              # Complete cycle every 30 epochs
+  
+  # Adaptive entropy based on plateau detection
+  entropy_coef: 0.01               # Initial entropy
+  entropy_min: 0.001               # Minimum entropy
+  use_adaptive_entropy: true       # Adjust based on performance
+  plateau_detection_window: 10     # Epochs to detect plateau
+  plateau_threshold: 0.001         # Minimum improvement threshold
+  entropy_boost_on_plateau: 0.02   # Boost entropy when plateauing
+  
+  gradient_clip_norm: 1.0
+  
+  # Hybrid baseline strategy
+  use_hybrid_baseline: true
+  baseline_switch_epoch: 50        # Switch from rollout to critic at epoch 50
+  
+# Smaller model for faster training
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+baseline:
+  type: "hybrid"                   # Switches between mean, rollout and critic
+  eval_batches: 3               
+  
+  # Rollout baseline (epochs 0-50)
+  rollout:
+    update:
+      frequency: 2
+      warmup_epochs: 2
+  
+  # Critic baseline (epochs 50+)  
+  critic:
+    hidden_dim: 256
+    num_layers: 2
+    learning_rate: 5e-4
+    optimizer: "adam"
+    update:
+      frequency: 1
+      warmup_epochs: 0
+
+inference:
+  default_temperature: 1.5        # Middle ground temperature
+  max_steps_multiplier: 2
+  
+# Curriculum-specific settings
+curriculum_learning:
+  stages:
+    - name: "exploration"
+      epochs: [0, 50]
+      focus: "high_entropy"
+      baseline: "rollout"
+    - name: "transition"  
+      epochs: [50, 100]
+      focus: "balanced"
+      baseline: "critic"
+    - name: "exploitation"
+      epochs: [100, 150]
+      focus: "low_entropy"
+      baseline: "critic"
+      
+  # Anti-overfitting measures
+  dropout_schedule:
+    - {epoch: 0, dropout: 0.0}
+    - {epoch: 50, dropout: 0.1}
+    - {epoch: 100, dropout: 0.05}
+    
+  # Performance tracking
+  track_best_model: true
+  save_best_only: true
+  patience: 30                    # Early stopping patience

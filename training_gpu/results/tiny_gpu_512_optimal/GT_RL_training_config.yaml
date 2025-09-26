@@ -45,7 +45,7 @@ gpu:
 grad_clip: 1.0
 hidden_dim: 128
 inference:
-  default_temperature: 1.5
+  default_temperature: 1.0
   max_steps_multiplier: 2
 learning_rate: 0.0001
 logging:
@@ -75,7 +75,7 @@ problem:
   demand_range: *id001
   num_customers: 10
   vehicle_capacity: 30
-temp_min: 0.15
+temp_min: 2.5
 temp_start: 2.5
 training:
   batch_size: 1024
@@ -100,11 +100,11 @@ training_advanced:
   min_lr: 1.0e-06
   scheduler_type: cosine
   temp_adaptation_rate: 0.18
-  temp_min: 0.15
+  temp_min: 2.5
   temp_start: 2.5
   use_adaptive_temperature: false
   use_early_stopping: true
   use_lr_scheduling: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_512
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_512_optimal

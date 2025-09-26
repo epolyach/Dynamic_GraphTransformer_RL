@@ -1,23 +1,65 @@
 baseline:
+  critic:
+    hidden_dim: 256
+    learning_rate: 5e-4
+    num_layers: 2
+    optimizer: adam
+    update:
+      frequency: 1
+      warmup_epochs: 0
   eval_batches: 3
-  type: rollout
+  rollout:
+    update:
+      frequency: 2
+      warmup_epochs: 5
+  type: hybrid
   update:
     enabled: true
-    frequency: 2
+    frequency: 1
     p_value: 0.1
     significance_test: true
-    warmup_epochs: 3
-batch_size: 1024
+    warmup_epochs: 0
+batch_size: 256
 benchmark:
   scaling:
     distance_scale: 100000
 capacity: 30
 coord_range: 100
+curriculum_learning:
+  dropout_schedule:
+  - dropout: 0.0
+    epoch: 0
+  - dropout: 0.1
+    epoch: 50
+  - dropout: 0.05
+    epoch: 100
+  patience: 30
+  save_best_only: true
+  stages:
+  - baseline: rollout
+    epochs:
+    - 0
+    - 50
+    focus: high_entropy
+    name: exploration
+  - baseline: critic
+    epochs:
+    - 50
+    - 100
+    focus: balanced
+    name: transition
+  - baseline: critic
+    epochs:
+    - 100
+    - 150
+    focus: low_entropy
+    name: exploitation
+  track_best_model: true
 demand_range: &id001
 - 1
 - 10
 entropy_coef: 0.01
-entropy_min: 0.0
+entropy_min: 0.001
 experiment:
   random_seed: 42
   strict_validation: true
@@ -47,7 +89,7 @@ hidden_dim: 128
 inference:
   default_temperature: 1.5
   max_steps_multiplier: 2
-learning_rate: 0.0001
+learning_rate: 5.0e-05
 logging:
   format: '%(message)s'
   level: INFO
@@ -66,9 +108,9 @@ model_gat:
   gat_layers: 4
   gat_negative_slope: 0.2
 num_customers: 10
-num_epochs: 200
+num_epochs: 150
 num_heads: 4
-num_instances: 15436800
+num_instances: 2899200
 num_layers: 3
 problem:
   coord_range: 100
@@ -78,33 +120,57 @@ problem:
 temp_min: 0.15
 temp_start: 2.5
 training:
-  batch_size: 1024
-  learning_rate: 0.0001
+  batch_size: 256
+  curriculum:
+    batch_size_schedule:
+    - batch_size: 256
+      epoch: 0
+    - batch_size: 512
+      epoch: 25
+    - batch_size: 1024
+      epoch: 50
+    - batch_size: 2048
+      epoch: 75
+    enabled: true
+  learning_rate: 5.0e-05
   num_batches_per_epoch: 75
-  num_epochs: 200
-  num_instances: 15436800
+  num_epochs: 150
+  num_instances: 2899200
   use_geometric_mean: false
   validation_frequency: 2
 training_advanced:
   adam_beta1: 0.9
   adam_beta2: 0.999
   adam_eps: 1.0e-08
+  baseline_switch_epoch: 50
   compile:
     enabled: true
     mode: default
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
+  entropy_boost_on_plateau: 0.02
   entropy_coef: 0.01
-  entropy_min: 0.0
+  entropy_min: 0.001
   gradient_clip_norm: 1.0
+  lr_base: 5e-5
+  lr_cycle_epochs: 30
+  lr_max: 2e-4
   min_lr: 1.0e-06
-  scheduler_type: cosine
+  plateau_detection_window: 10
+  plateau_threshold: 0.001
+  scheduler_type: cyclic
   temp_adaptation_rate: 0.18
+  temp_high: 2.5
+  temp_low: 1.5
   temp_min: 0.15
+  temp_oscillation_period: 20
   temp_start: 2.5
+  use_adaptive_entropy: true
   use_adaptive_temperature: false
   use_early_stopping: true
+  use_hybrid_baseline: true
   use_lr_scheduling: true
+  use_oscillating_temperature: true
   weight_decay: 0.0001
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_512
+working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/experiment_5_curriculum

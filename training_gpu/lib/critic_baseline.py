@@ -1,0 +1,296 @@
+"""
+Critic Baseline (Value Network) for CVRP RL Training
+"""
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from typing import List, Dict, Any
+
+
+class CriticNetwork(nn.Module):
+    """
+    Value network that estimates expected cost given current state.
+    """
+    
+    def __init__(self, input_dim=3, hidden_dim=256, num_layers=3):
+        super().__init__()
+        
+        layers = []
+        for i in range(num_layers):
+            in_dim = input_dim if i == 0 else hidden_dim
+            out_dim = 1 if i == num_layers - 1 else hidden_dim
+            layers.append(nn.Linear(in_dim, out_dim))
+            if i < num_layers - 1:
+                layers.append(nn.ReLU())
+                layers.append(nn.LayerNorm(hidden_dim))
+                
+        self.mlp = nn.Sequential(*layers)
+        
+    def forward(self, node_features):
+        pooled = node_features.mean(dim=1)
+        values = self.mlp(pooled).squeeze(-1)
+        return values
+
+
+class CriticBaseline:
+    """
+    Learned critic baseline using value network.
+    """
+    
+    def __init__(self, gpu_manager, input_dim=3, hidden_dim=256, num_layers=2, 
+                 learning_rate=5e-4, config=None, logger_print=print):
+        self.gpu_manager = gpu_manager
+        self.device = gpu_manager.device
+        self.logger_print = logger_print
+        self.config = config or {}
+        
+        critic_config = self.config.get('baseline', {}).get('critic', {})
+        self.hidden_dim = critic_config.get('hidden_dim', hidden_dim)
+        self.num_layers = critic_config.get('num_layers', num_layers)
+        self.learning_rate = float(critic_config.get('learning_rate', learning_rate))
+        
+        self.critic = CriticNetwork(
+            input_dim=input_dim,
+            hidden_dim=self.hidden_dim,
+            num_layers=self.num_layers
+        ).to(self.device)
+        
+        self.optimizer = torch.optim.Adam(
+            self.critic.parameters(), 
+            lr=self.learning_rate
+        )
+        
+        self.mean_cost = 10.0
+        self.std_cost = 1.0
+        self.update_count = 0
+        
+        logger_print(f"[CriticBaseline] Initialized with {sum(p.numel() for p in self.critic.parameters())} parameters")
+    
+    def _extract_features(self, instances):
+        features_list = []
+        
+        for inst in instances:
+            coords = inst['coords']
+            demands = inst['demands']
+            capacity = int(inst.get("capacity", 30))
+            
+            if not torch.is_tensor(coords):
+                coords = torch.tensor(coords, dtype=torch.float32, device=self.device)
+            else:
+                coords = coords.to(self.device)
+                
+            if not torch.is_tensor(demands):
+                demands = torch.tensor(demands, dtype=torch.float32, device=self.device)
+            else:
+                demands = demands.to(self.device)
+            
+            coords = (coords - coords.mean(dim=0)) / (coords.std(dim=0) + 1e-8)
+            demands_norm = demands / capacity
+            
+            features = torch.cat([coords, demands_norm.unsqueeze(-1)], dim=-1)
+            features_list.append(features)
+        
+        max_nodes = max(f.shape[0] for f in features_list)
+        batch_features = torch.zeros(len(instances), max_nodes, 3, device=self.device)
+        
+        for i, feat in enumerate(features_list):
+            batch_features[i, :feat.shape[0]] = feat
+            
+        return batch_features
+    
+    def eval_batch(self, instances):
+        with torch.no_grad():
+            features = self._extract_features(instances)
+            values = self.critic(features)
+            values = values * self.std_cost + self.mean_cost
+            values = F.relu(values) + 0.1
+            return values
+    
+    def update(self, instances, actual_costs):
+        if not torch.is_tensor(actual_costs):
+            actual_costs = torch.tensor(actual_costs, dtype=torch.float32, device=self.device)
+        
+        self.update_count += 1
+        alpha = 0.1
+        self.mean_cost = (1 - alpha) * self.mean_cost + alpha * actual_costs.mean().item()
+        self.std_cost = (1 - alpha) * self.std_cost + alpha * actual_costs.std().item()
+        self.std_cost = max(self.std_cost, 0.1)
+        
+        features = self._extract_features(instances)
+        value_estimates = self.critic(features)
+        targets = (actual_costs - self.mean_cost) / self.std_cost
+        loss = F.mse_loss(value_estimates, targets.detach())
+        
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1.0)
+        self.optimizer.step()
+        
+        if self.update_count % 10 == 0:
+            self.logger_print(f"[CriticBaseline] Loss: {loss.item():.4f}, Mean: {self.mean_cost:.3f}")
+    
+    @property
+    def mean(self):
+        return self.mean_cost
+
+
+class HybridBaseline:
+    """
+    Hybrid baseline: Mean → Rollout → Critic
+    """
+    
+    def __init__(self, gpu_manager, model, config, data_generator, batch_size,
+                 move_to_gpu_except_distances, logger_print=print):
+        
+        self.gpu_manager = gpu_manager
+        self.device = gpu_manager.device
+        self.config = config
+        self.logger_print = logger_print
+        self.data_generator = data_generator
+        self.batch_size = batch_size
+        self.move_to_gpu_except_distances = move_to_gpu_except_distances
+        
+        baseline_config = config.get('baseline', {})
+        adv_config = config.get('training_advanced', {})
+        
+        self.rollout_switch_epoch = int(baseline_config.get('update', {}).get('warmup_epochs', 5))
+        self.critic_switch_epoch = int(adv_config.get('baseline_switch_epoch', 50))
+        self.eval_batches = int(baseline_config.get('eval_batches', 1))
+        
+        self.current_mode = 'mean'
+        self.mean_baseline = 10.0
+        self.rollout_baseline = None
+        self.critic_baseline = None
+        self.epoch = 0
+        self.recent_costs = []
+        
+        logger_print(f"[HybridBaseline] Initialized with mean baseline")
+        logger_print(f"[HybridBaseline] Schedule: Mean (0-{self.rollout_switch_epoch}) "
+                    f"→ Rollout ({self.rollout_switch_epoch}-{self.critic_switch_epoch}) "
+                    f"→ Critic ({self.critic_switch_epoch}+)")
+    
+    def eval_batch(self, instances):
+        import torch
+        if self.current_mode == 'critic':
+            print('[HybridBaseline] Critic eval_batch invoked')
+        
+        if self.current_mode == 'critic' and self.critic_baseline is not None:
+            return self.critic_baseline.eval_batch(instances)
+        elif self.current_mode == 'rollout' and self.rollout_baseline is not None and hasattr(self.rollout_baseline, 'epoch_callback'):
+            return self.rollout_baseline.eval_batch(instances)
+        else:
+            batch_size = len(instances)
+            device = instances[0]['coords'].device if torch.is_tensor(instances[0]['coords']) else self.device
+            return torch.full((batch_size,), self.mean_baseline, device=device)
+    
+
+    def update(self, model, epoch, costs=None, instances=None):
+        """Update baseline based on epoch and optionally costs/instances."""
+        self._internal_update(model, int(epoch), costs, instances)
+        
+    def _internal_update(self, model, epoch, costs=None, instances=None):
+        self.epoch = int(epoch)
+        
+        if costs is not None:
+            if not torch.is_tensor(costs):
+                costs_np = costs
+            else:
+                costs_np = costs.cpu().numpy()
+            
+            self.recent_costs.extend(costs_np.tolist())
+            if len(self.recent_costs) > 1000:
+                self.recent_costs = self.recent_costs[-1000:]
+            
+            if len(self.recent_costs) > 0:
+                old_mean = self.mean_baseline
+                self.mean_baseline = float(np.mean(self.recent_costs))
+                if abs(old_mean - self.mean_baseline) > 0.1:
+                    self.logger_print(f"[HybridBaseline] Mean updated: {old_mean:.3f} → {self.mean_baseline:.3f}")
+        
+        if int(epoch) >= int(self.critic_switch_epoch) and self.current_mode != 'critic':
+            self._switch_to_critic()
+        elif int(epoch) >= int(self.rollout_switch_epoch) and self.current_mode == 'mean':
+            self._switch_to_rollout(model)
+        
+        # Update the active baseline
+        if self.current_mode == 'critic' and self.critic_baseline is not None:
+            if instances is not None and costs is not None:
+                self.critic_baseline.update(instances, costs)
+        elif self.current_mode == 'rollout' and self.rollout_baseline is not None and hasattr(self.rollout_baseline, 'epoch_callback'):
+            self.rollout_baseline.epoch_callback(model, int(epoch))
+    
+    def _switch_to_rollout(self, model):
+        self.logger_print(f"[HybridBaseline] Epoch {self.epoch}: Switching to rollout baseline")
+        
+        eval_dataset = []
+        for i in range(self.eval_batches):
+            seed_val = 123456 + i
+            batch_data = self.data_generator(self.batch_size, seed=seed_val)
+            gpu_batch = [self.move_to_gpu_except_distances(inst, self.gpu_manager) 
+                        for inst in batch_data]
+            eval_dataset.append(gpu_batch)
+        
+        self.logger_print(f"[HybridBaseline] Eval dataset built: {len(eval_dataset)} batches")
+        
+        from .rollout_baseline_gpu_fixed import RolloutBaselineGPU
+        self.rollout_baseline = RolloutBaselineGPU(
+            gpu_manager=self.gpu_manager,
+            model=model,
+            eval_dataset=eval_dataset,
+            config=self.config,
+            logger_print=self.logger_print
+        )
+        
+        self.current_mode = 'rollout'
+        self.mean_baseline = self.rollout_baseline.mean
+        self.logger_print(f"[HybridBaseline] Rollout baseline ready with mean={self.mean_baseline:.3f}")
+    
+    def _switch_to_critic(self):
+        self.logger_print(f'[HybridBaseline] Epoch {self.epoch}: Switching to critic baseline')
+        
+        self.critic_baseline = CriticBaseline(
+            gpu_manager=self.gpu_manager,
+            config=self.config,
+            logger_print=self.logger_print
+        )
+        
+        self.critic_baseline.mean_cost = self.mean_baseline
+        self.current_mode = 'critic'
+        self.logger_print(f"[HybridBaseline] Critic baseline initialized")
+    
+    @property
+    def mean(self):
+        if self.current_mode == 'critic' and self.critic_baseline is not None:
+            return self.critic_baseline.mean
+        elif self.current_mode == 'rollout' and self.rollout_baseline is not None and hasattr(self.rollout_baseline, 'epoch_callback'):
+            return self.rollout_baseline.mean
+        else:
+            return self.mean_baseline
+
+    def epoch_callback(self, model, epoch):
+        """
+        Epoch callback method for compatibility with baseline interface.
+        Called by trainer at the end of each epoch.
+        """
+        try:
+            epoch_int = int(epoch)
+            self.epoch = epoch_int
+            # Perform only mode transitions here; avoid any rollout/critic updates
+            if epoch_int >= self.critic_switch_epoch and self.current_mode != 'critic':
+                self._switch_to_critic()
+                return
+            if epoch_int >= self.rollout_switch_epoch and self.current_mode == 'mean':
+                self._switch_to_rollout(model)
+                return
+            # Forward to active baseline if in rollout mode
+            if self.current_mode == 'rollout' and self.rollout_baseline is not None:
+                self.rollout_baseline.epoch_callback(model, epoch_int)
+            return
+        except Exception as e:
+            import traceback
+            print(f"[HybridBaseline] Error in epoch_callback: {e}")
+            traceback.print_exc()
+
+
+

@@ -1,26 +1,37 @@
 baseline:
-  eval_batches: 3
-  type: rollout
+  eval_batches: 5
+  type: hybrid
   update:
     enabled: true
-    frequency: 2
+    frequency: 1
     p_value: 0.1
     significance_test: true
-    warmup_epochs: 3
-batch_size: 1024
+    warmup_epochs: 0
+  warmup_epochs: 2
+batch_size: 2
 benchmark:
   scaling:
     distance_scale: 100000
 capacity: 30
 coord_range: 100
+data:
+  capacity: 30
+  n_customers: 20
+  train_size: 10
+  val_size: 5
 demand_range: &id001
 - 1
 - 10
-entropy_coef: 0.01
-entropy_min: 0.0
+entropy_coef: 0.03
+entropy_min: 0.002
 experiment:
+  name: test_tiny_hybrid_fix
   random_seed: 42
   strict_validation: true
+  tags:
+  - test
+  - hybrid
+  - fix_verification
   use_advanced_features: true
 gat_training:
   early_stopping_patience: 15
@@ -42,10 +53,10 @@ gpu:
   num_workers: 4
   pin_memory: true
   prefetch_factor: 2
-grad_clip: 1.0
-hidden_dim: 128
+grad_clip: 2.0
+hidden_dim: 256
 inference:
-  default_temperature: 1.5
+  default_temperature: 1.0
   max_steps_multiplier: 2
 learning_rate: 0.0001
 logging:
@@ -53,11 +64,15 @@ logging:
   level: INFO
 min_lr: 1.0e-06
 model:
+  d_model: 128
   feedforward_multiplier: 2
-  hidden_dim: 128
+  hidden_dim: 256
   input_dim: 3
+  n_heads: 8
+  n_layers: 3
+  name: dynamic_transformer_rl
   num_heads: 4
-  num_layers: 3
+  num_layers: 4
   transformer_dropout: 0.1
 model_gat:
   gat_dropout: 0.6
@@ -65,24 +80,26 @@ model_gat:
   gat_hidden_dim: 256
   gat_layers: 4
   gat_negative_slope: 0.2
-num_customers: 10
-num_epochs: 200
+num_customers: 20
+num_epochs: 100
 num_heads: 4
-num_instances: 15436800
-num_layers: 3
+num_instances: 303000
+num_layers: 4
 problem:
   coord_range: 100
   demand_range: *id001
-  num_customers: 10
+  num_customers: 20
   vehicle_capacity: 30
 temp_min: 0.15
 temp_start: 2.5
 training:
-  batch_size: 1024
+  batch_size: 2
+  epochs: 5
+  gradient_accumulation: 1
   learning_rate: 0.0001
-  num_batches_per_epoch: 75
-  num_epochs: 200
-  num_instances: 15436800
+  num_batches_per_epoch: 1500
+  num_epochs: 3
+  num_instances: 303000
   use_geometric_mean: false
   validation_frequency: 2
 training_advanced:
@@ -94,17 +111,18 @@ training_advanced:
     mode: default
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
-  entropy_coef: 0.01
-  entropy_min: 0.0
-  gradient_clip_norm: 1.0
+  entropy_coef: 0.03
+  entropy_min: 0.002
+  gradient_clip_norm: 2.0
   min_lr: 1.0e-06
   scheduler_type: cosine
   temp_adaptation_rate: 0.18
   temp_min: 0.15
   temp_start: 2.5
-  use_adaptive_temperature: false
+  use_adaptive_temperature: true
   use_early_stopping: true
   use_lr_scheduling: true
   weight_decay: 0.0001
+verbose: true
 warmup_epochs: null
-working_dir_path: /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL/training_gpu/results/tiny_gpu_512
+working_dir_path: results/default

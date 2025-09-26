@@ -38,6 +38,142 @@ from .gpu_utils import GPUManager, DataLoaderGPU
 
 logger = logging.getLogger(__name__)
 
+def get_current_batch_size(epoch, train_config):
+    """
+    Get the current batch size based on epoch and curriculum schedule.
+    
+    Args:
+        epoch: Current training epoch
+        train_config: Training configuration dict
+        
+    Returns:
+        int: Current batch size for this epoch
+    """
+    # Check if curriculum is enabled
+    curriculum = train_config.get('curriculum', {})
+    if not curriculum.get('enabled', False):
+        return train_config.get('batch_size', 32)
+    
+    # Get batch size schedule
+    batch_size_schedule = curriculum.get('batch_size_schedule', [])
+    if not batch_size_schedule:
+        return train_config.get('batch_size', 32)
+    
+    # Sort schedule by epoch (in case it's not sorted)
+    sorted_schedule = sorted(batch_size_schedule, key=lambda x: x['epoch'])
+    
+    # Find the appropriate batch size for current epoch
+    current_batch_size = train_config.get('batch_size', 32)  # fallback
+    
+    for schedule_entry in sorted_schedule:
+        if epoch >= schedule_entry['epoch']:
+            current_batch_size = schedule_entry['batch_size']
+        else:
+            break
+    
+    return current_batch_size
+
+
+def get_oscillating_temperature(epoch, adv_config):
+    """Get temperature for oscillating schedule."""
+    if not adv_config.get('use_oscillating_temperature', False):
+        return None
+    
+    period = adv_config.get('temp_oscillation_period', 20)
+    temp_high = adv_config.get('temp_high', 2.5)
+    temp_low = adv_config.get('temp_low', 1.5)
+    
+    # Oscillate between high and low
+    phase = (epoch % period) / period
+    import math
+    # Use cosine for smooth transition
+    temp = temp_low + (temp_high - temp_low) * (1 + math.cos(2 * math.pi * phase)) / 2
+    return temp
+
+def get_cyclic_lr(epoch, base_lr, adv_config):
+    """Get learning rate for cyclic schedule."""
+    if adv_config.get('scheduler_type') != 'cyclic':
+        return base_lr
+    
+    lr_base = float(adv_config.get('lr_base', base_lr))
+    lr_max = float(adv_config.get('lr_max', base_lr * 4))
+    cycle_epochs = int(adv_config.get('lr_cycle_epochs', 30))
+    
+    # Triangular cyclic schedule
+    cycle_pos = epoch % cycle_epochs
+    if cycle_pos < cycle_epochs / 2:
+        # Increasing phase
+        progress = cycle_pos / (cycle_epochs / 2)
+        lr = lr_base + (lr_max - lr_base) * progress
+    else:
+        # Decreasing phase
+        progress = (cycle_pos - cycle_epochs / 2) / (cycle_epochs / 2)
+        lr = lr_max - (lr_max - lr_base) * progress
+    
+    return lr
+
+def get_adaptive_entropy_coef(epoch, recent_losses, adv_config):
+    """Adjust entropy coefficient based on plateau detection."""
+    base_entropy = adv_config.get('entropy_coef', 0.01)
+    
+    if not adv_config.get('use_adaptive_entropy', False):
+        return base_entropy
+        
+    window = adv_config.get('plateau_detection_window', 10)
+    threshold = adv_config.get('plateau_threshold', 0.001)
+    boost = adv_config.get('entropy_boost_on_plateau', 0.02)
+    min_entropy = adv_config.get('entropy_min', 0.001)
+    
+    # Need at least window epochs of history
+    if len(recent_losses) < window:
+        return base_entropy
+    
+    # Check for plateau
+    recent = recent_losses[-window:]
+    improvement = max(recent[:-1]) - recent[-1]
+    
+    if improvement < threshold:
+        # Plateau detected, boost entropy
+        return min(base_entropy + boost, 0.1)  # Cap at 0.1
+    else:
+        # Making progress, use base entropy
+        return max(base_entropy, min_entropy)
+
+def should_use_critic_baseline(epoch, config):
+    """Determine if should use critic baseline based on hybrid strategy."""
+    adv_config = config.get('training_advanced', {})
+    
+    if not adv_config.get('use_hybrid_baseline', False):
+        # Check baseline type directly
+        baseline_type = config.get('baseline', {}).get('type', 'rollout')
+        return baseline_type == 'critic'
+    
+    # Hybrid: switch at specified epoch
+    switch_epoch = adv_config.get('baseline_switch_epoch', 50)
+    return epoch >= switch_epoch
+
+def get_dropout_rate(epoch, config):
+    """Get dropout rate based on curriculum schedule."""
+    curriculum = config.get('curriculum_learning', {})
+    dropout_schedule = curriculum.get('dropout_schedule', [])
+    
+    if not dropout_schedule:
+        return 0.0  # No dropout by default
+    
+    # Sort schedule by epoch
+    sorted_schedule = sorted(dropout_schedule, key=lambda x: x['epoch'])
+    
+    # Find appropriate dropout for current epoch
+    current_dropout = 0.0
+    for entry in sorted_schedule:
+        if epoch >= entry['epoch']:
+            current_dropout = entry['dropout']
+        else:
+            break
+    
+    return current_dropout
+
+
 # Speed knobs for Ampere+ GPUs (e.g., A6000):
 # - TF32 can accelerate large matmul-heavy models with minimal accuracy loss
 # - High matmul precision hints PyTorch to use TF32 where possible
@@ -73,6 +209,19 @@ def move_to_gpu_except_distances(instance, gpu_manager):
                 gpu_inst[key] = value.cpu().numpy()
             else:
                 gpu_inst[key] = value
+        elif key == 'capacity':
+            # Coerce capacity to a plain Python int to avoid type issues in validation
+            try:
+                if hasattr(value, 'item'):
+                    gpu_inst[key] = int(value.item())
+                else:
+                    import numpy as _np
+                    gpu_inst[key] = int(_np.array(value).item())
+            except Exception:
+                try:
+                    gpu_inst[key] = int(value)
+                except Exception:
+                    gpu_inst[key] = 0
         elif isinstance(value, np.ndarray):
             # Move other numpy arrays to GPU
             if key == 'demands':
@@ -278,7 +427,11 @@ def advanced_train_model_gpu(
     train_config = config.get('training', {})
     adv_config = config.get('training_advanced', {})
     n_epochs = train_config.get('num_epochs', 100)
-    batch_size = train_config.get('batch_size', 32)
+    # Initialize batch size (support curriculum learning)
+    initial_batch_size = train_config.get('batch_size', 32)
+    batch_size = get_current_batch_size(0, train_config)  # Start with epoch 0 batch size
+    if batch_size != initial_batch_size:
+        logger.info(f"Curriculum learning: Using batch_size={batch_size} instead of configured {initial_batch_size} for epoch 0")
     base_lr = train_config.get('learning_rate', 1e-4)
     validation_frequency = train_config.get('validation_frequency', 1)
     gradient_accumulation_steps = gpu_config.get('gradient_accumulation_steps', 1)
@@ -313,6 +466,9 @@ def advanced_train_model_gpu(
         betas=(beta1, beta2),
         eps=adam_eps
     )
+
+    # Initialize tracking for adaptive features
+    recent_losses = []  # Track recent losses for plateau detection
     
     # Learning rate scheduler
     scheduler = None
@@ -340,28 +496,56 @@ def advanced_train_model_gpu(
     baseline_update_frequency = int(baseline_config.get('update', {}).get('frequency', 3))
     # Only initialize RolloutBaseline for RL training (matching CPU)
     print("[INIT] Checking if baseline needed for RL training...")
-    if 'RL' in model_name:
-        # Create eval dataset (same as CPU version)
-        eval_batches = baseline_config.get('eval_batches', 2)
-        print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
-        import sys; sys.stdout.flush()
-        eval_dataset = []
-        for i in range(eval_batches):
-            # Use fixed seeds to keep eval set stable
-            seed_val = 123456 + i
-            batch_data = data_generator(batch_size, seed=seed_val)
+    # Check if baseline is actually wanted (not just if RL is in name)
+    baseline_type = baseline_config.get('type', 'rollout').lower()
+    use_baseline = 'RL' in model_name and baseline_type != 'none'
+    
+    if use_baseline:
+        # Check if hybrid baseline requested
+        if baseline_type == 'hybrid':
+            print("[INIT] Creating hybrid baseline")
+            from .critic_baseline import HybridBaseline
+            baseline = HybridBaseline(
+                gpu_manager=gpu_manager,
+                model=model,
+                config=config,
+                data_generator=data_generator,
+                batch_size=batch_size,
+                move_to_gpu_except_distances=move_to_gpu_except_distances,
+                logger_print=print
+            )
+            print("[INIT] Hybrid baseline initialized")
+        else:
+            # Original rollout baseline code follows
+            # Create eval dataset (same as CPU version)
+            eval_batches = baseline_config.get('eval_batches', 1)
+            # For large batch sizes, use fewer eval batches to prevent hangs
+            if batch_size >= 2048:
+                eval_batches = min(eval_batches, 1)
+                logger.info(f"Large batch size ({batch_size}) detected: reducing eval_batches to {eval_batches}")
+            elif batch_size >= 1024:
+                eval_batches = min(eval_batches, 2)
+                logger.info(f"Medium-large batch size ({batch_size}) detected: limiting eval_batches to {eval_batches}")
+            print(f"[INIT] Building eval dataset: eval_batches={eval_batches}, batch_size={batch_size}")
+            eval_dataset = []
+            # Use only 1 batch for initialization to speed up
+            init_eval_batches = min(1, eval_batches)
+            for i in range(init_eval_batches):
+                # Use fixed seeds to keep eval set stable
+                seed_val = 123456 + i
+                batch_data = data_generator(batch_size, seed=seed_val)
             # Pre-convert batch to GPU tensors to minimize transfers during baseline evaluation
-            gpu_batch = [move_to_gpu_except_distances(inst, gpu_manager) for inst in batch_data]
-            eval_dataset.append(gpu_batch)
-        print(f"[INIT] Eval dataset built: {len(eval_dataset)} batches")
+                gpu_batch = [move_to_gpu_except_distances(inst, gpu_manager) for inst in batch_data]
+                eval_dataset.append(gpu_batch)
+            print(f"[INIT] Eval dataset built: {len(eval_dataset)} batches")
         
-        # Create baseline with CPU-identical parameters
-        baseline = RolloutBaselineGPU(
-            gpu_manager=gpu_manager,
-            model=model,
-            eval_dataset=eval_dataset,
-            config=config,
-            logger_print=print  # Use print for identical output
+            # Create baseline with CPU-identical parameters
+            baseline = RolloutBaselineGPU(
+                gpu_manager=gpu_manager,
+                model=model,
+                eval_dataset=eval_dataset,
+                config=config,
+                logger_print=print  # Use print for identical output
             )
         print("[INIT] Baseline initialized")
     
@@ -423,8 +607,30 @@ def advanced_train_model_gpu(
     for epoch in range(0, total_epochs):        
         epoch_start = time.time()
         
+        # Check if batch size should change for this epoch (curriculum learning)
+        new_batch_size = get_current_batch_size(epoch, train_config)
+        if new_batch_size != batch_size:
+            old_batch_size = batch_size
+            batch_size = new_batch_size
+            effective_batch_size = batch_size * gradient_accumulation_steps
+            logger.info(f"Curriculum learning: Batch size changed from {old_batch_size} to {batch_size} at epoch {epoch}")
+            logger.info(f"New effective batch size: {effective_batch_size}")
+
+        # Update dropout if scheduled
+        current_dropout = get_dropout_rate(epoch, config)
+        if current_dropout > 0:
+            logger.info(f"Epoch {epoch}: Dropout rate = {current_dropout:.2f}")
+            # Note: Model needs to be modified to support dynamic dropout
+                
         # Current temperature (adaptive or scheduled) - matching CPU exactly
-        if temp_scheduler:
+        
+        # Oscillating temperature (takes priority)
+        oscillating_temp = get_oscillating_temperature(epoch, adv_config)
+        if oscillating_temp is not None:
+            current_temp = oscillating_temp
+            # print(f"Epoch {epoch}: Using oscillating temperature: {current_temp:.3f}")
+        elif temp_scheduler:
+            current_temp = temp_scheduler.current_temp
             current_temp = temp_scheduler.current_temp
         else:
             # Original temperature scheduling
@@ -436,6 +642,13 @@ def advanced_train_model_gpu(
         epoch_start = time.time()
         
         # Training phase
+        # Update learning rate (cyclic or standard)
+        current_lr = get_cyclic_lr(epoch, base_lr, adv_config)
+        if current_lr != base_lr:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_lr
+            # logger.info(f"Epoch {epoch}: Cyclic LR = {current_lr:.6f}")
+        
         model.train()
         train_loss_epoch = []
         train_cost_epoch = []
@@ -445,7 +658,9 @@ def advanced_train_model_gpu(
         
         for batch_idx in range(n_batches):
             # Generate problem instances (align seeds with CPU)
-            batch_seed = epoch * n_batches * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            
+            # batch_seed = epoch * n_batches * 1000 + batch_idx * 1000 if epoch > 0 else batch_idx * 1000
+            batch_seed = epoch * n_batches * batch_size + batch_idx * batch_size 
             instances = data_generator(batch_size, epoch=epoch, seed=batch_seed)
             
             # Move to GPU
@@ -519,7 +734,10 @@ def advanced_train_model_gpu(
                 policy_loss = -(adv_norm * log_probs).mean()
                 
                 # Entropy regularization (matching CPU)
-                entropy_coef = adv_config.get("entropy_coef", 0.01)
+                # Adaptive entropy coefficient
+                entropy_coef = get_adaptive_entropy_coef(epoch, recent_losses, adv_config)
+                if adv_config.get('use_adaptive_entropy', False) and epoch > 0:
+                    logger.debug(f"Adaptive entropy coef: {entropy_coef:.4f}")
                 entropy_min = adv_config.get("entropy_min", 0.0)
                 if n_epochs > 1:
                     cosine_factor = 0.5 * (1 + np.cos(np.pi * (epoch - 1) / (n_epochs - 1)))
@@ -614,6 +832,8 @@ def advanced_train_model_gpu(
         # Epoch statistics
         epoch_time = time.time() - epoch_start
         avg_train_loss = np.mean(train_loss_epoch)
+        # Track for adaptive entropy
+        recent_losses.append(avg_train_loss)
         avg_train_cost = np.mean(train_cost_epoch)
         avg_val_cost = np.mean(val_cost_epoch) if val_cost_epoch else float('nan')
         current_lr = optimizer.param_groups[0]['lr']
@@ -635,11 +855,25 @@ def advanced_train_model_gpu(
             try:
                 # Only allow baseline updates after warmup epochs
                 if epoch >= baseline_update_warmup_epochs:
-                    baseline.epoch_callback(model, epoch)
+                    # Log baseline state before callback (which might change it)
+                    if hasattr(baseline, 'current_mode'):
+                        old_mode = baseline.current_mode
+                    baseline.epoch_callback(model, int(epoch))
+                    # Check if mode changed
+                    if hasattr(baseline, 'current_mode') and baseline.current_mode != old_mode:
+                        print(f"[{model_name}] Baseline mode changed: {old_mode} → {baseline.current_mode}")
             except Exception as e:
                 print(f"[RolloutBaseline] Update failed at epoch {epoch}: {e}")
                 # Compute baseline value for CSV logging (match CPU behavior)
-        baseline_type = 'rollout' if baseline is not None else 'mean'
+        # Detect baseline type
+        if baseline is None:
+            baseline_type = "none"
+        elif hasattr(baseline, "current_mode"):
+            # HybridBaseline
+            baseline_type = f"hybrid({baseline.current_mode})"
+        else:
+            # RolloutBaseline or other
+            baseline_type = "rollout"
         baseline_value = None
         if train_cost_epoch:  # if epoch_costs
             if baseline is not None:
@@ -679,13 +913,13 @@ def advanced_train_model_gpu(
             print(
                 f"[{model_name}] Epoch {epoch:03d}: "
                 f"train={np.mean(train_cost_epoch):.4f}, val={np.mean(val_cost_epoch):.4f}, "
-                f"lr={current_lr:.2e}, temp={current_temp:.3f}, time={epoch_time:.1f}s"
+                f"lr={current_lr:.2e}, temp={current_temp:.3f}, baseline={baseline_type}, time={epoch_time:.1f}s"
             )
         else:
             print(
                 f"[{model_name}] Epoch {epoch:03d}: "
                 f"train={np.mean(train_cost_epoch):.4f}, "
-                f"lr={current_lr:.2e}, temp={current_temp:.3f}, time={epoch_time:.1f}s"
+                f"lr={current_lr:.2e}, temp={current_temp:.3f}, baseline={baseline_type}, time={epoch_time:.1f}s"
             )
         
         # Wandb logging
