@@ -1,16 +1,16 @@
-# Experiment: Hybrid baseline (rollout→critic at epoch 50) with cosine schedules
+# Medium Experiment (N=20): Hybrid baseline (rollout→critic at epoch 50) with cosine schedules
 # Strategy: Rollout baseline for epochs 0-50, then critic baseline for 50-100
-working_dir_path: "../results/experiment_hybrid_50"
+working_dir_path: "../results/medium_experiment_hybrid_50"
 
 problem:
-  num_customers: 10
+  num_customers: 20
   vehicle_capacity: 30
 
 training:
   num_batches_per_epoch: 75      # Maintain current setting
   batch_size: 1024               # Start with 1024 as specified
   num_epochs: 100                # 100 epochs as specified
-  learning_rate: 1e-4            # Starting learning rate for cosine schedule
+  learning_rate: 1.5e-4            # Starting learning rate for cosine schedule
 
   # Curriculum learning stages
   curriculum:
@@ -24,14 +24,14 @@ training_advanced:
   # Cosine annealing temperature schedule
   use_adaptive_temperature: false  
   use_oscillating_temperature: false
-  temp_start: 2.5                  # Start temperature
+  temp_start: 2.0                  # Start temperature
   temp_min: 0.70                   # Minimum temperature
   
   # Cosine annealing learning rate
   use_lr_scheduling: true
   scheduler_type: "cosine"
   lr_min: 1e-6                     # Final learning rate
-  lr_max: 1e-4                     # Starting learning rate
+  lr_max: 1.5e-4                     # Starting learning rate
   cosine_epochs: 100               # Total epochs for cosine schedule
   
   # Entropy settings

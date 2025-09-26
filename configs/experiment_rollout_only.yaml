@@ -24,7 +24,6 @@ training_advanced:
   # Cosine annealing temperature schedule
   use_adaptive_temperature: false  
   use_oscillating_temperature: false
-  use_cosine_temperature: true
   temp_start: 2.5                  # Start temperature
   temp_min: 0.70                   # Minimum temperature
   
