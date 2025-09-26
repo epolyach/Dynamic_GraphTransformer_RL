@@ -1,0 +1,44 @@
+# Medium GPU config - With temperature annealing
+# Uses cosine annealing for better exploration-exploitation balance
+working_dir_path: "../results/medium_gpu_annealing"
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 50    # 50 × 1024 = 51,200 instances/epoch
+  batch_size: 1024             
+  num_epochs: 150               
+  learning_rate: 1.5e-4         
+  validation_frequency: 5
+
+# Same model as optimal
+model:
+  hidden_dim: 192               
+  num_heads: 4
+  num_layers: 3                 
+
+# Optimized baseline
+baseline:
+  eval_batches: 1              
+  update:
+    frequency: 3                
+    warmup_epochs: 0            
+
+# Enable temperature annealing (key difference)
+training_advanced:
+  use_adaptive_temperature: true   # Enable cosine annealing
+  temp_start: 2.5                  # Start high for exploration
+  temp_min: 0.3                    # End low for exploitation
+  temp_adaptation_rate: 0.15       # Adaptation rate
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  min_lr: 1e-6
+  entropy_coef: 0.015              # Moderate entropy
+  entropy_min: 0.001
+  gradient_clip_norm: 1.0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 1.5

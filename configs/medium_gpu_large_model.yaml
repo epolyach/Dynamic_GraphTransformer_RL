@@ -1,0 +1,42 @@
+# Medium GPU config - Larger model variant
+# Tests if bigger model helps for n=20
+working_dir_path: "../results/medium_gpu_large_model"
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 40    # Fewer batches due to larger model
+  batch_size: 1024             
+  num_epochs: 150               
+  learning_rate: 1e-4           # Lower LR for stability with larger model
+  validation_frequency: 5
+
+# Full-size model for comparison
+model:
+  hidden_dim: 256               # Full size
+  num_heads: 4
+  num_layers: 4                 # 4 layers (paper default)
+
+# Optimized baseline
+baseline:
+  eval_batches: 1              
+  update:
+    frequency: 3                
+    warmup_epochs: 0            
+
+training_advanced:
+  use_adaptive_temperature: false
+  temp_start: 2.0                  
+  temp_min: 0.5                    
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  min_lr: 1e-6
+  entropy_coef: 0.02               
+  entropy_min: 0.001
+  gradient_clip_norm: 1.0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 1.5
