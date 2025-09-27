@@ -278,6 +278,44 @@ class IncrementalCSVWriter:
         self.rows.append(row)
         pd.DataFrame([row]).to_csv(self.csv_path, mode='a', header=False, index=False)
     
+    def save_missing_epochs(self, history: dict, start_epoch: int):
+        """Save only missing epochs starting from start_epoch."""
+        import numpy as np
+        
+        # Convert history values to regular Python types
+        def convert_value(val):
+            if isinstance(val, (np.ndarray, np.generic)):
+                return float(val)
+            elif val is None:
+                return float('nan')
+            return float(val) if not isinstance(val, float) else val
+        
+        n_epochs = len(history.get('train_cost_arithmetic', []))
+        if n_epochs == 0 or start_epoch >= n_epochs:
+            self.logger.info(f"No missing epochs to save (start: {start_epoch}, total: {n_epochs})")
+            return
+            
+        epochs_to_save = n_epochs - start_epoch
+        self.logger.info(f"Saving {epochs_to_save} missing epochs ({start_epoch} to {n_epochs-1})")
+            
+        for epoch in range(start_epoch, n_epochs):
+            row = {
+                'epoch': epoch,
+                'train_loss': convert_value(history['train_loss'][epoch]) if 'train_loss' in history and epoch < len(history['train_loss']) else float('nan'),
+                'train_cost_arithmetic': convert_value(history['train_cost_arithmetic'][epoch]) if 'train_cost_arithmetic' in history and epoch < len(history['train_cost_arithmetic']) else float('nan'),
+                'val_cost_arithmetic': convert_value(history['val_cost_arithmetic'][epoch]) if 'val_cost_arithmetic' in history and epoch < len(history['val_cost_arithmetic']) else float('nan'),
+                'learning_rate': convert_value(history['learning_rate'][epoch]) if 'learning_rate' in history and epoch < len(history['learning_rate']) else 1e-4,
+                'temperature': convert_value(history['temperature'][epoch]) if 'temperature' in history and epoch < len(history['temperature']) else 2.5,
+                'time_per_epoch': convert_value(history['epoch_time'][epoch]) if 'epoch_time' in history and epoch < len(history['epoch_time']) else 0.0,
+                'baseline_type': history['baseline_type'][epoch] if 'baseline_type' in history and epoch < len(history['baseline_type']) else '',
+                'baseline_value': convert_value(history['baseline_value'][epoch]) if 'baseline_value' in history and epoch < len(history['baseline_value']) else float('nan'),
+                'mean_type': history['mean_type'][epoch] if 'mean_type' in history and epoch < len(history['mean_type']) else 'arithmetic'
+            }
+            self.rows.append(row)
+            pd.DataFrame([row]).to_csv(self.csv_path, mode='a', header=False, index=False)
+        
+        self.logger.info(f"Successfully saved {epochs_to_save} missing epochs to CSV")
+
     def save_all_history(self, history: dict):
         """Save complete history at once."""
         import numpy as np
@@ -443,15 +481,21 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
             logger.info(f"History has {len(history['train_cost'])} epochs of training data")
         
         # Save history to CSV
-        # If incremental per-epoch writes already populated the CSV, avoid duplicating rows.
+        # Only save epochs that haven't been written yet (typically just the last epoch)
         try:
             with open(csv_writer.csv_path, 'r') as f:
                 existing_rows = sum(1 for _ in f) - 1  # exclude header
         except Exception:
             existing_rows = 0
         n_epochs = len(history.get('train_cost_arithmetic', []))
+        
+        # Only save missing epochs (usually just the final epoch)
         if existing_rows < n_epochs:
-            csv_writer.save_all_history(history)
+            logger.info(f"Adding {n_epochs - existing_rows} missing epochs to CSV (existing: {existing_rows}, total: {n_epochs})")
+            csv_writer.save_missing_epochs(history, start_epoch=existing_rows)
+        else:
+            logger.info(f"CSV is up to date with {existing_rows} epochs")
+        
         csv_writer.finalize()
         
         # Save model with full structure (in pytorch/ directory)
