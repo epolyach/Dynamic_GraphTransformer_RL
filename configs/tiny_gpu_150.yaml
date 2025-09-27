@@ -10,6 +10,34 @@ training:
   num_batches_per_epoch: 150   # 150 steps per epoch
   batch_size: 512              # Large batch size for GPU
   num_epochs: 100              # Default number of epochs
+  learning_rate: 1e-4          # Starting learning rate for cosine schedule
+
+training_advanced:
+  # Cosine annealing temperature schedule
+  use_adaptive_temperature: false  
+  use_oscillating_temperature: false
+  temp_start: 2.5                  # Start temperature
+  temp_min: 0.70                   # Minimum temperature
+  
+  # Cosine annealing learning rate
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  lr_min: 1e-6                     # Final learning rate
+  lr_max: 1e-4                     # Starting learning rate
+  cosine_epochs: 100               # Total epochs for cosine schedule
+  
+  # Entropy settings
+  entropy_coef: 0.01               # Initial entropy
+  entropy_min: 0.001               # Minimum entropy
+  use_adaptive_entropy: true       # Adjust based on performance
+  plateau_detection_window: 10     # Epochs to detect plateau
+  plateau_threshold: 0.001         # Minimum improvement threshold
+  entropy_boost_on_plateau: 0.02   # Boost entropy when plateauing
+  
+  gradient_clip_norm: 1.0
+  
+  # No hybrid baseline - rollout only
+  use_hybrid_baseline: false
 
 # Smaller model for faster training
 model:
@@ -29,3 +57,7 @@ inference:
   max_steps_multiplier: 10
   default_temperature: 2.5
 
+# Disable early stopping to run full 100 epochs
+training:
+  early_stopping:
+    enabled: false
