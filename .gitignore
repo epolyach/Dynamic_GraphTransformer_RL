@@ -31,7 +31,6 @@ MANIFEST
 # Data files
 *.h5
 *.hdf5
-# *.json  # Commented out to allow benchmark result files
 *.npy
 *.npz
 data/
