@@ -31,7 +31,7 @@ MANIFEST
 # Data files
 *.h5
 *.hdf5
-*.json
+# *.json  # Commented out to allow benchmark result files
 *.npy
 *.npz
 data/
@@ -110,3 +110,14 @@ research/**/tensorboard/
 
 # Miscellaneous test scripts and debugging files
 misc/
+
+# Specific JSON files to ignore (instead of blanket *.json)
+package.json
+package-lock.json
+tsconfig.json
+config.json
+node_modules/**/*.json
+.vscode/settings.json
+.vscode/*.json
+wandb/**/*.json
+logs/**/*.json
