@@ -31,7 +31,7 @@ MANIFEST
 # Data files
 *.h5
 *.hdf5
-*.json
+# *.json  # Commented out to allow benchmark result files
 *.npy
 *.npz
 data/
@@ -110,3 +110,15 @@ research/**/tensorboard/
 
 # Miscellaneous test scripts and debugging files
 misc/
+
+# Allow important result files but ignore temporary JSON files
+!benchmark_cpu/results/**/*.json
+!benchmark_gpu/results/**/*.json
+!training_*/results/**/*.json
+!**/*results*.json
+
+# Still ignore config and temporary JSON files
+config.json
+temp*.json
+.vscode/**/*.json
+node_modules/**/*.json

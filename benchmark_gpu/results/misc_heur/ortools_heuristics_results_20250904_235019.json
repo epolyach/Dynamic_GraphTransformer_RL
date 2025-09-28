@@ -1,0 +1,115 @@
+{
+  "greedy": [
+    {
+      "n_customers": 10,
+      "capacity": 20,
+      "instances": 10,
+      "mean_cpc": 0.45572799999999997,
+      "std_cpc": 0.07184154338542566,
+      "sem": 0.022718290771974896,
+      "total_time": 0.17898869514465332,
+      "time_per_instance": 0.017898869514465333,
+      "2sem_mean_pct": 9.970109702267536
+    },
+    {
+      "n_customers": 20,
+      "capacity": 30,
+      "instances": 10,
+      "mean_cpc": 0.33890549999999997,
+      "std_cpc": 0.03983240724899764,
+      "sem": 0.012596113159423425,
+      "total_time": 0.6666898727416992,
+      "time_per_instance": 0.06666898727416992,
+      "2sem_mean_pct": 7.433407341824447
+    },
+    {
+      "n_customers": 50,
+      "capacity": 40,
+      "instances": 10,
+      "mean_cpc": 0.2515068,
+      "std_cpc": 0.02744545122529414,
+      "sem": 0.008679013728298853,
+      "total_time": 8.60966420173645,
+      "time_per_instance": 0.860966420173645,
+      "2sem_mean_pct": 6.9016135772860645
+    },
+    {
+      "n_customers": 100,
+      "capacity": 50,
+      "instances": 10,
+      "mean_cpc": 0.1800986,
+      "std_cpc": 0.018778552815379563,
+      "sem": 0.005938299805836681,
+      "total_time": 15.291293382644653,
+      "time_per_instance": 1.5291293382644653,
+      "2sem_mean_pct": 6.594498575598791
+    }
+  ],
+  "gls": [
+    {
+      "n_customers": 10,
+      "capacity": 20,
+      "instances": 10,
+      "mean_cpc": 0.44809,
+      "std_cpc": 0.07082031911817399,
+      "sem": 0.02239535130333972,
+      "total_time": 40.0423309803009,
+      "time_per_instance": 4.00423309803009,
+      "2sem_mean_pct": 9.99591658074928
+    },
+    {
+      "n_customers": 20,
+      "capacity": 30,
+      "instances": 10,
+      "mean_cpc": 0.3244675,
+      "std_cpc": 0.032423884040163976,
+      "sem": 0.010253332415610059,
+      "total_time": 40.03828310966492,
+      "time_per_instance": 4.003828310966492,
+      "2sem_mean_pct": 6.320098262913887
+    },
+    {
+      "n_customers": 50,
+      "capacity": 40,
+      "instances": 10,
+      "mean_cpc": 0.24333580000000002,
+      "std_cpc": 0.027616182943339587,
+      "sem": 0.00873300383808458,
+      "total_time": 40.0417423248291,
+      "time_per_instance": 4.00417423248291,
+      "2sem_mean_pct": 7.177738613130153
+    },
+    {
+      "n_customers": 100,
+      "capacity": 50,
+      "instances": 10,
+      "mean_cpc": 0.17757330000000002,
+      "std_cpc": 0.019702973055100076,
+      "sem": 0.006230627153104249,
+      "total_time": 40.038331508636475,
+      "time_per_instance": 4.003833150863647,
+      "2sem_mean_pct": 7.017527019100561
+    }
+  ],
+  "total_time": 184.94695281982422,
+  "configurations": [
+    [
+      10,
+      20
+    ],
+    [
+      20,
+      30
+    ],
+    [
+      50,
+      40
+    ],
+    [
+      100,
+      50
+    ]
+  ],
+  "instances_per_config": 10,
+  "gls_timeout": 1.0
+}
