@@ -7,6 +7,8 @@ problem:
   vehicle_capacity: 30
 
 training:
+  early_stopping:
+    enabled: false
   num_batches_per_epoch: 75   # 150 steps per epoch
   batch_size: 1024              # Large batch size for GPU
   num_epochs: 100              # Default number of epochs
