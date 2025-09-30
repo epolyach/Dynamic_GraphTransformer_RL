@@ -423,7 +423,18 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
     
     # Create data generator
     logger.info("Creating data generator...")
-    data_generator = create_data_generator(config)
+    # Create data generator (with optional parallelization)
+    data_gen_config = config.get("data_generation", {})
+    num_data_workers = data_gen_config.get("num_workers", 0)
+    
+    if num_data_workers > 0:
+        logger.info(f"Using parallel data generation with {num_data_workers} workers")
+        data_gen_pool = ParallelDataGeneratorPool(config, num_workers=num_data_workers)
+        data_generator = data_gen_pool.generate_batch
+    else:
+        logger.info("Using sequential data generation")
+        data_generator = create_data_generator(config)
+        data_gen_pool = None
     
     # Create model
     logger.info(f"Creating model: {model_name}")
@@ -551,6 +562,11 @@ def train_single_model(model_name: str, config: Dict[str, Any], args, logger):
     except Exception as e:
         logger.error(f"Training failed for {model_name}: {str(e)}", exc_info=True)
         return None
+    finally:
+        # Clean up data generator pool if it was created
+        if 'data_gen_pool' in locals() and data_gen_pool is not None:
+            logger.info("Closing parallel data generation pool")
+            data_gen_pool.close()
 
 
 def main():

@@ -30,3 +30,7 @@ baseline:
 inference:
   max_steps_multiplier: 10
   default_temperature: 2.5
+
+# Data generation parallelization
+data_generation:
+  num_workers: 6  # Number of parallel workers for data generation (0 = sequential)
