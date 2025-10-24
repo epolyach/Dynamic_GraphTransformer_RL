@@ -150,6 +150,52 @@ Based on extensive profiling (see `MD/FINAL_FIX_SUMMARY.md`), several critical o
 - All standard configs now include GPU sections with appropriate settings
 
 ### Monitoring
+
+### Sequential Training Scripts ⭐ NEW
+For running multiple experiments sequentially without manual intervention:
+
+**Basic sequential runner:**
+```bash
+./run_seq.sh config1.yaml config2.yaml config3.yaml
+```
+
+**SSH-persistent sequential runner (recommended):**
+```bash
+./run_seq_nohup.sh config1.yaml config2.yaml config3.yaml
+```
+
+**Example usage:**
+```bash
+# Run three tiny GPU experiments sequentially
+./run_seq_nohup.sh configs/tiny_gpu_150.yaml configs/tiny_gpu_500.yaml configs/tiny_gpu_750.yaml
+
+# Run experiment vs medium comparison
+./run_seq_nohup.sh configs/experiment_rollout_only.yaml configs/medium_experiment_rollout_only.yaml
+```
+
+**Key Features:**
+- **SSH-Resistant**: Uses `nohup` to survive SSH disconnections
+- **Screen Sessions**: Each experiment runs in its own screen session
+- **Automatic Sequencing**: Waits for each experiment to complete before starting next
+- **Force Retrain**: Automatically overwrites existing results
+- **Detailed Logging**: Timestamped logs with progress tracking
+- **Early Stopping Disabled**: Ensures full epoch completion (100 epochs)
+
+**Monitoring sequential training:**
+```bash
+# Monitor overall progress
+tail -f nohup_sequential_TIMESTAMP.log
+
+# Check if process is still running
+ps -p PID
+screen -ls
+
+# Monitor individual experiment
+screen -r seq_tiny_gpu_150_PID
+
+# Kill if needed
+kill PID
+```
 ```bash
 # Check GPU utilization during training
 nvidia-smi -l 1
@@ -319,6 +365,9 @@ python3 benchmark_gpu_multi_n.py
 python3 benchmark_gpu_truly_optimal_n10.py --num-instances 100 --capacity 20
 
 # 6. Generate comparison plots
+
+# 7. Sequential training (multiple configs automatically)
+./run_seq_nohup.sh configs/tiny_gpu_150.yaml configs/tiny_gpu_500.yaml configs/tiny_gpu_750.yaml
 cd training_cpu
 python scripts/regenerate_analysis.py --config ../configs/small.yaml
 ```
@@ -390,6 +439,8 @@ Dynamic_GraphTransformer_RL/
 │   ├── FINAL_FIX_SUMMARY.md     # GPU transfer overhead fix
 │   ├── PERFORMANCE_FIX_SUMMARY.md  # Code duplication fix
 │   └── TRAINING_IMPLEMENTATION.md  # Training system documentation
+├── run_seq.sh                    # Sequential training runner
+├── run_seq_nohup.sh              # SSH-persistent sequential runner
 ├── paper_dgt/                    # Research paper
 ├── test_ortools_parallel.py     # OR-Tools test runner
 └── ORTOOLS_SETUP_SUMMARY.md     # Setup documentation

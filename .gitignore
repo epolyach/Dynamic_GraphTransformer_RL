@@ -111,13 +111,19 @@ research/**/tensorboard/
 # Miscellaneous test scripts and debugging files
 misc/
 
-# Specific JSON files to ignore (instead of blanket *.json)
+# Allow important result files but ignore temporary JSON files
+!benchmark_cpu/results/**/*.json
+!benchmark_gpu/results/**/*.json
+!training_*/results/**/*.json
+!**/*results*.json
+
+# Still ignore config and temporary JSON files
 package.json
 package-lock.json
 tsconfig.json
 config.json
+temp*.json
+.vscode/**/*.json
 node_modules/**/*.json
-.vscode/settings.json
-.vscode/*.json
 wandb/**/*.json
 logs/**/*.json
