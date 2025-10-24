@@ -7,6 +7,8 @@ problem:
   vehicle_capacity: 30
 
 training:
+  early_stopping:
+    enabled: false
   num_batches_per_epoch: 75   # 150 steps per epoch
   batch_size: 1024              # Large batch size for GPU
   num_epochs: 100              # Default number of epochs
@@ -28,3 +30,7 @@ baseline:
 inference:
   max_steps_multiplier: 10
   default_temperature: 2.5
+
+# Data generation parallelization
+data_generation:
+  num_workers: 6  # Number of parallel workers for data generation (0 = sequential)

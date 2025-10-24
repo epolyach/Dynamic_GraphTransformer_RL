@@ -1,0 +1,51 @@
+{
+  "thread_id": 0,
+  "n": 10,
+  "capacity": 20,
+  "timeout": 1.0,
+  "total_instances": 5,
+  "successful": 0,
+  "failed": 5,
+  "results": [
+    {
+      "instance_id": 0,
+      "seed": 42,
+      "n": 10,
+      "capacity": 20,
+      "error": "_generate_instance() got an unexpected keyword argument 'n'",
+      "failed": true
+    },
+    {
+      "instance_id": 2,
+      "seed": 44,
+      "n": 10,
+      "capacity": 20,
+      "error": "_generate_instance() got an unexpected keyword argument 'n'",
+      "failed": true
+    },
+    {
+      "instance_id": 4,
+      "seed": 46,
+      "n": 10,
+      "capacity": 20,
+      "error": "_generate_instance() got an unexpected keyword argument 'n'",
+      "failed": true
+    },
+    {
+      "instance_id": 6,
+      "seed": 48,
+      "n": 10,
+      "capacity": 20,
+      "error": "_generate_instance() got an unexpected keyword argument 'n'",
+      "failed": true
+    },
+    {
+      "instance_id": 8,
+      "seed": 50,
+      "n": 10,
+      "capacity": 20,
+      "error": "_generate_instance() got an unexpected keyword argument 'n'",
+      "failed": true
+    }
+  ]
+}

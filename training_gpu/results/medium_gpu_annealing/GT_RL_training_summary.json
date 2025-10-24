@@ -1,0 +1,24 @@
+{
+  "model": "GraphTransformer",
+  "config": {
+    "problem_size": 20,
+    "batch_size": 1024,
+    "learning_rate": 0.00015,
+    "epochs": 150,
+    "gpu_device": "cuda:0",
+    "mixed_precision": true
+  },
+  "results": {
+    "final_train_cost": 0.3726187753677368,
+    "final_val_cost": 0.3699644618900493,
+    "best_val_cost": 0.3699644618900493,
+    "total_time": 55832.7630007267,
+    "time_per_epoch": 428.7662932529106,
+    "peak_gpu_memory_gb": 0.06375265121459961,
+    "device": "GPU:NVIDIA RTX A6000"
+  },
+  "performance": {
+    "throughput": 2.3882474348233966,
+    "gpu_efficiency": "0.1%"
+  }
+}

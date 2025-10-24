@@ -159,3 +159,11 @@ logging:
 benchmark:
   scaling:
     distance_scale: 100000     # Used by GPU/CPU internals for integer distance scaling
+# =============================
+# Data generation parallelization
+# =============================
+data_generation:
+  num_workers: 4               # Number of parallel workers for data generation (0 = sequential)
+  # Note: Set to 0 for very small problems (< 20 customers) or debugging
+  # Recommended: 4-6 workers for batch sizes >= 256
+  # Higher values (6-8) can help with large batch sizes (>= 512)

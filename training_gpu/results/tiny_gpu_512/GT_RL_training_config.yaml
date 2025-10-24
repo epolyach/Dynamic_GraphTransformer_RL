@@ -1,12 +1,12 @@
 baseline:
-  eval_batches: 3
+  eval_batches: 1
   type: rollout
   update:
     enabled: true
     frequency: 2
     p_value: 0.1
     significance_test: true
-    warmup_epochs: 3
+    warmup_epochs: 0
 batch_size: 1024
 benchmark:
   scaling:
@@ -16,8 +16,8 @@ coord_range: 100
 demand_range: &id001
 - 1
 - 10
-entropy_coef: 0.01
-entropy_min: 0.0
+entropy_coef: 0.03
+entropy_min: 0.002
 experiment:
   random_seed: 42
   strict_validation: true
@@ -42,11 +42,11 @@ gpu:
   num_workers: 4
   pin_memory: true
   prefetch_factor: 2
-grad_clip: 1.0
+grad_clip: 2.0
 hidden_dim: 128
 inference:
-  default_temperature: 1.5
-  max_steps_multiplier: 2
+  default_temperature: 2.5
+  max_steps_multiplier: 10
 learning_rate: 0.0001
 logging:
   format: '%(message)s'
@@ -66,9 +66,9 @@ model_gat:
   gat_layers: 4
   gat_negative_slope: 0.2
 num_customers: 10
-num_epochs: 200
+num_epochs: 100
 num_heads: 4
-num_instances: 15436800
+num_instances: 7756800
 num_layers: 3
 problem:
   coord_range: 100
@@ -79,10 +79,12 @@ temp_min: 0.15
 temp_start: 2.5
 training:
   batch_size: 1024
+  early_stopping:
+    enabled: false
   learning_rate: 0.0001
   num_batches_per_epoch: 75
-  num_epochs: 200
-  num_instances: 15436800
+  num_epochs: 100
+  num_instances: 7756800
   use_geometric_mean: false
   validation_frequency: 2
 training_advanced:
@@ -94,15 +96,15 @@ training_advanced:
     mode: default
   early_stopping_delta: 0.0001
   early_stopping_patience: 10
-  entropy_coef: 0.01
-  entropy_min: 0.0
-  gradient_clip_norm: 1.0
+  entropy_coef: 0.03
+  entropy_min: 0.002
+  gradient_clip_norm: 2.0
   min_lr: 1.0e-06
   scheduler_type: cosine
   temp_adaptation_rate: 0.18
   temp_min: 0.15
   temp_start: 2.5
-  use_adaptive_temperature: false
+  use_adaptive_temperature: true
   use_early_stopping: true
   use_lr_scheduling: true
   weight_decay: 0.0001

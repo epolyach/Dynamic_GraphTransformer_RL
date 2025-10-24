@@ -1,0 +1,28 @@
+{
+  "method": "GPU_Heuristic_GLS",
+  "results": [
+    {
+      "n_customers": 10,
+      "capacity": 20,
+      "instances": 5,
+      "mean_cpc": Infinity,
+      "std_cpc": NaN,
+      "sem": NaN,
+      "total_time": 6.964158535003662,
+      "time_per_instance": 1.3928317070007323,
+      "2sem_mean_pct": NaN
+    }
+  ],
+  "total_time": 6.965213775634766,
+  "configurations": [
+    [
+      10,
+      20
+    ]
+  ],
+  "instances_per_config": 5,
+  "batch_size": 5,
+  "time_limit": 1.0,
+  "gpu_available": true,
+  "device": "NVIDIA RTX A6000"
+}

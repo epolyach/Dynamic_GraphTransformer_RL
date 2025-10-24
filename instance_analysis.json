@@ -1,0 +1,38 @@
+{
+  "default": {
+    "num_customers": 20,
+    "capacity": 30,
+    "coord_range": 100,
+    "demand_range": [
+      1,
+      10
+    ],
+    "mean_total_demand": 109.906,
+    "mean_routes": 4.1387,
+    "single_route_percentage": 0.0,
+    "route_distribution": {
+      "4": 7327,
+      "5": 2020,
+      "3": 645,
+      "2": 1,
+      "6": 7
+    }
+  },
+  "tiny": {
+    "num_customers": 7,
+    "capacity": 30,
+    "coord_range": 100,
+    "demand_range": [
+      1,
+      10
+    ],
+    "mean_total_demand": 38.619,
+    "mean_routes": 1.8582,
+    "single_route_percentage": 14.29,
+    "route_distribution": {
+      "2": 8560,
+      "1": 1429,
+      "3": 11
+    }
+  }
+}
