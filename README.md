@@ -53,23 +53,58 @@ Notes:
 
 
 ## 1.5) Training (GPU)
-Location: training_gpu/
+Locations: training_gpu/ and training_gpu_prefetch/
 
-GPU-optimized training with mixed precision support and efficient batch processing.
+GPU-optimized training with mixed precision support, efficient batch processing, and **hybrid baseline** capabilities.
+
+### Two Training Pipelines Available
+
+1. **Standard Pipeline** (`training_gpu/`): Original GPU training implementation
+2. **Prefetch Pipeline** (`training_gpu_prefetch/`): Enhanced with batch prefetching for improved GPU utilization
+
+Both pipelines share the same features and configuration format. The prefetch pipeline may provide better performance for certain workloads.
 
 ### Quick Start
+
+#### Interactive Training (foreground)
 ```bash
-# Train a single model with GPU optimizations
+# Standard pipeline
 cd /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL
 source venv/bin/activate
 python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
 
+# Prefetch pipeline  
+source venv/bin/activate
+python training_gpu_prefetch/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
+
 # Force retrain if model exists
 python training_gpu/scripts/run_training_gpu.py --config configs/tiny.yaml --model GT+RL --force-retrain
-
-# Train with optimized tiny config (large batch size)
-python training_gpu/scripts/run_training_gpu.py --config configs/tiny_gpu_optimized.yaml --model GT+RL
 ```
+
+#### Training in Screen Session (SSH-persistent) ⭐ RECOMMENDED
+Run training in a detached screen session that survives SSH disconnections:
+
+```bash
+# Standard pipeline
+screen -dmS training bash -c "source venv/bin/activate && python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL; exec bash"
+
+# Prefetch pipeline (recommended for long training runs)
+screen -dmS training bash -c "source venv/bin/activate && python training_gpu_prefetch/scripts/run_training_gpu.py --config configs/normal_gpu_1000.yaml --model GT+RL; exec bash"
+
+# Monitor the training
+screen -ls              # List all screen sessions
+screen -r training      # Attach to the session
+# Press Ctrl+A, then D to detach without stopping
+
+# Check GPU usage
+nvidia-smi -l 1
+```
+
+**Key benefits of screen sessions:**
+- Training continues even if SSH connection drops
+- Can detach/reattach at any time
+- Multiple screen sessions for parallel experiments
+- Persistent shell environment
 
 ### GPU-Specific Features
 - **Mixed Precision Training**: Automatically enabled for N≥20 (FP16/FP32)
@@ -77,6 +112,44 @@ python training_gpu/scripts/run_training_gpu.py --config configs/tiny_gpu_optimi
 - **Optimized Data Pipeline**: Numpy arrays converted to GPU tensors on arrival
 - **Configurable Batch Sizes**: Use larger batches (2048-8192) for better GPU utilization
 - **GPU-Specific Validation**: Handles GPU tensors without CPU transfers
+- **Hybrid Baseline**: Combines rollout and critic baselines for superior performance
+
+### Hybrid Baseline ⭐ NEW
+The hybrid baseline implementation (`training_gpu/lib/critic_baseline.py`) provides an advanced training strategy that automatically switches between baseline types:
+
+**How it works:**
+1. **Early training (epochs 0-50)**: Uses rollout baseline for stable early learning
+2. **Later training (epochs 50+)**: Switches to critic baseline for faster convergence
+3. **Automatic switching**: Configured via `baseline_switch_epoch` parameter
+
+**Configuration example:**
+```yaml
+# In configs/experiment_5_curriculum.yaml
+training_advanced:
+  use_hybrid_baseline: true
+  baseline_switch_epoch: 50    # Switch at epoch 50
+
+baseline:
+  type: "hybrid"                # Enables hybrid baseline
+  
+  # Rollout baseline config (early epochs)
+  rollout:
+    update:
+      frequency: 2
+      warmup_epochs: 2
+  
+  # Critic baseline config (later epochs)
+  critic:
+    hidden_dim: 256
+    num_layers: 2
+    learning_rate: 5e-4
+```
+
+**Benefits:**
+- More stable training in early epochs with rollout baseline
+- Faster convergence in later epochs with learned critic
+- Automatic mode detection and logging
+- Seamless switching without training interruption
 
 ### Configuration Guidelines
 ```yaml
@@ -88,17 +161,88 @@ gpu:
   batch_size: 1024-2048  # For N=50-100
 ```
 
+### Performance Optimizations Applied
+Based on extensive profiling (see `MD/FINAL_FIX_SUMMARY.md`), several critical optimizations have been implemented:
+
+1. **Eliminated GPU Transfer Overhead**: Distance matrices stay on CPU where they're used
+2. **Fixed Code Duplication**: Removed 9x redundant cost computations
+3. **Optimized Data Movement**: Only move necessary tensors (coords/demands) to GPU
+4. **Result**: 2-3x speedup (from 48-70s to ~22s per epoch)
+
 ### Performance Notes
 - **N≤20**: CPU training may be faster due to GPU overhead
 - **N≥50**: GPU shows significant speedup, especially with large batches
 - **Memory**: RTX A6000 (48GB) can handle batch_size=8192 for N=10
+- **Hybrid Baseline**: Best for longer training runs (100+ epochs)
 
 ### Available Configurations
 - `configs/tiny_gpu_optimized.yaml` - N=10, batch_size=4096, optimized for GPU
 - `configs/medium_gpu.yaml` - N=50, balanced GPU settings
+- `configs/experiment_5_curriculum.yaml` - Hybrid baseline with curriculum learning
 - All standard configs now include GPU sections with appropriate settings
 
 ### Monitoring
+
+### Sequential Training Scripts ⭐ NEW
+For running multiple experiments sequentially without manual intervention:
+
+#### Standard Pipeline Scripts
+**Basic sequential runner:**
+```bash
+./run_seq.sh config1.yaml config2.yaml config3.yaml
+```
+
+**SSH-persistent sequential runner (recommended):**
+```bash
+./run_seq_nohup.sh config1.yaml config2.yaml config3.yaml
+```
+
+#### Prefetch Pipeline Scripts
+**Basic sequential runner:**
+```bash
+./run_seq_prefetch.sh config1.yaml config2.yaml config3.yaml
+```
+
+**SSH-persistent sequential runner (recommended):**
+```bash
+./run_seq_nohup_prefetch.sh config1.yaml config2.yaml config3.yaml
+```
+
+**Example usage:**
+```bash
+# Standard pipeline - Run three tiny GPU experiments sequentially
+./run_seq_nohup.sh configs/tiny_gpu_150.yaml configs/tiny_gpu_500.yaml configs/tiny_gpu_750.yaml
+
+# Prefetch pipeline - Run large experiments with prefetching
+./run_seq_nohup_prefetch.sh configs/normal_gpu_1000.yaml configs/large.yaml
+
+# Run experiment vs medium comparison
+./run_seq_nohup.sh configs/experiment_rollout_only.yaml configs/medium_experiment_rollout_only.yaml
+```
+
+**Key Features:**
+- **SSH-Resistant**: Uses `nohup` to survive SSH disconnections
+- **Screen Sessions**: Each experiment runs in its own screen session
+- **Automatic Sequencing**: Waits for each experiment to complete before starting next
+- **Force Retrain**: Automatically overwrites existing results
+- **Detailed Logging**: Timestamped logs with progress tracking
+- **Early Stopping Disabled**: Ensures full epoch completion (100 epochs)
+
+**Monitoring sequential training:**
+```bash
+# Monitor overall progress
+tail -f nohup_sequential_TIMESTAMP.log
+
+# Check if process is still running
+ps -p PID
+screen -ls
+
+# Monitor individual experiment
+screen -r seq_tiny_gpu_150_PID
+
+# Kill if needed
+kill PID
+```
 ```bash
 # Check GPU utilization during training
 nvidia-smi -l 1
@@ -268,6 +412,9 @@ python3 benchmark_gpu_multi_n.py
 python3 benchmark_gpu_truly_optimal_n10.py --num-instances 100 --capacity 20
 
 # 6. Generate comparison plots
+
+# 7. Sequential training (multiple configs automatically)
+./run_seq_nohup.sh configs/tiny_gpu_150.yaml configs/tiny_gpu_500.yaml configs/tiny_gpu_750.yaml
 cd training_cpu
 python scripts/regenerate_analysis.py --config ../configs/small.yaml
 ```
@@ -297,6 +444,14 @@ Dynamic_GraphTransformer_RL/
 │   │   └── table_generation/    # Table generation tools
 │   ├── lib/                     # Training utilities
 │   └── results/                 # Training results
+├── training_gpu/                 # GPU-optimized training ⭐
+│   ├── scripts/
+│   │   └── run_training_gpu.py  # Main GPU training script
+│   ├── lib/
+│   │   ├── advanced_trainer_gpu.py    # GPU trainer with optimizations
+│   │   ├── rollout_baseline_gpu_fixed.py  # Fixed rollout baseline
+│   │   └── critic_baseline.py         # Hybrid baseline implementation
+│   └── results/                 # GPU training results
 ├── benchmark_cpu/                # CPU benchmarking ⭐
 │   ├── scripts/
 │   │   └── ortools/             # OR-Tools scripts
@@ -316,6 +471,27 @@ Dynamic_GraphTransformer_RL/
 │   ├── scripts/
 │   │   ├── benchmark_gpu_*.py            # Core GPU benchmarks
 │   │   ├── gpu_cvrp_solver_truly_optimal_fixed.py  # DP exact solver (bug-free)
+│   │   ├── gpu_cvrp_solver_scip_optimal_fixed.py   # SCIP MIP solver
+│   │   ├── plotting/            # Visualization
+│   │   ├── table_generation/    # LaTeX tables
+│   │   ├── monitoring/          # Progress tracking
+│   │   ├── tests/               # Test scripts
+│   │   └── examples/            # Example scripts
+│   └── results/
+│       ├── plots/               # Generated figures
+│       ├── tables/              # LaTeX tables
+│       ├── data/                # Results data
+│       └── logs/                # Output logs
+├── MD/                           # Documentation of fixes and improvements
+│   ├── FINAL_FIX_SUMMARY.md     # GPU transfer overhead fix
+│   ├── PERFORMANCE_FIX_SUMMARY.md  # Code duplication fix
+│   └── TRAINING_IMPLEMENTATION.md  # Training system documentation
+├── run_seq.sh                    # Sequential training runner
+├── run_seq_nohup.sh              # SSH-persistent sequential runner
+├── paper_dgt/                    # Research paper
+├── test_ortools_parallel.py     # OR-Tools test runner
+└── ORTOOLS_SETUP_SUMMARY.md     # Setup documentation
+```
 
 ## Configuration
 
@@ -326,6 +502,7 @@ The project uses YAML configuration files located in the `configs/` directory. K
 - `small.yaml`: Small problem instances (20 customers)
 - `medium.yaml`: Medium problem instances (50 customers)
 - `large.yaml`: Large problem instances (100 customers)
+- `experiment_5_curriculum.yaml`: Hybrid baseline with curriculum learning
 
 ### Relative Paths in Configurations
 
@@ -343,23 +520,16 @@ This will resolve to:
 This approach ensures clean separation of results while using a single configuration file.
 
 
-│   │   ├── gpu_cvrp_solver_scip_optimal_fixed.py   # SCIP MIP solver
-│   │   ├── plotting/            # Visualization
-│   │   ├── table_generation/    # LaTeX tables
-│   │   ├── monitoring/          # Progress tracking
-│   │   ├── tests/               # Test scripts
-│   │   └── examples/            # Example scripts
-│   └── results/
-│       ├── plots/               # Generated figures
-│       ├── tables/              # LaTeX tables
-│       ├── data/                # Results data
-│       └── logs/                # Output logs
-├── paper_dgt/                    # Research paper
-├── test_ortools_parallel.py     # OR-Tools test runner
-└── ORTOOLS_SETUP_SUMMARY.md     # Setup documentation
-```
-
 ## 6) Key Features
+
+### Hybrid Baseline (NEW)
+- **Location:** `training_gpu/lib/critic_baseline.py`
+- **Features:**
+  - Automatic switching between rollout and critic baselines
+  - Configurable switch epoch (default: 50)
+  - Combines stability of rollout baseline with efficiency of learned critic
+  - Seamless mode transitions without training interruption
+- **Performance:** Best for longer training runs where critic can learn value estimates
 
 ### Latest OR-Tools Implementation
 - **Location:** `benchmark_cpu/scripts/ortools/production/run_ortools_gls.py`
@@ -413,7 +583,7 @@ Benchmark results for N=6 customers showing statistical precision improvements w
 ### OR-Tools GLS Statistical Properties (N=10, 1000 instances)
 
 | Metric | Value |
-|--------|-------|
+|--------|----------|
 | Geometric Mean | 0.4753 |
 | Geometric Std Dev | 1.2001 |
 | 95% Range | [0.3324, 0.6795] |
@@ -496,7 +666,7 @@ python3 gpu_cvrp_solver_scip_optimal_fixed.py --benchmark --time-limit 60
 ### Performance Comparison (N=10)
 
 | Solver | Algorithm | Throughput (inst/sec) | 1K instances | 10K instances | Optimality |
-|--------|-----------|----------------------|--------------|---------------|------------|
+|--------|-----------|----------------------|--------------|---------------|--------------|
 | GPU DP v1 | Dynamic Programming | 0.5-1.0 | 0.5-1 hours | 5-10 hours | Guaranteed |
 | GPU DP v2 | DP + Optimizations | 1.0-2.0 | 0.3-0.5 hours | 3-5 hours | Guaranteed |
 | SCIP | Mixed Integer Programming | 0.01-0.1 | 3-30 hours | 1-10 days | Guaranteed* |

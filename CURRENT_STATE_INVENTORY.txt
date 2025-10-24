@@ -1,0 +1,110 @@
+=== PROJECT RESULTS INVENTORY ===
+Generated: Sat Oct  4 23:39:38 CEST 2025
+
+## Training GPU Results
+### training_gpu/results/
+training_gpu/results/experiment_5_curriculum/GT_RL_training_summary.json
+training_gpu/results/experiment_5_curriculum/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_150/GT_RL_training_summary.json
+training_gpu/results/tiny_gpu_150/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_500/GT_RL_training_summary.json
+training_gpu/results/tiny_gpu_500/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_512/GT_RL_training_summary.json
+training_gpu/results/tiny_gpu_512/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_512_fixed_temp/GT_RL_training_summary.json
+training_gpu/results/tiny_gpu_512_fixed_temp/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_512_optimal/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_512_optimal_T20/csv/history_gt_rl.csv
+training_gpu/results/tiny_gpu_750/GT_RL_training_summary.json
+training_gpu/results/tiny_gpu_750/csv/history_gt_rl.csv
+
+### training_gpu_prefetch/results/
+training_gpu_prefetch/results/experiment_5_curriculum/GT_RL_training_summary.json
+training_gpu_prefetch/results/experiment_5_curriculum/csv/history_gt_rl.csv
+training_gpu_prefetch/results/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_1000/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_1000/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_150/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_150/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_500/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_500/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_512/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_512/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_512_fixed_temp/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_512_fixed_temp/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_512_optimal/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_512_optimal_T20/csv/history_gt_rl.csv
+training_gpu_prefetch/results/tiny_gpu_750/GT_RL_training_summary.json
+training_gpu_prefetch/results/tiny_gpu_750/csv/history_gt_rl.csv
+
+## Training CPU Results
+### training_cpu/results/
+training_cpu/results/tiny/csv/history_gt_rl.csv
+training_cpu/results/tiny_1/csv/history_gt_rl.csv
+
+## Root-level Results
+### results/
+results/default/GT_RL_training_summary.json
+results/default/csv/history_gt_rl.csv
+results/test_512/GT_RL_training_summary.json
+results/test_512/csv/history_gt_rl.csv
+results/test_csv_resume/GT_RL_training_summary.json
+results/test_csv_resume/csv/history_gt_rl.csv
+
+## Benchmark CPU Results
+### benchmark_cpu/results/
+benchmark_cpu/results/ortools_gls_N20_C30_2s_10000i/ortools_n20.json
+benchmark_cpu/results/metrics_tables/ortools_gls_metrics.csv
+benchmark_cpu/results/metrics_tables/exact_dp_metrics.csv
+benchmark_cpu/results/metrics_tables/all_solvers_metrics.csv
+benchmark_cpu/results/metrics_tables/ortools_greedy_metrics.csv
+benchmark_cpu/results/csv/cpu_benchmark.csv
+benchmark_cpu/results/csv/benchmark_modified_20250827_074153.csv
+benchmark_cpu/results/csv/n7_solver_comparison.csv
+benchmark_cpu/results/csv/benchmark_results_n7_20250902_124648.csv
+benchmark_cpu/results/csv/benchmark_modified_20250826_163944.csv
+benchmark_cpu/results/csv/benchmark_modified_20250826_180158.csv
+benchmark_cpu/results/csv/benchmark_modified_20250826_182016.csv
+benchmark_cpu/results/ortools_greedy_opt_notimeout_n6_1k/ortools_n6.json
+benchmark_cpu/results/ortools_gls_N100_C50_240s_10000i/ortools_n100.json
+benchmark_cpu/results/ortools_gls_N100_C50_60s_10000i/ortools_n100.json
+benchmark_cpu/results/ortools_greedy_opt_N10_C30_25t_10k/ortools_n10.json
+benchmark_cpu/results/ortools_greedy_opt_N6_C30_25t_1k/ortools_n6.json
+benchmark_cpu/results/ortools_greedy_opt_N6_C30_25t_10k/ortools_n6.json
+benchmark_cpu/results/ortools_gls_N20_C30_10s_10000i/ortools_n20.json
+benchmark_cpu/results/ortools_gls_N100_C50_120s_10000i/ortools_n100.json
+
+## Benchmark GPU Results
+### benchmark_gpu/results/
+benchmark_gpu/results/misc_dp/gpu_dp_exact_results_20250908_091518.csv
+benchmark_gpu/results/misc_dp/gpu_dp_exact_results_20250905_100144.json
+benchmark_gpu/results/misc_dp/gpu_dp_exact_results_20250905_071235.json
+benchmark_gpu/results/misc_dp/gpu_dp_exact_results_20250905_064755.json
+benchmark_gpu/results/misc_dp/gpu_dp_exact_results_20250908_091518.json
+benchmark_gpu/results/csv/exact_comparison_n6.csv
+benchmark_gpu/results/exact_dp_10:30_1000k/gpu_dp_exact_results_20250908_092225.json
+benchmark_gpu/results/exact_dp_10:30_1000k/gpu_dp_exact_results_20250908_092225.csv
+benchmark_gpu/results/gpu_exact_n10_results_20250908_172759.csv
+benchmark_gpu/results/exact_dp_8:30_1000k/gpu_dp_exact_results_20250908_104018.csv
+benchmark_gpu/results/exact_dp_8:30_1000k/gpu_dp_exact_results_20250908_104018.json
+benchmark_gpu/results/exact_dp_10:20_1000k/gpu_dp_exact_results_20250908_103554.json
+benchmark_gpu/results/exact_dp_10:20_1000k/gpu_dp_exact_results_20250908_103554.csv
+benchmark_gpu/results/misc_heur/ortools_heuristics_results_20250904_235019.json
+benchmark_gpu/results/misc_heur/gpu_heuristic_improved_results_20250905_110001.json
+benchmark_gpu/results/misc_heur/gpu_heuristic_gls_results_20250905_105829.json
+benchmark_gpu/results/misc_heur/ortools_gls_n100_100inst_1.0s_20250905_114444.json
+benchmark_gpu/results/misc_heur/gpu_heuristic_gls_results_20250905_002444.json
+benchmark_gpu/results/misc_heur/ortools_gls_n100_1000inst_1.0s_20250905_121045.json
+
+## Total Counts
+CSV files: 44
+JSON files: 41
+PyTorch models: 0
+
+## Directory Sizes
+622M	training_gpu/results
+732M	training_gpu_prefetch/results
+44K	training_cpu/results
+8.5M	benchmark_cpu/results
+225M	benchmark_gpu/results
+107M	results

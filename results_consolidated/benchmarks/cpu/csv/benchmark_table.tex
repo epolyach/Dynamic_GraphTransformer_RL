@@ -1,0 +1,73 @@
+\begin{table*}[htbp]
+\centering
+\caption{Benchmark Results: Comparison of Methods Across Problem Sizes}
+\label{tab:benchmark-comparison}
+\small
+\begin{tabular}{@{}l c c r r r r c c c c@{}}
+\toprule
+\textbf{Method} & \textbf{N} & \textbf{Cap.} & \textbf{Time} & \textbf{Mean} & \textbf{GM} & \textbf{Median} & \textbf{Error} & \textbf{95\% Range} & \textbf{KS CPC} & \textbf{KS log(CPC)} \\
+\midrule
+Exact DP & 5 & 30 & 0.018s & 0.4899 & 0.4799 & 0.4901 & 3.72e-03 & [0.3059, 0.6995] & $0.16$ & $<0.01$ \\
+OR-Tools Greedy (opt) & 5 & 30 & 0.015s & 0.4899 & 0.4799 & 0.4901 & 3.72e-03 & [0.3059, 0.6995] & $0.16$ & $<0.01$ \\
+OR-Tools GLS & 5 & 30 & 2.00s & 0.4899 & 0.4799 & 0.4901 & 3.72e-03 & [0.3059, 0.6995] & $0.16$ & $<0.01$ \\
+\midrule
+Exact DP & 6 & 30 & 0.230s & 0.4645 & 0.4558 & 0.4566 & 3.60e-03 & [0.3124, 0.6571] & $0.12$ & $0.59$ \\
+OR-Tools Greedy (opt) & 6 & 30 & 0.131s & 0.4645 & 0.4558 & 0.4566 & 3.60e-03 & [0.3124, 0.6571] & $0.12$ & $0.59$ \\
+OR-Tools GLS & 6 & 30 & 2.00s & 0.4645 & 0.4558 & 0.4566 & 3.60e-03 & [0.3124, 0.6571] & $0.12$ & $0.59$ \\
+\midrule
+Exact DP & 7 & 30 & 3.45s & 0.4493 & 0.4419 & 0.4452 & 3.47e-03 & [0.3081, 0.6096] & $0.21$ & $0.51$ \\
+OR-Tools Greedy (opt) & 7 & 30 & 1.06s & 0.4493 & 0.4419 & 0.4452 & 3.47e-03 & [0.3081, 0.6096] & $0.21$ & $0.51$ \\
+OR-Tools GLS & 7 & 30 & 2.00s & 0.4493 & 0.4419 & 0.4452 & 3.47e-03 & [0.3081, 0.6096] & $0.21$ & $0.51$ \\
+\midrule
+Exact DP & 8 & 30 & 58.54s & 0.4241 & 0.4182 & 0.4213 & 3.01e-03 & [0.2957, 0.5653] & $0.46$ & $0.38$ \\
+OR-Tools Greedy (opt) & 8 & 30 & 7.48s & 0.4241 & 0.4182 & 0.4213 & 3.01e-03 & [0.2957, 0.5653] & $0.46$ & $0.38$ \\
+OR-Tools GLS & 8 & 30 & 2.00s & 0.4241 & 0.4182 & 0.4213 & 3.01e-03 & [0.2957, 0.5653] & $0.46$ & $0.38$ \\
+\midrule
+OR-Tools Greedy (sub) & 9 & 30 & 5.11ms & 0.4157 & 0.4106 & 0.4138 & 2.71e-03 & [0.2934, 0.5445] & $0.41$ & $0.68$ \\
+OR-Tools GLS & 9 & 30 & 2.00s & 0.4098 & 0.4051 & 0.4069 & 2.59e-03 & [0.2934, 0.5380] & $0.42$ & $0.88$ \\
+\midrule
+OR-Tools Greedy (sub) & 10 & 30 & 5.99ms & 0.4000 & 0.3950 & 0.3958 & 2.55e-03 & [0.2879, 0.5362] & $0.17$ & $0.97$ \\
+OR-Tools GLS & 10 & 30 & 2.00s & 0.3920 & 0.3873 & 0.3884 & 2.39e-03 & [0.2858, 0.5259] & $0.13$ & $0.70$ \\
+\midrule
+OR-Tools Greedy (sub) & 11 & 30 & 7.11ms & 0.3934 & 0.3889 & 0.3879 & 2.31e-03 & [0.2887, 0.5284] & $<0.01$ & $0.68$ \\
+OR-Tools GLS & 11 & 30 & 2.00s & 0.3843 & 0.3802 & 0.3795 & 2.23e-03 & [0.2827, 0.5134] & $0.09$ & $0.89$ \\
+\midrule
+OR-Tools Greedy (sub) & 12 & 30 & 8.41ms & 0.3843 & 0.3801 & 0.3799 & 2.39e-03 & [0.2834, 0.5104] & $0.02$ & $0.86$ \\
+OR-Tools GLS & 12 & 30 & 2.00s & 0.3749 & 0.3709 & 0.3698 & 2.24e-03 & [0.2815, 0.4994] & $0.05$ & $0.97$ \\
+\midrule
+OR-Tools Greedy (sub) & 13 & 30 & 9.64ms & 0.3789 & 0.3747 & 0.3741 & 2.22e-03 & [0.2844, 0.5038] & $0.07$ & $0.99$ \\
+OR-Tools GLS & 13 & 30 & 2.00s & 0.3683 & 0.3643 & 0.3630 & 2.07e-03 & [0.2753, 0.4845] & $0.02$ & $0.89$ \\
+\midrule
+OR-Tools Greedy (sub) & 14 & 30 & 0.011s & 0.3677 & 0.3634 & 0.3638 & 2.36e-03 & [0.2655, 0.4865] & $0.21$ & $0.59$ \\
+OR-Tools GLS & 14 & 30 & 2.00s & 0.3561 & 0.3523 & 0.3531 & 2.12e-03 & [0.2633, 0.4689] & $0.18$ & $0.91$ \\
+\midrule
+OR-Tools Greedy (sub) & 15 & 30 & 0.013s & 0.3660 & 0.3621 & 0.3610 & 2.13e-03 & [0.2711, 0.4817] & $0.04$ & $0.98$ \\
+OR-Tools GLS & 15 & 30 & 2.00s & 0.3525 & 0.3490 & 0.3476 & 2.03e-03 & [0.2661, 0.4558] & $0.05$ & $0.83$ \\
+\midrule
+OR-Tools Greedy (sub) & 16 & 30 & 0.015s & 0.3611 & 0.3575 & 0.3577 & 2.04e-03 & [0.2697, 0.4726] & $0.14$ & $1.00$ \\
+OR-Tools GLS & 16 & 30 & 2.00s & 0.3474 & 0.3441 & 0.3449 & 2.04e-03 & [0.2618, 0.4538] & $0.31$ & $0.89$ \\
+\midrule
+OR-Tools Greedy (sub) & 17 & 30 & 0.016s & 0.3525 & 0.3489 & 0.3474 & 2.03e-03 & [0.2672, 0.4615] & $0.02$ & $0.85$ \\
+OR-Tools GLS & 17 & 30 & 2.00s & 0.3391 & 0.3357 & 0.3339 & 1.80e-03 & [0.2560, 0.4435] & $<0.01$ & $0.40$ \\
+\midrule
+OR-Tools Greedy (sub) & 18 & 30 & 0.018s & 0.3500 & 0.3466 & 0.3460 & 2.02e-03 & [0.2632, 0.4539] & $0.14$ & $0.81$ \\
+OR-Tools GLS & 18 & 30 & 2.00s & 0.3358 & 0.3326 & 0.3315 & 1.90e-03 & [0.2545, 0.4404] & $0.05$ & $0.88$ \\
+\midrule
+OR-Tools Greedy (sub) & 19 & 30 & 0.020s & 0.3459 & 0.3422 & 0.3423 & 1.99e-03 & [0.2584, 0.4517] & $0.10$ & $0.86$ \\
+OR-Tools GLS & 19 & 30 & 2.00s & 0.3313 & 0.3279 & 0.3267 & 1.98e-03 & [0.2502, 0.4362] & $0.08$ & $0.95$ \\
+\midrule
+OR-Tools Greedy (sub) & 20 & 30 & 0.022s & 0.3448 & 0.3414 & 0.3439 & 1.88e-03 & [0.2547, 0.4461] & $0.68$ & $0.07$ \\
+OR-Tools GLS & 20 & 30 & 2.00s & 0.3301 & 0.3270 & 0.3284 & 1.93e-03 & [0.2469, 0.4261] & $0.20$ & $0.87$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\small
+\item Statistics computed over 1000 instances per configuration
+\item Mean: Arithmetic mean; GM: Geometric mean
+\item Error: Maximum of SE(Mean), SE(GM), SE(Median) where:
+\item \quad SE(Mean) = $s/\sqrt{n}$; SE(GM) = $\text{GM} \times \log(\text{GSD})/\sqrt{n}$; SE(Median) via KDE
+\item 95\% Range: [2.5th percentile, 97.5th percentile] of CPC values
+\item KS: Kolmogorov-Smirnov test p-values for normality
+\item (opt): optimal solver; (sub): sub-optimal solver
+\end{tablenotes}
+\end{table*}

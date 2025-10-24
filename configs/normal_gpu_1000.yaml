@@ -1,0 +1,72 @@
+# Tiny GPU config - Larger batch size and more steps for GPU training
+# Batch size 512, 1000 steps per epoch
+working_dir_path: "../results/tiny_gpu_1000"
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+
+training:
+  early_stopping:
+    enabled: false
+  num_batches_per_epoch: 1000  # 1000 steps per epoch
+  batch_size: 512              # Large batch size for GPU
+  num_epochs: 100              # Default number of epochs
+  learning_rate: 1e-4          # Starting learning rate for cosine schedule
+
+training_advanced:
+  # Cosine annealing temperature schedule
+  use_adaptive_temperature: false  
+  use_oscillating_temperature: false
+  temp_start: 2.5                  # Start temperature
+  temp_min: 0.70                   # Minimum temperature
+  
+  # Cosine annealing learning rate
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  lr_min: 1e-6                     # Final learning rate
+  lr_max: 1e-4                     # Starting learning rate
+  cosine_epochs: 100               # Total epochs for cosine schedule
+  
+  # Entropy settings
+  entropy_coef: 0.01               # Initial entropy
+  entropy_min: 0.001               # Minimum entropy
+  use_adaptive_entropy: true       # Adjust based on performance
+  plateau_detection_window: 10     # Epochs to detect plateau
+  plateau_threshold: 0.001         # Minimum improvement threshold
+  entropy_boost_on_plateau: 0.02   # Boost entropy when plateauing
+  
+  gradient_clip_norm: 1.0
+  
+  # No hybrid baseline - rollout only
+  use_hybrid_baseline: false
+
+# Smaller model for faster training
+model:
+  hidden_dim: 256              # Half of default 256
+  num_heads: 4
+  num_layers: 4                # Reduced from default 4
+
+# Baseline configuration for efficient training
+baseline:
+  eval_batches: 5              # Small eval dataset
+  update:
+    frequency: 2               # Update every 2 epochs
+    warmup_epochs: 0
+
+# Optional: specify inference settings
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 2.5
+
+
+# Data generation parallelization
+data_generation:
+  num_workers: 16  # Number of parallel workers (optimized for 32-core system) for data generation (0 = sequential)
+
+# Data prefetching - overlaps CPU data generation with GPU training
+# This can improve GPU utilization from 15% to 80-95%!
+data_generation:
+  num_workers: 16  # Number of parallel workers (optimized for 32-core system)
+  enable_prefetch: true      # Enable background data generation
+  prefetch_queue_size: 3     # Buffer 3 batches ahead (2-4 recommended)

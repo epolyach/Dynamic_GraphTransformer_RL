@@ -1,0 +1,36 @@
+Project Cleanup Report
+Generated: 2025-09-26 16:00:23
+======================================================================
+
+CLEANUP SUMMARY
+--------------------------------------------------
+✓ Python cache files removed (__pycache__, *.pyc)
+✓ Backup files removed (*.backup, *.bak, *.old, *.orig, *.base)
+✓ Test files and directories removed
+✓ Fix scripts removed (fix_*.py, *_fix.py, *_fixed.py)
+✓ Root directory log files removed
+✓ Temporary files in /tmp cleaned
+
+VERIFICATION - Important files intact:
+--------------------------------------------------
+✗ run_training.py
+✓ configs/default.yaml
+✓ configs/experiment_5_curriculum.yaml
+✗ src/models/graph_transformer.py
+✗ src/models/router_model.py
+✗ src/data/cvrp_dataset.py
+✓ training_gpu/lib/advanced_trainer_gpu.py
+✓ training_gpu/lib/critic_baseline.py
+✓ training_gpu/scripts/run_training_gpu.py
+
+PROJECT STATISTICS:
+--------------------------------------------------
+Python files remaining: 8804
+Config files remaining: 39
+Potential cleanup candidates remaining: 190
+
+CLEANUP RESULT:
+--------------------------------------------------
+⚠ Cleanup completed with warnings
+⚠ Some important files may be missing
+⚠ 190 potential cleanup files remain

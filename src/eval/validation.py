@@ -21,6 +21,9 @@ def quick_validate_route(route: List[int], n_customers: int) -> bool:
 
 def analyze_route_trips(route: List[int], demands: np.ndarray, capacity: int):
     """Return trip breakdown and detect capacity violations per trip."""
+    # Ensure capacity is an integer
+    capacity = int(capacity) if not isinstance(capacity, int) else capacity
+    
     trips = []
     current_trip = []
     for node in route:

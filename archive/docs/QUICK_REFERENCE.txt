@@ -1,0 +1,59 @@
+================================================================================
+GPU TRAINING - QUICK REFERENCE
+================================================================================
+
+RUN TRAINING (Standard Method)
+-------------------------------
+./run_seq_nohup.sh configs/tiny_gpu_1000.yaml
+
+This uses your existing scripts with all the fixes applied!
+
+
+TEST PARALLEL DATA GENERATION
+------------------------------
+./test_parallel_datagen.sh
+
+Run this first to verify 6 CPU cores are being used.
+
+
+MONITOR DURING TRAINING
+------------------------
+Terminal 1: nvtop                           # GPU usage
+Terminal 2: htop                            # CPU usage (6 workers)
+Terminal 3: tail -f nohup_sequential_*.log  # Training progress
+
+
+EXPECTED BEHAVIOR
+-----------------
+GPU (nvtop):    1 Python process, 70-95% GPU utilization
+CPU (htop):     6 Python workers, 80-90% CPU each (400-500% total)
+Speed:          4-5x faster data generation
+
+
+TROUBLESHOOTING
+---------------
+Problem: Only 1 CPU core active
+Solution: Check config has "data_generation.num_workers: 6"
+
+Problem: Out of GPU memory  
+Solution: Reduce batch_size in config or use --batch_size 256
+
+Problem: Training stops when SSH disconnects
+Solution: Use ./run_seq_nohup.sh (not direct python command)
+
+
+DOCUMENTATION
+-------------
+GPU_TRAINING_GUIDE.md       - Full usage guide
+PARALLEL_DATAGEN_FIXES.md   - Technical details
+
+
+RESULTS LOCATION
+----------------
+training_gpu/results/tiny_gpu_1000/
+  ├── checkpoints/
+  ├── csv/history_gt_rl.csv
+  ├── plots/
+  └── final_model_gt_rl.pth
+
+================================================================================

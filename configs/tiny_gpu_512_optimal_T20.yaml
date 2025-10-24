@@ -1,0 +1,41 @@
+# Tiny GPU config - Larger batch size and more steps for GPU training
+# Batch size 3072, 25 steps per epoch
+working_dir_path: "../results/tiny_gpu_512_optimal_T20"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  num_batches_per_epoch: 75   # steps per epoch
+  batch_size: 1024
+  num_epochs: 200
+  learning_rate: 1e-4
+
+training_advanced:
+  use_adaptive_temperature: false  # Disable annealing
+  temp_start: 2.0                  # or try 2.0, 1.5
+  temp_min: 2.0                    # Same as start for fixed
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  min_lr: 1e-6
+  entropy_coef: 0.01
+  entropy_min: 0.0
+  gradient_clip_norm: 1.0
+
+# Smaller model for faster training
+model:
+  hidden_dim: 128              # Half of default 256
+  num_heads: 4
+  num_layers: 3                # Reduced from default 4
+
+baseline:
+  type: "rollout"
+  eval_batches: 3  # More stable baseline
+  update:
+    frequency: 2
+    warmup_epochs: 3
+
+inference:
+  default_temperature: 1.0  # Fixed, lower than 2.5
+  max_steps_multiplier: 2
