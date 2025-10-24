@@ -31,6 +31,7 @@ MANIFEST
 # Data files
 *.h5
 *.hdf5
+# *.json  # Commented out to allow benchmark result files
 *.npy
 *.npz
 data/
@@ -117,7 +118,12 @@ misc/
 !**/*results*.json
 
 # Still ignore config and temporary JSON files
+package.json
+package-lock.json
+tsconfig.json
 config.json
 temp*.json
 .vscode/**/*.json
 node_modules/**/*.json
+wandb/**/*.json
+logs/**/*.json
