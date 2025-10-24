@@ -1,0 +1,75 @@
+\section{Reinforcement Learning with Graph Transformers}
+
+We propose a reinforcement learning approach based on Graph Transformers (GT+RL) to solve the Capacitated Vehicle Routing Problem. Our method leverages an attention-based neural architecture that directly learns to construct feasible routes through a policy gradient training framework. Unlike traditional Graph Attention Networks (GAT) that rely on neighborhood aggregation, our Graph Transformer employs distance-aware multi-head attention mechanisms combined with spatial positional encoding to capture both the structural and geometric properties of CVRP instances.
+
+\subsection{Training Pipeline and Batch Generation}
+
+\subsubsection{Instance Generation.} 
+During training, problem instances are dynamically generated on-the-fly with deterministic seeding to ensure reproducibility. Each batch consists of $B$ instances (typically $B \in \{256, 512\}$), where coordinates are uniformly sampled on an integer grid $[0, 100]^2$ and normalized to $[0, 1]^2$, and demands are sampled uniformly from $\{1, 2, \ldots, 10\}$. To maximize computational efficiency, we employ parallel batch generation using multiple CPU workers (4-6 cores) that operate concurrently with GPU training, effectively overlapping data generation with model inference.
+
+\subsubsection{REINFORCE Policy Gradient.}
+We train the model using the REINFORCE algorithm~\cite{williams1992simple}, a policy gradient method that directly optimizes the expected tour cost. Given a problem instance $\mathbf{x}$, the model parameterized by $\theta$ defines a stochastic policy $\pi_\theta(\mathbf{a}|\mathbf{x})$ that sequentially constructs a route $\mathbf{a} = (a_1, \ldots, a_T)$. The policy gradient objective is:
+\begin{equation}
+\nabla_\theta \mathcal{L}(\theta) = \mathbb{E}_{\mathbf{a} \sim \pi_\theta} \left[ (b(\mathbf{x}) - c(\mathbf{a}, \mathbf{x})) \nabla_\theta \log \pi_\theta(\mathbf{a}|\mathbf{x}) \right]
+\end{equation}
+where $c(\mathbf{a}, \mathbf{x})$ is the route cost, $b(\mathbf{x})$ is a baseline to reduce variance (see Section~\ref{sec:baseline}), and the advantage $(b(\mathbf{x}) - c(\mathbf{a}, \mathbf{x}))$ encourages actions that lead to better-than-baseline solutions.
+
+\subsubsection{GPU Acceleration and Mixed Precision.}
+Training is performed on GPU with automatic mixed precision (FP16/FP32) to accelerate computation while maintaining numerical stability. We employ gradient accumulation across multiple mini-batches to simulate larger effective batch sizes when GPU memory is constrained, allowing $B_{\text{eff}} = B \times K$ where $K$ is the accumulation steps. All distance matrix computations and route cost evaluations are performed on GPU to minimize CPU-GPU transfer overhead.
+
+\subsection{Graph Transformer Architecture}
+
+\subsubsection{Encoder: Distance-Aware Attention.}
+Unlike Graph Attention Networks that compute attention weights based solely on learned node features, our Graph Transformer incorporates explicit distance information into the attention mechanism. For each attention head $h$, we compute:
+\begin{equation}
+\alpha_{ij}^h = \frac{\exp\left(\frac{\mathbf{q}_i^h \cdot \mathbf{k}_j^h}{\sqrt{d_k}} + \mathbf{b}_{ij}^h\right)}{\sum_{j'} \exp\left(\frac{\mathbf{q}_i^h \cdot \mathbf{k}_{j'}^h}{\sqrt{d_k}} + \mathbf{b}_{ij'}^h\right)}
+\end{equation}
+where $\mathbf{q}_i^h$ and $\mathbf{k}_j^h$ are query and key vectors, $d_k$ is the key dimension, and $\mathbf{b}_{ij}^h$ is a learned distance-based bias derived from the Euclidean distance $d_{ij}$ between nodes $i$ and $j$. This distance bias is parameterized through an embedding layer that maps discretized distances to head-specific biases, allowing the model to explicitly reason about spatial proximity.
+
+\subsubsection{Spatial Positional Encoding.}
+To further leverage geometric information, we augment node embeddings with spatial positional encodings. Each node's $(x, y)$ coordinates are processed through a learned encoder:
+\begin{equation}
+\mathbf{h}_i^{\text{spatial}} = \text{MLP}_{\text{spatial}}(x_i, y_i)
+\end{equation}
+which is combined with sinusoidal positional encodings to capture both absolute spatial location and sequential position in the attention mechanism. This dual encoding allows the model to distinguish between topologically similar but geometrically distinct configurations.
+
+\subsubsection{Model Complexity.}
+The Graph Transformer encoder consists of $L = 4$ transformer layers with hidden dimension $d_h = 256$ and $H \in \{4, 8\}$ attention heads per layer. Each layer includes residual connections and layer normalization. The total model contains approximately 2-3 million trainable parameters depending on the configuration.
+
+\subsubsection{Decoder: Multi-Head Pointer Attention.}
+The decoder autoregressively constructs the route using a multi-head pointer mechanism. At each decoding step $t$, we compute a distribution over feasible next nodes:
+\begin{equation}
+p(a_t | a_{<t}, \mathbf{x}) = \text{Softmax}\left(\frac{\mathbf{s}_t^T \mathbf{K}}{\tau} + \mathbf{m}_t\right)
+\end{equation}
+where $\mathbf{s}_t$ is the current decoder state (encoding the current node, remaining capacity, and visited nodes), $\mathbf{K}$ are context keys from the encoder, $\tau$ is the temperature parameter, and $\mathbf{m}_t$ is a mask enforcing CVRP feasibility constraints (capacity and visited status).
+
+\subsection{Greedy Rollout Baseline and Training Dynamics}
+\label{sec:baseline}
+
+\subsubsection{Rollout Baseline.}
+Following Kool et al.~\cite{kool2018attention}, we employ a greedy rollout baseline to reduce gradient variance. The baseline maintains a frozen copy $\theta_{\text{bl}}$ of the policy network, which is evaluated deterministically (with low temperature $\tau_{\text{greedy}} = 0.1$) on a fixed validation set to produce baseline costs $b(\mathbf{x})$. The advantage for training is computed as:
+\begin{equation}
+A(\mathbf{a}, \mathbf{x}) = \frac{b(\mathbf{x}) - c(\mathbf{a}, \mathbf{x}) - \mu_A}{\sigma_A + \epsilon}
+\end{equation}
+where $\mu_A$ and $\sigma_A$ are the batch-wise mean and standard deviation of raw advantages, providing normalized gradients.
+
+\subsubsection{Baseline Update Strategy.}
+The baseline model $\theta_{\text{bl}}$ is updated when the current policy $\theta$ statistically outperforms it on the validation set. We employ a paired t-test with significance level $p < 0.05$ to determine if the improvement is statistically significant, preventing premature updates that could destabilize training. Updates occur at regular intervals (every 1-2 epochs) and only when the current policy demonstrates consistent improvement.
+
+\subsubsection{Temperature and Exploration.}
+To balance exploration and exploitation, we employ adaptive temperature scheduling. The temperature starts at $\tau_{\text{start}} = 2.5$ (high exploration) and decays to $\tau_{\text{min}} = 0.15$ following a cosine annealing schedule:
+\begin{equation}
+\tau(e) = \tau_{\text{min}} + \frac{1}{2}(\tau_{\text{start}} - \tau_{\text{min}})\left(1 + \cos\left(\frac{\pi e}{E}\right)\right)
+\end{equation}
+where $e$ is the current epoch and $E$ is the total number of epochs. This schedule encourages broad exploration early in training and gradually shifts toward exploitation as the policy improves.
+
+\subsubsection{Entropy Regularization.}
+To further promote exploration and prevent premature convergence to suboptimal policies, we add an entropy bonus to the loss:
+\begin{equation}
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{policy}} - \beta \mathcal{H}(\pi_\theta)
+\end{equation}
+where $\mathcal{H}(\pi_\theta) = -\mathbb{E}_{\mathbf{a} \sim \pi_\theta}[\log \pi_\theta(\mathbf{a}|\mathbf{x})]$ is the policy entropy and $\beta = 0.03$ is the entropy coefficient. The entropy coefficient also follows a cosine decay schedule to gradually reduce the exploration bonus as training progresses.
+
+\subsubsection{Optimization Details.}
+We use the AdamW optimizer~\cite{loshchilov2017decoupled} with learning rate $\eta = 10^{-4}$, weight decay $\lambda = 10^{-4}$, and gradient clipping at norm $\|\nabla\| = 2.0$ to ensure stable training. The learning rate follows a cosine annealing schedule with minimum learning rate $\eta_{\text{min}} = 10^{-6}$. Training typically runs for 100 epochs with 1000-1500 batches per epoch, corresponding to $\sim$500K training instances. The model achieving the best validation performance (lowest cost per customer) is selected as the final model.
+

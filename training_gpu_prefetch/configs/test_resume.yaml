@@ -1,0 +1,51 @@
+batch_size: 64
+num_epochs: 3
+
+training:
+  batch_size: 64
+  num_batches_per_epoch: 10
+  num_epochs: 3
+  num_instances: 1920
+  learning_rate: 0.0001
+  validation_frequency: 1
+
+problem:
+  coord_range: 100
+  demand_range: [1, 10]
+  num_customers: 10
+  vehicle_capacity: 30
+
+baseline:
+  eval_batches: 1
+  type: rollout
+  update:
+    enabled: true
+    frequency: 1
+
+data_generation:
+  enable_prefetch: true
+  num_workers: 4
+  prefetch_queue_size: 2
+
+gpu:
+  device: cuda:0
+  enabled: true
+  mixed_precision: true
+  gradient_accumulation_steps: 1
+  memory_fraction: 0.95
+
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+training_advanced:
+  scheduler_type: cosine
+  temp_start: 2.5
+  temp_min: 0.7
+  use_lr_scheduling: true
+  gradient_clip_norm: 1.0
+
+experiment:
+  random_seed: 42
+  strict_validation: true

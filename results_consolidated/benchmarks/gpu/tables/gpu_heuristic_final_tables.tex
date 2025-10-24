@@ -1,0 +1,54 @@
+% GPU Improved Heuristic Benchmark Results
+% Format: 4 digits for Mean CPC, Std CPC, SEM; 2 digits for percentage
+
+% 100 instances
+\begin{table*}[htbp]
+\centering
+\caption{GPU Improved Heuristic Performance (100 instances)}
+\label{tab:gpu-heuristic-100}
+\begin{tabular}{@{}c c S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] c@{}}
+\toprule
+\textbf{N} & \textbf{Capacity} & {\textbf{Mean CPC}} & {\textbf{Std CPC}} & {\textbf{SEM}} & \textbf{2×SEM/Mean(\%)} \\
+\midrule
+ 10 & 20 & 0.4845 & 0.0916 & 0.0092 & 3.78\% \\
+ 20 & 30 & 0.3367 & 0.0449 & 0.0045 & 2.67\% \\
+ 50 & 40 & 0.2317 & 0.0266 & 0.0027 & 2.30\% \\
+100 & 50 & 0.1751 & 0.0169 & 0.0017 & 1.94\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% 1000 instances
+\begin{table*}[htbp]
+\centering
+\caption{GPU Improved Heuristic Performance (1,000 instances)}
+\label{tab:gpu-heuristic-1000}
+\begin{tabular}{@{}c c S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] c@{}}
+\toprule
+\textbf{N} & \textbf{Capacity} & {\textbf{Mean CPC}} & {\textbf{Std CPC}} & {\textbf{SEM}} & \textbf{2×SEM/Mean(\%)} \\
+\midrule
+ 10 & 20 & 0.4932 & 0.0961 & 0.0030 & 1.23\% \\
+ 20 & 30 & 0.3388 & 0.0468 & 0.0015 & 0.87\% \\
+ 50 & 40 & 0.2312 & 0.0280 & 0.0009 & 0.77\% \\
+100 & 50 & 0.1761 & 0.0205 & 0.0006 & 0.73\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% 10000 instances
+\begin{table*}[htbp]
+\centering
+\caption{GPU Improved Heuristic Performance (10,000 instances)}
+\label{tab:gpu-heuristic-10000}
+\begin{tabular}{@{}c c S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] c@{}}
+\toprule
+\textbf{N} & \textbf{Capacity} & {\textbf{Mean CPC}} & {\textbf{Std CPC}} & {\textbf{SEM}} & \textbf{2×SEM/Mean(\%)} \\
+\midrule
+ 10 & 20 & 0.4916 & 0.0929 & 0.0009 & 0.38\% \\
+ 20 & 30 & 0.3353 & 0.0476 & 0.0005 & 0.28\% \\
+ 50 & 40 & 0.2316 & 0.0283 & 0.0003 & 0.24\% \\
+100 & 50 & 0.1753 & 0.0208 & 0.0002 & 0.24\% \\
+\bottomrule
+\end{tabular}
+\end{table*}
+

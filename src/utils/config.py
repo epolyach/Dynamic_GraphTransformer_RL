@@ -56,12 +56,12 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     cfg = _deep_merge_dict(base_cfg, override_cfg)
 
-    # Calculate num_instances from num_batches_per_epoch if provided
-    if 'training' in cfg and 'num_batches_per_epoch' in cfg['training']:
+    # Calculate num_instances from num_steps if provided
+    if 'training' in cfg and 'num_steps' in cfg['training']:
         batch_size = cfg['training'].get('batch_size', 128)
         num_epochs = cfg['training'].get('num_epochs', 100)
-        num_batches = cfg['training']['num_batches_per_epoch']
-        # Formula: num_instances = num_batches * (num_epochs + 1) * batch_size
+        num_batches = cfg['training']['num_steps']
+        # Formula: num_instances = num_steps * (num_epochs + 1) * batch_size
         cfg['training']['num_instances'] = num_batches * (num_epochs + 1) * batch_size
 
     # Validate presence of required sections
@@ -74,7 +74,7 @@ def load_config(config_path: str) -> Dict[str, Any]:
 
     # Required keys
     required_problem = ['num_customers', 'vehicle_capacity', 'coord_range', 'demand_range']
-    required_training = ['num_instances', 'batch_size', 'num_epochs', 'learning_rate']
+    required_training = [ 'batch_size', 'num_epochs', 'learning_rate']
     required_model = ['input_dim', 'hidden_dim', 'num_heads', 'num_layers', 'transformer_dropout', 'feedforward_multiplier']
 
     for k in required_problem:

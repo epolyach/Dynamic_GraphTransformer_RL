@@ -1,0 +1,57 @@
+# Test config - same model params as tiny_gpu_1000.yaml but small batch/steps
+working_dir_path: "../results/tiny_gpu_1000"
+
+problem:
+  num_customers: 10
+  vehicle_capacity: 30
+
+training:
+  early_stopping:
+    enabled: false
+  num_batches_per_epoch: 10   # Small for quick test
+  batch_size: 64               # Small for quick test
+  num_epochs: 68               # Train until epoch 68
+  learning_rate: 1e-4
+
+training_advanced:
+  use_adaptive_temperature: false  
+  use_oscillating_temperature: false
+  temp_start: 2.5
+  temp_min: 0.70
+  
+  use_lr_scheduling: true
+  scheduler_type: "cosine"
+  lr_min: 1e-6
+  lr_max: 1e-4
+  cosine_epochs: 100
+  
+  entropy_coef: 0.01
+  entropy_min: 0.001
+  use_adaptive_entropy: true
+  plateau_detection_window: 10
+  plateau_threshold: 0.001
+  entropy_boost_on_plateau: 0.02
+  
+  gradient_clip_norm: 1.0
+  use_hybrid_baseline: false
+
+# EXACT same model params as tiny_gpu_1000
+model:
+  hidden_dim: 128
+  num_heads: 4
+  num_layers: 3
+
+baseline:
+  eval_batches: 5
+  update:
+    frequency: 2
+    warmup_epochs: 0
+
+inference:
+  max_steps_multiplier: 10
+  default_temperature: 2.5
+
+data_generation:
+  num_workers: 4
+  enable_prefetch: true
+  prefetch_queue_size: 2

@@ -1,0 +1,10 @@
+# Example Training Configuration for n=20 CVRP
+# This file overrides default.yaml parameters
+
+problem:
+  num_customers: 20
+  vehicle_capacity: 30
+
+training:
+  num_epochs: 40
+  batch_size: 1024

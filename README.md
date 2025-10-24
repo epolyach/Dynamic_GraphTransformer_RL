@@ -53,26 +53,58 @@ Notes:
 
 
 ## 1.5) Training (GPU)
-Location: training_gpu/
+Locations: training_gpu/ and training_gpu_prefetch/
 
 GPU-optimized training with mixed precision support, efficient batch processing, and **hybrid baseline** capabilities.
 
+### Two Training Pipelines Available
+
+1. **Standard Pipeline** (`training_gpu/`): Original GPU training implementation
+2. **Prefetch Pipeline** (`training_gpu_prefetch/`): Enhanced with batch prefetching for improved GPU utilization
+
+Both pipelines share the same features and configuration format. The prefetch pipeline may provide better performance for certain workloads.
+
 ### Quick Start
+
+#### Interactive Training (foreground)
 ```bash
-# Train a single model with GPU optimizations
+# Standard pipeline
 cd /home/evgeny.polyachenko/CVRP/Dynamic_GraphTransformer_RL
 source venv/bin/activate
 python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
 
+# Prefetch pipeline  
+source venv/bin/activate
+python training_gpu_prefetch/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL --device cuda:0
+
 # Force retrain if model exists
 python training_gpu/scripts/run_training_gpu.py --config configs/tiny.yaml --model GT+RL --force-retrain
-
-# Train with optimized tiny config (large batch size)
-python training_gpu/scripts/run_training_gpu.py --config configs/tiny_gpu_optimized.yaml --model GT+RL
-
-# Train with hybrid baseline (automatic rollout→critic switching)
-python training_gpu/scripts/run_training_gpu.py --config configs/experiment_5_curriculum.yaml --model GT+RL
 ```
+
+#### Training in Screen Session (SSH-persistent) ⭐ RECOMMENDED
+Run training in a detached screen session that survives SSH disconnections:
+
+```bash
+# Standard pipeline
+screen -dmS training bash -c "source venv/bin/activate && python training_gpu/scripts/run_training_gpu.py --config configs/medium.yaml --model GT+RL; exec bash"
+
+# Prefetch pipeline (recommended for long training runs)
+screen -dmS training bash -c "source venv/bin/activate && python training_gpu_prefetch/scripts/run_training_gpu.py --config configs/normal_gpu_1000.yaml --model GT+RL; exec bash"
+
+# Monitor the training
+screen -ls              # List all screen sessions
+screen -r training      # Attach to the session
+# Press Ctrl+A, then D to detach without stopping
+
+# Check GPU usage
+nvidia-smi -l 1
+```
+
+**Key benefits of screen sessions:**
+- Training continues even if SSH connection drops
+- Can detach/reattach at any time
+- Multiple screen sessions for parallel experiments
+- Persistent shell environment
 
 ### GPU-Specific Features
 - **Mixed Precision Training**: Automatically enabled for N≥20 (FP16/FP32)
@@ -154,6 +186,7 @@ Based on extensive profiling (see `MD/FINAL_FIX_SUMMARY.md`), several critical o
 ### Sequential Training Scripts ⭐ NEW
 For running multiple experiments sequentially without manual intervention:
 
+#### Standard Pipeline Scripts
 **Basic sequential runner:**
 ```bash
 ./run_seq.sh config1.yaml config2.yaml config3.yaml
@@ -164,10 +197,24 @@ For running multiple experiments sequentially without manual intervention:
 ./run_seq_nohup.sh config1.yaml config2.yaml config3.yaml
 ```
 
+#### Prefetch Pipeline Scripts
+**Basic sequential runner:**
+```bash
+./run_seq_prefetch.sh config1.yaml config2.yaml config3.yaml
+```
+
+**SSH-persistent sequential runner (recommended):**
+```bash
+./run_seq_nohup_prefetch.sh config1.yaml config2.yaml config3.yaml
+```
+
 **Example usage:**
 ```bash
-# Run three tiny GPU experiments sequentially
+# Standard pipeline - Run three tiny GPU experiments sequentially
 ./run_seq_nohup.sh configs/tiny_gpu_150.yaml configs/tiny_gpu_500.yaml configs/tiny_gpu_750.yaml
+
+# Prefetch pipeline - Run large experiments with prefetching
+./run_seq_nohup_prefetch.sh configs/normal_gpu_1000.yaml configs/large.yaml
 
 # Run experiment vs medium comparison
 ./run_seq_nohup.sh configs/experiment_rollout_only.yaml configs/medium_experiment_rollout_only.yaml

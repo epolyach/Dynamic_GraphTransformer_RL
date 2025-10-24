@@ -19,7 +19,7 @@ from typing import List, Dict, Any, Tuple, Optional, Union
 class SpatialPositionalEncoding(nn.Module):
     """Combine sinusoidal positional encoding with learned spatial encoding."""
     
-    def __init__(self, hidden_dim: int, max_nodes: int = 100):
+    def __init__(self, hidden_dim: int, max_nodes: int = 150):
         super().__init__()
         self.hidden_dim = hidden_dim
         

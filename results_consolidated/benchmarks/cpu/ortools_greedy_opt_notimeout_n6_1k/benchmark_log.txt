@@ -1,0 +1,57 @@
+2025-09-09 13:50:23 - INFO - ======================================================================
+2025-09-09 13:50:23 - INFO - OR-Tools Greedy (Optimal Mode) Parallel Benchmark Runner
+2025-09-09 13:50:23 - INFO - ======================================================================
+2025-09-09 13:50:23 - INFO - Configuration:
+2025-09-09 13:50:23 - INFO -   Problem size (N): 6
+2025-09-09 13:50:23 - INFO -   Vehicle capacity: 30
+2025-09-09 13:50:23 - INFO -   Total instances: 200
+2025-09-09 13:50:51 - INFO - ======================================================================
+2025-09-09 13:50:51 - INFO - OR-Tools Greedy (Optimal Mode) Parallel Benchmark Runner
+2025-09-09 13:50:51 - INFO - ======================================================================
+2025-09-09 13:50:51 - INFO - Configuration:
+2025-09-09 13:50:51 - INFO -   Problem size (N): 6
+2025-09-09 13:50:51 - INFO -   Vehicle capacity: 30
+2025-09-09 13:50:51 - INFO -   Total instances: 200
+2025-09-09 13:50:51 - INFO -   Per-instance timeout: disabled (no time limit)
+2025-09-09 13:50:51 - INFO -   Retry strategy: disabled
+2025-09-09 13:50:51 - INFO -   Parallel threads: 8
+2025-09-09 13:50:51 - INFO -   Base seed: 42
+2025-09-09 13:50:51 - INFO -   Output mode: CPC only
+2025-09-09 13:50:51 - INFO -   Output directory: benchmark_cpu/results/ortools_greedy_opt_notimeout_n6_1k
+2025-09-09 13:50:51 - INFO -   Log file: benchmark_cpu/results/ortools_greedy_opt_notimeout_n6_1k/benchmark_log.txt
+2025-09-09 13:50:51 - INFO - Instance distribution across threads: [25, 25, 25, 25, 25, 25, 25, 25]
+2025-09-09 13:50:51 - INFO - Total instances to process: 200
+2025-09-09 13:50:51 - INFO - Seed range: 42 to 241
+2025-09-09 13:50:51 - INFO - Each instance has a unique seed: base_seed + instance_id
+2025-09-09 13:50:51 - INFO - No per-instance timeouts; runtime depends on instance hardness distribution
+2025-09-09 13:50:51 - INFO - Starting parallel execution...
+2025-09-09 13:50:57 - INFO - Thread 0: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 1: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 2: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 3: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 4: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 5: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:57 - INFO - Thread 6: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:58 - INFO - Thread 7: Processed 25 instances (0 failed, 0 needed retries)
+2025-09-09 13:50:58 - INFO - ✓ Saved CPC values to ortools_n6.json
+2025-09-09 13:50:58 - INFO - ----------------------------------------------------------------------
+2025-09-09 13:50:58 - INFO - EXECUTION SUMMARY
+2025-09-09 13:50:58 - INFO - ----------------------------------------------------------------------
+2025-09-09 13:50:58 - INFO - Total execution time: 7.00s (0.12 minutes)
+2025-09-09 13:50:58 - INFO - Average time per instance: 0.035s
+2025-09-09 13:50:58 - INFO - Total instances successfully processed: 200
+2025-09-09 13:50:58 - INFO - Total instances that needed retries: 0
+2025-09-09 13:50:58 - INFO - Total instances failed (after all retries): 0
+2025-09-09 13:50:58 - INFO - 
+CPC Statistics:
+2025-09-09 13:50:58 - INFO -   Mean: 0.467192
+2025-09-09 13:50:58 - INFO -   Std:  0.087738
+2025-09-09 13:50:58 - INFO -   Min:  0.239828
+2025-09-09 13:50:58 - INFO -   Max:  0.724878
+2025-09-09 13:50:58 - INFO - 
+Output files:
+2025-09-09 13:50:58 - INFO -   - ortools_n6.json (CPC values)
+2025-09-09 13:50:58 - INFO -   - benchmark_log.txt (execution log)
+2025-09-09 13:50:58 - INFO - 
+2025-09-09 13:50:58 - INFO - Results saved in: benchmark_cpu/results/ortools_greedy_opt_notimeout_n6_1k
+2025-09-09 13:50:58 - INFO - ======================================================================
