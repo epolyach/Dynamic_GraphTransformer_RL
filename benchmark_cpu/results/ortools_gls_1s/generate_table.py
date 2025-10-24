@@ -38,12 +38,12 @@ def format_p(p):
 
 # Load data and compute stats
 results = {}
-for file in glob.glob('OR_GLS_*.json'):
+for file in glob.glob('ortools_n*.json'):
     with open(file, 'r') as f:
         data = json.load(f)
-        n = data['n_customers']
+        n = data['n']
         cap = data['capacity']
-        cpcs = data['all_cpcs']
+        cpcs = data['cpc']
         results[n] = {'cap': cap, 'stats': compute_stats(cpcs)}
 
 # Generate LaTeX table
