@@ -1,0 +1,28 @@
+{
+  "n_customers": 6,
+  "n_instances": 100,
+  "gpu": {
+    "total_time": 5.158122301101685,
+    "time_per_instance": 0.05158122301101684,
+    "mean_cost": 2.8703011007979513,
+    "std_cost": 0.5258750224745015,
+    "mean_cpc": 0.47838351679965846,
+    "std_cpc": 0.08764583707908358,
+    "optimality_rate": 1.0
+  },
+  "ortools_exact": {
+    "total_time": 29.76259994506836,
+    "time_per_instance": 0.2976259994506836,
+    "mean_cost": 2.7903592630289493,
+    "std_cost": 0.5077135187609215,
+    "mean_cpc": 0.4650598771714916,
+    "std_cpc": 0.08461891979348692,
+    "optimality_rate": 1.0
+  },
+  "comparison": {
+    "speedup": 5.770045417246425,
+    "avg_relative_diff": 0.02946802258200904,
+    "max_relative_diff": 0.2708822476172398,
+    "identical_solutions": 49
+  }
+}
