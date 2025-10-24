@@ -1,0 +1,24 @@
+{
+  "n_customers": 6,
+  "n_instances": 1000,
+  "batch_size": 100,
+  "gpu": {
+    "total_time": 51.761563777923584,
+    "time_per_instance": 0.05176156377792358,
+    "mean_cost": 2.916578034931794,
+    "std_cost": 0.4877509881619067,
+    "mean_cpc": 0.486096339155299,
+    "std_cpc": 0.08129183136031778
+  },
+  "ortools_sample": {
+    "sample_size": 100,
+    "total_time": 28.556451082229614,
+    "time_per_instance": 0.28556451082229617,
+    "mean_cost": 2.8023911022767423,
+    "std_cost": 0.45562073370436823,
+    "mean_cpc": 0.46706518371279043,
+    "std_cpc": 0.07593678895072803
+  },
+  "speedup": 5.516922016642975,
+  "avg_relative_diff": 0.06471768409584311
+}

@@ -1,0 +1,112 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+# Python package directories (but not our project lib dirs)
+venv/lib/
+*/site-packages/lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch / models
+*.pth
+*.pt
+*.pkl
+
+# Data files
+*.h5
+*.hdf5
+*.json
+*.npy
+*.npz
+data/
+datasets/
+instances/
+generated_instances/
+
+# Logs and outputs
+*.log
+logs/
+runs/
+outputs/
+.hydra/
+wandb/
+tensorboard/
+logs/tensorboard/
+
+# Temporary results and plots (keep important benchmark/training results)
+# results/  # Commented out - we want to keep benchmark and training results
+# plots/    # Commented out - we want to keep generated plots
+runs/outputs/  # Temporary run outputs
+temp_results/  # Temporary results only
+
+# Virtual environments
+.env
+.env.local
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+gpu_env/
+
+# IDE/editor
+# .vscode/  # Allow VSCode configs for remote debugging
+.vscode/settings.json.local
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Documentation builds
+docs/_build/
+docs/build/
+
+# Configuration overrides
+configs/local/
+configs/private/
+
+# Research artifacts (optional large outputs)
+research/logs/
+research/runs/
+research/**/tensorboard/
+# research/results/**
+
+# Miscellaneous test scripts and debugging files
+misc/
