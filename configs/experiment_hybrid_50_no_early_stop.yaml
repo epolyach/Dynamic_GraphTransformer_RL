@@ -7,8 +7,6 @@ problem:
   vehicle_capacity: 30
 
 training:
-  early_stopping:
-    enabled: false
   num_batches_per_epoch: 75      # Maintain current setting
   batch_size: 1024               # Start with 1024 as specified
   num_epochs: 100                # 100 epochs as specified
@@ -104,6 +102,3 @@ curriculum_learning:
   track_best_model: true
   save_best_only: true
   patience: 30                    # Early stopping patience
-
-
-
