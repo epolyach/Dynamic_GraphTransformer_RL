@@ -25,7 +25,6 @@ MANIFEST
 
 # PyTorch / models
 *.pth
-*.pt
 *.pkl
 
 # Data files
